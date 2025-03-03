@@ -10,6 +10,7 @@ import { RolesGuard } from './utils/roles.guard';
 import { JwtStrategy } from './utils/jwt.strategy';
 import { RefJwtStrategy } from './utils/refjwt.strategy';
 import { GoogleStrategy } from './utils/google.strategy';
+import { MailService } from 'src/mail/mail.service';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { GoogleStrategy } from './utils/google.strategy';
     RefJwtStrategy,
     LocalStrategy,
     GoogleStrategy,
+    MailService,
     {
       provide: 'AUTH_SERVICE',
       useClass: AuthenticationService,

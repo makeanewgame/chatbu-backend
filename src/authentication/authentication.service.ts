@@ -5,10 +5,15 @@ import * as schema from 'src/drizzle/schema/schema';
 import { eq } from 'drizzle-orm';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class AuthenticationService {
     constructor(
+        private mail: MailService,
+        @Inject(CACHE_MANAGER) private cacheManager: Cache,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
         @Inject(DRIZZLE) private readonly db: DrizzleDB) { }
 
@@ -32,13 +37,40 @@ export class AuthenticationService {
             const bcrypt = require('bcrypt');
             user.password = await bcrypt.hash(user.password, 10);
 
-
+            //create temp code 6 digits
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
+            await this.cacheManager.set(user.email, code, 60 * 60 * 24);
             await this.db.insert(schema.users).values(user);
+
+            const activationUrl = process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
+
+            const company = process.env.COMPANY_NAME;
+            const company_address = process.env.COMPANY_ADDRESS;
+
+            console.log("company", company)
+            console.log("company_address", company_address)
+            console.log("activationUrl", activationUrl)
+            console.log("code", code)
+
+            this.mail.sendRegisterMail(user.email, code, 'en', user.name, company, company_address, activationUrl);
+
             this.logger.info('Registering user', user.email);
         }
 
         return true;
 
+    }
+
+    async activateRegistration(email: string, code: string) {
+        const cachedCode = await this.cacheManager.get(email);
+        if (cachedCode === code) {
+
+            await this.db.update(schema.users).set({
+
+            }).where(eq(schema.users.email, email));
+            return true;
+        }
+        return false;
     }
 
     async logout(email: string) {

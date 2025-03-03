@@ -3,7 +3,7 @@ import { users } from "./users.schema"
 
 
 export const profiles = pgTable("profiles", {
-    id: uuid().defaultRandom().primaryKey(),
+    id: uuid("id").defaultRandom().primaryKey(),
     user_id: uuid("user_id").notNull().references(() => users.id),
     first_name: text("first_name"),
     last_name: text("last_name"),

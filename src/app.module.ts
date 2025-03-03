@@ -6,9 +6,12 @@ import { DrizzleModule } from './drizzle/drizzle.module';
 import { AuthenticationModule } from './authentication/authentication.module';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
+import { CacheModule } from '@nestjs/cache-manager';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
+    CacheModule.register({ isGlobal: true }),
     WinstonModule.forRoot({
       format: winston.format.combine(
         winston.format.timestamp(),
@@ -21,7 +24,7 @@ import * as winston from 'winston';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), DrizzleModule, AuthenticationModule],
+    }), DrizzleModule, AuthenticationModule, MailModule],
   controllers: [AppController],
   providers: [AppService],
 })

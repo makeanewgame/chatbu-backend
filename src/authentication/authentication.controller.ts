@@ -4,6 +4,7 @@ import { RegisterRequest } from './dto/register.request';
 import { GoogleGuard } from './utils/google.guard';
 import { ConfigService } from '@nestjs/config';
 import { AccessTokenGuard } from './utils/accesstoken.guard';
+import { ActivateRegistrationRequest } from './dto/activateregister.request';
 
 @Controller('auth')
 export class AuthenticationController {
@@ -57,6 +58,11 @@ export class AuthenticationController {
             }
         });
 
+    }
+
+    @Post('activate-registration')
+    async activateRegistration(@Body() body: ActivateRegistrationRequest) {
+        return await this.authService.activateRegistration(body.email, body.code);
     }
 
     @UseGuards(AccessTokenGuard)
