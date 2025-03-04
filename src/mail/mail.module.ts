@@ -6,8 +6,6 @@ import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handleba
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
 
-
-
 @Module({
   imports: [
     ConfigModule.forRoot({ envFilePath: '.env' }),

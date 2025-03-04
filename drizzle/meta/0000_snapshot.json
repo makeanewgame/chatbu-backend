@@ -1,5 +1,5 @@
 {
-  "id": "8e345130-cafa-4b76-9caf-49fed9ba9de6",
+  "id": "4211c8fd-4616-4871-a2d0-76514b935c28",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -49,15 +49,13 @@
           "name": "emailVerified",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
+          "notNull": true
         },
         "phoneVerified": {
           "name": "phoneVerified",
           "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
-          "default": false
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",

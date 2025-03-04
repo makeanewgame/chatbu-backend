@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS "users" (
 	"password" text NOT NULL,
 	"phonenumber" text NOT NULL,
 	"refreshtoken" text NOT NULL,
-	"emailVerified" boolean DEFAULT false NOT NULL,
-	"phoneVerified" boolean DEFAULT false NOT NULL,
+	"emailVerified" boolean NOT NULL,
+	"phoneVerified" boolean NOT NULL,
 	"created_at" date DEFAULT 'now()' NOT NULL,
 	"updated_at" date NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email")

@@ -5,6 +5,7 @@ import { GoogleGuard } from './utils/google.guard';
 import { ConfigService } from '@nestjs/config';
 import { AccessTokenGuard } from './utils/accesstoken.guard';
 import { ActivateRegistrationRequest } from './dto/activateregister.request';
+import { LoginRequest } from './dto/login.request';
 
 @Controller('auth')
 export class AuthenticationController {
@@ -36,8 +37,8 @@ export class AuthenticationController {
 
 
     @Post('login')
-    async login() {
-        return 'Login';
+    async login(@Body() body: LoginRequest) {
+        return await this.authService.login(body.email, body.password);
     }
 
     @Post('register')
