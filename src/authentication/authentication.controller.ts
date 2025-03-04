@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { AccessTokenGuard } from './utils/accesstoken.guard';
 import { ActivateRegistrationRequest } from './dto/activateregister.request';
 import { LoginRequest } from './dto/login.request';
+import { Language } from 'src/lang';
 
 @Controller('auth')
 export class AuthenticationController {
@@ -31,8 +32,11 @@ export class AuthenticationController {
         @Req() req,
         @Res() res,
     ) {
-        //TODO: Implement the logic to handle the user data from google
-        res.redirect(this.configService.get<string>('FRONTEND_GOOGLE_REDIRECT_URI'))
+        const data = await this.authService.googleLogin(req.user.emails[0].value, req.user);
+        res.redirect(
+            this.configService.get('FRONTEND_GOOGLE_REDIRECT_URI') +
+            `?user=${JSON.stringify(data)}`,
+        );
     }
 
 
@@ -42,8 +46,8 @@ export class AuthenticationController {
     }
 
     @Post('register')
-    async register(@Body() body: RegisterRequest, @Res() res) {
-        await this.authService.register(body).then((result) => {
+    async register(@Body() body: RegisterRequest, @Req() req, @Res() res) {
+        await this.authService.register(body, req.header["Language"]).then((result) => {
             if (result) {
                 return res.json({
                     redirect: true,

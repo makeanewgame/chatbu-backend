@@ -1,13 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as handlebars from 'handlebars';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Logger } from 'winston';
 
 @Injectable()
 export class MailService {
     constructor(
-        private readonly mailerService: MailerService
+        private readonly mailerService: MailerService,
+        @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+
     ) { }
 
     async sendRegisterMail(
@@ -22,9 +26,7 @@ export class MailService {
 
         const rootDir = process.cwd();
 
-        const templatePath = path.join(rootDir, 'dist', 'templates', 'register.html');
-        console.log('rootDir', rootDir);
-        console.log('templatePath', templatePath);
+        const templatePath = path.join(rootDir, 'dist', 'templates', lang === 'en' ? 'register.html' : 'register_tr.html');
         const templateSource = fs.readFileSync(templatePath, 'utf8');
         const template = handlebars.compile(templateSource);
         const html = template({
@@ -47,7 +49,7 @@ export class MailService {
 
         try {
             await this.mailerService.sendMail(mailOptions);
-            console.log('Email sent successfully');
+            this.logger.info(`Activation mail sent to ${email}`);
         }
         catch (error) {
             console.error(error);

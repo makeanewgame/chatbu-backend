@@ -10,7 +10,6 @@ import { Cache } from 'cache-manager';
 import { MailService } from 'src/mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { access } from 'fs';
 
 @Injectable()
 export class AuthenticationService {
@@ -22,9 +21,8 @@ export class AuthenticationService {
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
         @Inject(DRIZZLE) private readonly db: DrizzleDB) { }
 
-    async register(user: typeof schema.users.$inferInsert) {
+    async register(user: typeof schema.users.$inferInsert, lang: string) {
 
-        console.log("user", user)
         user.refreshtoken = "";
         user.updated_at = new Date().toISOString();
 
@@ -57,7 +55,7 @@ export class AuthenticationService {
             console.log("activationUrl", activationUrl)
             console.log("code", code)
 
-            this.mail.sendRegisterMail(user.email, code, 'en', user.name, company, company_address, activationUrl);
+            this.mail.sendRegisterMail(user.email, code, lang, user.name, company, company_address, activationUrl);
 
             this.logger.info('Registering user', user.email);
         }
@@ -133,6 +131,53 @@ export class AuthenticationService {
         },
         );
     }
+
+    async googleLogin(email: string, user: any) {
+        let findUser = await this.db.query.users.findFirst({
+            where: eq(schema.users.email, email)
+        });
+
+        if (!findUser) {
+            const tempUser = {
+                email: email,
+                name: user.displayName,
+                password: "",
+                phonenumber: "",
+                emailVerified: true,
+                phoneVerified: false,
+                refreshtoken: "",
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            }
+
+            await this.db.insert(schema.users).values(tempUser);
+
+            findUser = await this.db.query.users.findFirst({
+                where: eq(schema.users.email, email)
+            });
+        }
+
+        const { password, ...data } = findUser;
+        const tokens = this.getTokens(
+            data.id,
+            data.email,
+        );
+
+        this.db.update(schema.users).set({
+            refreshtoken: tokens.refreshToken,
+        }).where(eq(schema.users.id, data.id));
+
+        return {
+            success: true,
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            userEmail: data.email,
+            userId: data.id,
+            userName: data.name
+        };
+    }
+
+    async registerGoogleUser(user: typeof schema.users.$inferInsert) { }
 
 
     async logout(email: string) {

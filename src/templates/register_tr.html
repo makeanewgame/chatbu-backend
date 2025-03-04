@@ -1,8 +1,8 @@
-<html lang='en'>
+<html lang="tr">
   <head>
-    <meta charset='UTF-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-    <title>Email Verification Code</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>E-posta Doğrulama Kodu</title>
     <style>
       body {
         font-family: Arial, Helvetica, sans-serif;
@@ -11,6 +11,9 @@
         margin: 0;
         padding: 0;
         background-color: #f7f7f7;
+      }
+      p {
+        font-size: 16px;
       }
       .container {
         max-width: 600px;
@@ -72,43 +75,46 @@
     </style>
   </head>
   <body>
-    <div class='container'>
-      <div class='header'>
+    <div class="container">
+      <div class="header">
         <!-- Logo URL'sini kendi logonuzla değiştirin -->
         <img
-          src='https://chatbu.io/wp-content/uploads/2025/03/Group-1-2.png'
-          alt='Chatbu Logo'
-          class='logo'
+          src="https://chatbu.io/wp-content/uploads/2025/03/Group-1-2.png"
+          alt="Chatbu Logo"
+          class="logo"
         />
-        <h2>Verify Your Email Address</h2>
+        <h2>E-posta Adresinizi Doğrulayın</h2>
       </div>
 
-      <div class='content'>
-        <p>Hi {{fullname}},</p>
+      <div class="content">
+        <p>Merhaba {{fullname}},</p>
 
-        <p>Use the code below to verify your account:</p>
+        <p>Hesabınızı doğrulamak için aşağıdaki kodu kullanın:</p>
 
-        <div class='verification-code'>{{code}}</div>
+        <div class="verification-code">{{code}}</div>
 
-        <p>This verification code is valid for 30 minutes.</p>
+        <p>Bu doğrulama kodu 30 dakika boyunca geçerlidir.</p>
 
-        <a href='{{redirect_url}}' class='button'>Go to Verification Page</a>
+        <a href="{{redirect_url}}" class="button">Doğrulama Sayfasına Git</a>
 
-        <p class='note'>If you did not request this email, please ignore it or
-          contact our customer service.</p>
+        <p class="note">
+          Bu e-postayı siz talep etmediyseniz, lütfen dikkate almayın veya
+          müşteri hizmetlerimizle iletişime geçin.
+        </p>
       </div>
 
-      <div class='footer'>
-        <p>&copy; 2025 {{company}}. All rights reserved.</p>
+      <div class="footer">
+        <p>&copy; 2025 {{company}}. Tüm hakları saklıdır.</p>
         <p>{{company_address}}</p>
         <p>
-          <a href='{{privacy_policy_url}}'>Privacy Policy</a>
+          <a href="{{privacy_policy_url}}">Gizlilik Politikası</a>
           |
-          <a href='{{support_url}}'>Support</a>
+          <a href="{{support_url}}">Destek</a>
           |
-          <a href='{{end_subscription}}'>Unsubscribe</a>
+          <a href="{{end_subscription}}">Abonelikten Çık</a>
         </p>
       </div>
     </div>
   </body>
 </html>
+k
