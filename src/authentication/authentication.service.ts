@@ -1,8 +1,4 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { DRIZZLE } from 'src/drizzle/drizzle.module';
-import { DrizzleDB } from 'src/drizzle/types/drizzle';
-import * as schema from 'src/drizzle/schema/schema';
-import { eq } from 'drizzle-orm';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -10,6 +6,7 @@ import { Cache } from 'cache-manager';
 import { MailService } from 'src/mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class AuthenticationService {
@@ -17,20 +14,22 @@ export class AuthenticationService {
         private mail: MailService,
         private jwtService: JwtService,
         private configService: ConfigService,
+        private prisma: PrismaService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
-        @Inject(DRIZZLE) private readonly db: DrizzleDB) { }
+    ) { }
 
-    async register(user: typeof schema.users.$inferInsert, lang: string) {
+    async register(user: any, lang: string) {
 
         user.refreshtoken = "";
         user.updated_at = new Date().toISOString();
 
 
-        const findUser = await this.db.query.users.findFirst({
-            where: eq(schema.users.email, user.email)
+        const findUser = await this.prisma.user.findFirst({
+            where: {
+                email: user.email
+            }
         });
-
         //Kullanıcı daha önce kayıt olmuş ise onu login sayfasına şifresini girecek bir şekilde yönlendir.
 
         if (findUser) {
@@ -43,7 +42,10 @@ export class AuthenticationService {
             //create temp code 6 digits
             const code = Math.floor(100000 + Math.random() * 900000).toString();
             await this.cacheManager.set(user.email, code, 60 * 60 * 24);
-            await this.db.insert(schema.users).values(user);
+
+            await this.prisma.user.create({
+                data: user
+            });
 
             const activationUrl = process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
 
@@ -71,16 +73,30 @@ export class AuthenticationService {
         console.log("code", code)
 
 
+        const findUser = await this.prisma.user.findFirst({
+            where: {
+                email: email
+            }
+        });
+
         if (cachedCode === code) {
-            await this.db.update(schema.users).set({
-                emailVerified: true
-            }).where(eq(schema.users.email, email));
+            await this.prisma.user.update({
+                where: {
+                    id: findUser.id
+                },
+                data: {
+                    emailVerified: true
+                }
+            });
+
 
 
             await this.cacheManager.del(email);
 
-            const user = await this.db.query.users.findFirst({
-                where: eq(schema.users.email, email)
+            const user = await this.prisma.user.findFirst({
+                where: {
+                    email: email
+                }
             });
 
             const tokens = this.getTokens(user.id, user.email);
@@ -97,8 +113,10 @@ export class AuthenticationService {
     async login(email: string, password: string) {
         const bcrypt = require('bcrypt');
 
-        const findUser = await this.db.query.users.findFirst({
-            where: eq(schema.users.email, email)
+        const findUser = await this.prisma.user.findFirst({
+            where: {
+                email: email
+            }
         });
 
         if (!findUser) return null;
@@ -112,9 +130,15 @@ export class AuthenticationService {
                     data.email,
                 );
 
-                this.db.update(schema.users).set({
-                    refreshtoken: tokens.refreshToken,
-                }).where(eq(schema.users.id, data.id));
+
+                this.prisma.user.update({
+                    where: {
+                        id: data.id
+                    },
+                    data: {
+                        refreshToken: tokens.refreshToken
+                    }
+                });
 
                 return {
                     success: true,
@@ -133,9 +157,15 @@ export class AuthenticationService {
     }
 
     async googleLogin(email: string, user: any) {
-        let findUser = await this.db.query.users.findFirst({
-            where: eq(schema.users.email, email)
+
+
+
+        let findUser = await this.prisma.user.findFirst({
+            where: {
+                email: email
+            }
         });
+
 
         if (!findUser) {
             const tempUser = {
@@ -150,10 +180,14 @@ export class AuthenticationService {
                 updated_at: new Date().toISOString()
             }
 
-            await this.db.insert(schema.users).values(tempUser);
+            await this.prisma.user.create({
+                data: tempUser
+            });
 
-            findUser = await this.db.query.users.findFirst({
-                where: eq(schema.users.email, email)
+            findUser = await this.prisma.user.findFirst({
+                where: {
+                    email: email
+                }
             });
         }
 
@@ -163,9 +197,14 @@ export class AuthenticationService {
             data.email,
         );
 
-        this.db.update(schema.users).set({
-            refreshtoken: tokens.refreshToken,
-        }).where(eq(schema.users.id, data.id));
+        await this.prisma.user.update({
+            where: {
+                id: data.id
+            },
+            data: {
+                refreshToken: tokens.refreshToken
+            }
+        });
 
         return {
             success: true,
@@ -177,15 +216,28 @@ export class AuthenticationService {
         };
     }
 
-    async registerGoogleUser(user: typeof schema.users.$inferInsert) { }
+    async registerGoogleUser(user: any) { }
 
 
     async logout(email: string) {
         // Check schema to use the correct field name instead of 'refreshToken'
         // For example, if you have a 'token' field:
-        await this.db.update(schema.users).set({
-            refreshtoken: ''
-        }).where(eq(schema.users.email, email));
+
+
+        const findUser = await this.prisma.user.findFirst({
+            where: {
+                email: email
+            }
+        });
+
+        await this.prisma.user.update({
+            where: {
+                id: findUser.id
+            },
+            data: {
+                refreshToken: ""
+            }
+        });
     }
 
     getTokens(userId: string, email: string) {
@@ -225,22 +277,26 @@ export class AuthenticationService {
 
         const userId = decodedToken.sub;
 
-        const findUser = await this.db.query.users.findFirst({
-            where: eq(schema.users.id, userId)
+        const findUser = await this.prisma.user.findFirst({
+            where: {
+                id: userId
+            }
         });
+
+
 
         if (!findUser) {
             return { message: 'User not found', code: 'USER_NOT_FOUND' };
         }
 
-        if (!findUser.refreshtoken) {
+        if (!findUser.refreshToken) {
             return {
                 message: 'Refresh token not found',
                 code: 'REFRESH_TOKEN_NOT_FOUND',
             };
         }
 
-        const savedRefreshToken = findUser.refreshtoken;
+        const savedRefreshToken = findUser.refreshToken;
 
         const decodedRefreshToken = this.jwtService.decode(savedRefreshToken);
         if (
@@ -263,9 +319,14 @@ export class AuthenticationService {
             refreshTokenUserEmail,
         );
 
-        await this.db.update(schema.users).set({
-            refreshtoken: tokens.refreshToken
-        }).where(eq(schema.users.id, userId));
+        await this.prisma.user.update({
+            where: {
+                id: userId
+            },
+            data: {
+                refreshToken: tokens.refreshToken
+            }
+        });
 
         return { accessToken: tokens.accessToken };
     }
@@ -273,13 +334,15 @@ export class AuthenticationService {
     async validateUserByJwt(email: string, password: string) {
         const bcrypt = require('bcrypt');
 
-        const findUser = await this.db.query.users.findFirst({
-            where: eq(schema.users.email, email)
+        const findUser = await this.prisma.user.findFirst({
+            where: {
+                email: email
+            }
         });
 
         if (!findUser) return null;
 
-        await bcrypt.compare(password, findUser.password).then((result) => {
+        await bcrypt.compare(password, findUser.password).then(async (result) => {
 
             if (result) {
                 const { password, ...data } = findUser;
@@ -288,9 +351,14 @@ export class AuthenticationService {
                     data.email,
                 );
 
-                this.db.update(schema.users).set({
-                    refreshtoken: tokens.refreshToken,
-                }).where(eq(schema.users.id, data.id));
+                await this.prisma.user.update({
+                    where: {
+                        id: findUser.id
+                    },
+                    data: {
+                        refreshToken: tokens.refreshToken
+                    }
+                });
 
                 return {
                     accessToken: tokens.accessToken,

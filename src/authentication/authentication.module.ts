@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthenticationService } from './authentication.service';
 import { AuthenticationController } from './authentication.controller';
-import { DrizzleModule } from 'src/drizzle/drizzle.module';
 import { JwtModule } from '@nestjs/jwt';
 import { LocalStrategy } from './utils/local.strategy';
 import { PassportModule } from '@nestjs/passport';
@@ -11,10 +10,11 @@ import { JwtStrategy } from './utils/jwt.strategy';
 import { RefJwtStrategy } from './utils/refjwt.strategy';
 import { GoogleStrategy } from './utils/google.strategy';
 import { MailService } from 'src/mail/mail.service';
+import { PrismaModule } from 'src/prisma/prisma.module';
 
 @Module({
   imports: [
-    DrizzleModule,
+    PrismaModule,
     JwtModule.register({}),
     PassportModule.register({
       defaultStrategy: 'jwt',

@@ -2,12 +2,14 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
-import { DrizzleModule } from './drizzle/drizzle.module';
 import { AuthenticationModule } from './authentication/authentication.module';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 import { CacheModule } from '@nestjs/cache-manager';
 import { MailModule } from './mail/mail.module';
+import { FileModule } from './file/file.module';
+import { MinioClientModule } from './minio-client/minio-client.module';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -24,7 +26,7 @@ import { MailModule } from './mail/mail.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), DrizzleModule, AuthenticationModule, MailModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule],
   controllers: [AppController],
   providers: [AppService],
 })
