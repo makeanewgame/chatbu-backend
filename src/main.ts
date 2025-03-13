@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import * as bodyParser from 'body-parser';
+
 
 import { join } from 'path';
 
@@ -11,10 +13,13 @@ async function bootstrap() {
   const port = configService.get<number>('PORT');
 
   app.setGlobalPrefix('api');
-
+  app.use(bodyParser.json({ limit: '20mb' }));
+  app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
   app.enableCors({
     origin: configService.get<string>('CORS_ORIGIN'),
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
+    optionsSuccessStatus: 204
   });
 
 

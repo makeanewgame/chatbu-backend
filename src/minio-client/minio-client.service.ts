@@ -3,6 +3,7 @@ import { MinioService } from 'nestjs-minio-client';
 import { BufferedFile, AppMimeType } from './file.model';
 import * as crypto from 'crypto'
 import { ConfigService } from '@nestjs/config';
+import { Express } from 'express';
 
 @Injectable()
 export class MinioClientService {
@@ -13,13 +14,18 @@ export class MinioClientService {
 
     constructor(private readonly minio: MinioService, private configService: ConfigService) { }
 
-    public async upload(file: BufferedFile, baseBucket: string) {
+    public async upload(file: Express.Multer.File, baseBucket: string, userId: string) {
 
-
-        // how to check if file.mimetype is instance of AppMimeType
-
-        // Check if file.mimetype is a valid AppMimeType
-
+        let userFolder = false
+        //Check user directory created
+        this.client.statObject(baseBucket, userId, function (err, stat) {
+            if (err) {
+                userFolder = false
+            }
+            else {
+                userFolder = true
+            }
+        })
         const isValidMimeType = file.mimetype.includes(file.mimetype as AppMimeType);
 
         if (!isValidMimeType) {
@@ -33,7 +39,7 @@ export class MinioClientService {
             'Content-Type': file.mimetype,
             'X-Amz-Meta-Testing': 1234,
         };
-        let filename = hashedFileName + ext
+        let filename = userId + '/' + hashedFileName + ext
         const fileName: string = `${filename}`;
         const fileBuffer = file.buffer;
         this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err, res) {
@@ -41,14 +47,12 @@ export class MinioClientService {
         })
 
         return {
-            url: `${this.configService.get('MINIO_ENDPOINT')}:${this.configService.get('MINIO_PORT')}/${this.configService.get('MINIO_BUCKET')}/${filename}`,
-            filename: filename
-
+            url: `${filename}`,
         }
     }
 
     async delete(objetName: string, baseBucket: string) {
-        this.client.removeObject(baseBucket, objetName, function (err, res) {
+        return this.client.removeObject(baseBucket, objetName, function (err, res) {
             if (err) throw new HttpException("Oops Something wrong happend", HttpStatus.BAD_REQUEST)
         })
     }

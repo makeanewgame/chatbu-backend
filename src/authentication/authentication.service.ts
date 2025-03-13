@@ -20,9 +20,8 @@ export class AuthenticationService {
     ) { }
 
     async register(user: any, lang: string) {
-
-        user.refreshtoken = "";
-        user.updated_at = new Date().toISOString();
+        user.refreshToken = "";
+        user.updatedAt = new Date().toISOString();
 
 
         const findUser = await this.prisma.user.findFirst({
@@ -52,11 +51,6 @@ export class AuthenticationService {
             const company = process.env.COMPANY_NAME;
             const company_address = process.env.COMPANY_ADDRESS;
 
-            console.log("company", company)
-            console.log("company_address", company_address)
-            console.log("activationUrl", activationUrl)
-            console.log("code", code)
-
             this.mail.sendRegisterMail(user.email, code, lang, user.name, company, company_address, activationUrl);
 
             this.logger.info('Registering user', user.email);
@@ -68,11 +62,6 @@ export class AuthenticationService {
 
     async activateRegistration(email: string, code: string) {
         const cachedCode = await this.cacheManager.get(email);
-
-        console.log("cachedCode", cachedCode)
-        console.log("code", code)
-
-
         const findUser = await this.prisma.user.findFirst({
             where: {
                 email: email
@@ -172,12 +161,12 @@ export class AuthenticationService {
                 email: email,
                 name: user.displayName,
                 password: "",
-                phonenumber: "",
+                phoneNumber: user.phoneNumber,
                 emailVerified: true,
                 phoneVerified: false,
-                refreshtoken: "",
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                refreshToken: "",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
             }
 
             await this.prisma.user.create({

@@ -10,6 +10,7 @@ import { MailModule } from './mail/mail.module';
 import { FileModule } from './file/file.module';
 import { MinioClientModule } from './minio-client/minio-client.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { MulterModule } from '@nestjs/platform-express';
 
 @Module({
   imports: [
