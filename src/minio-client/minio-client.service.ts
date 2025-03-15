@@ -39,7 +39,7 @@ export class MinioClientService {
             'Content-Type': file.mimetype,
             'X-Amz-Meta-Testing': 1234,
         };
-        let filename = userId + '/' + hashedFileName + ext
+        let filename = userId + '/documents/' + hashedFileName + ext
         const fileName: string = `${filename}`;
         const fileBuffer = file.buffer;
         this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err, res) {
