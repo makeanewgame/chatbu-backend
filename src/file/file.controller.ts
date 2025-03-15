@@ -50,4 +50,10 @@ export class FileController {
     async ingest(@Body() body: { user: string }) {
         return await this.fileService.ingest(body.user)
     }
+
+    @Get('check')
+    async check() {
+        return await this.fileService.check()
+
+    }
 }   

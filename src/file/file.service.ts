@@ -139,4 +139,21 @@ export class FileService {
         console.log("ingest gelen", data);
         return data;
     }
+
+    async check() {
+
+        const check = await this.minioClientService.check();
+        console.log("check", check)
+
+        if (check) {
+            return {
+                message: "File service is working"
+            }
+        }
+        else {
+            return {
+                message: "File service is not working"
+            }
+        }
+    }
 }

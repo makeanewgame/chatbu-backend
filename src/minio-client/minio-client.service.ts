@@ -42,8 +42,12 @@ export class MinioClientService {
         let filename = userId + '/documents/' + hashedFileName + ext
         const fileName: string = `${filename}`;
         const fileBuffer = file.buffer;
-        this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err, res) {
-            if (err) throw new HttpException('Error uploading file', HttpStatus.BAD_REQUEST)
+        this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err, exists) {
+            if (err) {
+                console.log(err)
+                throw new HttpException("Oops Something wrong happend", HttpStatus.BAD_REQUEST)
+            }
+            return exists
         })
 
         return {
@@ -56,4 +60,21 @@ export class MinioClientService {
             if (err) throw new HttpException("Oops Something wrong happend", HttpStatus.BAD_REQUEST)
         })
     }
+
+    async check() {
+        try {
+            const exists = await this.client.bucketExists(this.configService.get('S3_BUCKET_NAME'))
+            if (exists) {
+                return true
+            }
+
+            else {
+                return false
+            }
+        }
+        catch (err) {
+            console.log(err)
+        }
+    }
+
 }
