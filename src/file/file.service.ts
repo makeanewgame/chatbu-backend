@@ -122,6 +122,7 @@ export class FileService {
         }
 
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
+        console.log("ingestUrl", ingestUrl);
 
         console.log("uuid", userId)
         const { data } = await firstValueFrom(
@@ -131,8 +132,7 @@ export class FileService {
             )
                 .pipe(
                     catchError((error: AxiosError) => {
-                        //this.logger.error(error.response.data);
-                        console.log("error", error.response.data)
+                        console.log("error", error);
                         throw 'An error happened!';
                     }),
                 ));
