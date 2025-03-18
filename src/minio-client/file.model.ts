@@ -23,6 +23,18 @@ export interface StoredFileMetadata {
     fileSrc?: string;
 }
 
+export enum FileStorageType {
+    'image/png' = 'png',
+    'image/jpeg' = 'jpeg',
+    'application/pdf' = 'pdf',
+    'text/csv' = 'csv',
+    'text/plain' = 'txt',
+    'application/msword' = 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' = 'docx',
+    'application/vnd.ms-excel' = 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' = 'xlsx',
+}
+
 export type AppMimeType =
     | 'image/png'
     | 'image/jpeg'

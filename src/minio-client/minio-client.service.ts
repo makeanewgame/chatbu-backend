@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { MinioService } from 'nestjs-minio-client';
-import { BufferedFile, AppMimeType } from './file.model';
+import { BufferedFile, AppMimeType, FileStorageType } from './file.model';
 import * as crypto from 'crypto'
 import { ConfigService } from '@nestjs/config';
 import { Express } from 'express';
@@ -34,12 +34,13 @@ export class MinioClientService {
 
         let temp_filename = Date.now().toString()
         let hashedFileName = crypto.createHash('md5').update(temp_filename).digest("hex");
+        // uuid / customer-raw-documents / file type / file name
         let ext = file.originalname.substring(file.originalname.lastIndexOf('.'), file.originalname.length);
         const metaData = {
             'Content-Type': file.mimetype,
             'X-Amz-Meta-Testing': 1234,
         };
-        let filename = userId + '/documents/' + hashedFileName + ext
+        let filename = userId + '/' + FileStorageType[file.mimetype] + '/' + hashedFileName + ext
         const fileName: string = `${filename}`;
         const fileBuffer = file.buffer;
         this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err, exists) {
