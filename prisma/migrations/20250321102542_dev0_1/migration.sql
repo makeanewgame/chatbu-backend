@@ -3,6 +3,7 @@ CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL,
+    "phonenumber" TEXT,
     "password" TEXT NOT NULL,
     "refreshToken" TEXT,
     "emailVerified" BOOLEAN NOT NULL DEFAULT false,
@@ -28,6 +29,12 @@ CREATE TABLE "Storage" (
 
     CONSTRAINT "Storage_pkey" PRIMARY KEY ("id")
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_phonenumber_key" ON "User"("phonenumber");
 
 -- AddForeignKey
 ALTER TABLE "Storage" ADD CONSTRAINT "Storage_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
