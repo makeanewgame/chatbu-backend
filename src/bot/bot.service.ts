@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
 import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
+import { QuotaType } from 'src/util/enums';
+import { debug } from 'console';
 
 @Injectable()
 export class BotService {
@@ -21,23 +23,66 @@ export class BotService {
             throw new Error('Error acuring user');
         }
 
-        const bot = await this.prisma.customerBots.create({
-            data: {
-                botName: body.botName,
-                botAvatar: body.botAvatar.toString(),
-                user: {
-                    connect: {
-                        id: body.user
-                    }
-                }
+        //bot quota for user
+
+        const bots = await this.prisma.customerBots.findMany({
+            where: {
+                userId: body.user,
+                isDeleted: false
             }
-        })
+        });
 
-        if (bot) {
-            return { message: 'Bot created' };
+        console.log("user bots  -->", bots);
+
+        const botQuota = await this.prisma.quota.findFirst({
+            where: {
+                userId: body.user,
+                quotaType: "BOT"
+            }
+        });
+
+
+        console.log("bot quota  -->", botQuota);
+
+
+        if (botQuota) {
+            if (bots.length >= botQuota.limit) {
+                throw new ForbiddenException('Bot quota exceeded');
+            }
+
+            else if (bots.length < botQuota.limit) {
+                console.log("bot creation...", body.systemPrompt);
+
+                const bot = await this.prisma.customerBots.create({
+                    data: {
+                        botName: body.botName,
+                        botAvatar: body.botAvatar.toString(),
+                        systemPrompt: body.systemPrompt,
+                        user: {
+                            connect: {
+                                id: body.user
+                            }
+                        }
+                    }
+                })
+
+                if (bot) {
+                    await this.prisma.quota.update({
+                        where: {
+                            id: botQuota.id
+                        },
+                        data: {
+                            used: botQuota.used + 1
+                        }
+                    });
+
+                    return { message: 'Bot created' };
+                }
+                throw new Error('Error creating bot');
+
+            }
         }
-        throw new Error('Error creating bot');
-
+        throw new ForbiddenException('Error creating bot');
     }
 
     async deleteBot(body: DeleteBotRequest) {
@@ -64,6 +109,27 @@ export class BotService {
         });
 
         if (bot) {
+
+            const botQuota = await this.prisma.quota.findFirst({
+                where: {
+                    userId: body.userId,
+                    quotaType: "BOT"
+                }
+            });
+
+            console.log("bot quota used Value  -->", botQuota.used);
+
+            if (botQuota) {
+                await this.prisma.quota.update({
+                    where: {
+                        id: botQuota.id
+                    },
+                    data: {
+                        used: (botQuota.used - 1)
+                    }
+                });
+            }
+
             return { message: 'Bot deleted' };
         }
         throw new Error('Error deleting bot');
@@ -116,7 +182,8 @@ export class BotService {
                 id: body.botId
             },
             data: {
-                botName: body.name
+                botName: body.name,
+                systemPrompt: body.systemPrompt
             }
         });
 
