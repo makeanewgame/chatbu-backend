@@ -14,4 +14,8 @@ export class CreateBotRequest {
     @IsNotEmpty()
     botAvatar: string;
 
+    @IsString()
+    @IsNotEmpty()
+    systemPrompt: string;
+
 }

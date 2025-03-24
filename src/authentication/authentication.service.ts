@@ -7,6 +7,7 @@ import { MailService } from 'src/mail/mail.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { QuotaService } from 'src/quota/quota.service';
 
 @Injectable()
 export class AuthenticationService {
@@ -15,9 +16,10 @@ export class AuthenticationService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private prisma: PrismaService,
+    private quoteService: QuotaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
-  ) {}
+  ) { }
 
   async register(user: any, lang: string) {
     user.refreshToken = '';
@@ -40,7 +42,7 @@ export class AuthenticationService {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       await this.cacheManager.set(user.email, code, 60 * 60 * 24);
 
-      await this.prisma.user.create({
+      const createdUser = await this.prisma.user.create({
         data: {
           name: user.name,
           email: user.email,
@@ -50,6 +52,8 @@ export class AuthenticationService {
           phoneVerified: false,
         },
       });
+
+      await this.quoteService.createDefaultQuotas(createdUser.id)
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -176,15 +180,12 @@ export class AuthenticationService {
         updatedAt: new Date().toISOString(),
       };
 
-      await this.prisma.user.create({
+      findUser = await this.prisma.user.create({
         data: tempUser,
       });
 
-      findUser = await this.prisma.user.findFirst({
-        where: {
-          email: email,
-        },
-      });
+      await this.quoteService.createDefaultQuotas(findUser.id);
+
     }
 
     const { password, ...data } = findUser;
@@ -209,7 +210,7 @@ export class AuthenticationService {
     };
   }
 
-  async registerGoogleUser(user: any) {}
+  async registerGoogleUser(user: any) { }
 
   async logout(email: string) {
     // Check schema to use the correct field name instead of 'refreshToken'

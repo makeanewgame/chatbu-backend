@@ -13,4 +13,8 @@ export class RenameBotRequest {
     @IsString()
     @IsNotEmpty()
     name: string;
+
+    @IsString()
+    @IsNotEmpty()
+    systemPrompt: string;
 }

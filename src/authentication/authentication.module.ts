@@ -11,6 +11,7 @@ import { RefJwtStrategy } from './utils/refjwt.strategy';
 import { GoogleStrategy } from './utils/google.strategy';
 import { MailService } from 'src/mail/mail.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
+import { QuotaService } from 'src/quota/quota.service';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { PrismaModule } from 'src/prisma/prisma.module';
     RefJwtStrategy,
     LocalStrategy,
     GoogleStrategy,
+    QuotaService,
     MailService,
     {
       provide: 'AUTH_SERVICE',
