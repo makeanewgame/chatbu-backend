@@ -1,0 +1,291 @@
+{
+  "messages": [
+    {
+      "content": "Bootcamp programında hangi veri depolama formatları kullanılır?",
+      "additional_kwargs": {},
+      "response_metadata": {},
+      "type": "human",
+      "name": null,
+      "id": "eecd6d7d-1dbe-4686-a94d-c6c8b19e4c48",
+      "example": false
+    },
+    {
+      "content": "",
+      "additional_kwargs": {
+        "tool_calls": [
+          {
+            "id": "call_i3jgRU2VgKNORDOE2JlTtWKK",
+            "function": {
+              "arguments": "{\"query\":\"Bootcamp programında kullanılan veri depolama formatları\"}",
+              "name": "retrieve_documents"
+            },
+            "type": "function"
+          }
+        ],
+        "refusal": null
+      },
+      "response_metadata": {
+        "token_usage": {
+          "completion_tokens": 25,
+          "prompt_tokens": 94,
+          "total_tokens": 119,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 0
+          }
+        },
+        "model_name": "gpt-4o-mini-2024-07-18",
+        "system_fingerprint": "fp_06737a9306",
+        "id": "chatcmpl-BCQsjlb7ADZryI3C3Kthhe85aww9K",
+        "finish_reason": "tool_calls",
+        "logprobs": null
+      },
+      "type": "ai",
+      "name": null,
+      "id": "run-08cec0ed-04d9-4352-849e-f13c39952649-0",
+      "example": false,
+      "tool_calls": [
+        {
+          "name": "retrieve_documents",
+          "args": {
+            "query": "Bootcamp programında kullanılan veri depolama formatları"
+          },
+          "id": "call_i3jgRU2VgKNORDOE2JlTtWKK",
+          "type": "tool_call"
+        }
+      ],
+      "invalid_tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 94,
+        "output_tokens": 25,
+        "total_tokens": 119,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      }
+    },
+    {
+      "content": "Error: UnexpectedResponse()\n Please fix your mistakes.",
+      "additional_kwargs": {},
+      "response_metadata": {},
+      "type": "tool",
+      "name": "retrieve_documents",
+      "id": "ea10b3c0-f86e-4f34-971e-e71ecdb829fc",
+      "tool_call_id": "call_i3jgRU2VgKNORDOE2JlTtWKK",
+      "artifact": null,
+      "status": "error"
+    },
+    {
+      "content": "",
+      "additional_kwargs": {
+        "tool_calls": [
+          {
+            "id": "call_uwQbyagv6G62OxKjqwy17nQV",
+            "function": {
+              "arguments": "{\"query\":\"veri depolama formatları Bootcamp programı\"}",
+              "name": "retrieve_documents"
+            },
+            "type": "function"
+          }
+        ],
+        "refusal": null
+      },
+      "response_metadata": {
+        "token_usage": {
+          "completion_tokens": 25,
+          "prompt_tokens": 136,
+          "total_tokens": 161,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 0
+          }
+        },
+        "model_name": "gpt-4o-mini-2024-07-18",
+        "system_fingerprint": "fp_06737a9306",
+        "id": "chatcmpl-BCQskVAfLVYXQuQaDfi8kwkNzrx7t",
+        "finish_reason": "tool_calls",
+        "logprobs": null
+      },
+      "type": "ai",
+      "name": null,
+      "id": "run-d343bdef-83bf-4f90-9ee7-f933b59843aa-0",
+      "example": false,
+      "tool_calls": [
+        {
+          "name": "retrieve_documents",
+          "args": {
+            "query": "veri depolama formatları Bootcamp programı"
+          },
+          "id": "call_uwQbyagv6G62OxKjqwy17nQV",
+          "type": "tool_call"
+        }
+      ],
+      "invalid_tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 136,
+        "output_tokens": 25,
+        "total_tokens": 161,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      }
+    },
+    {
+      "content": "Error: UnexpectedResponse()\n Please fix your mistakes.",
+      "additional_kwargs": {},
+      "response_metadata": {},
+      "type": "tool",
+      "name": "retrieve_documents",
+      "id": "dab078ef-8275-4645-9b9a-73c7b2a05427",
+      "tool_call_id": "call_uwQbyagv6G62OxKjqwy17nQV",
+      "artifact": null,
+      "status": "error"
+    },
+    {
+      "content": "",
+      "additional_kwargs": {
+        "tool_calls": [
+          {
+            "id": "call_Ptcv2KXOmmp9zAjl5qjA3o2K",
+            "function": {
+              "arguments": "{\"query\":\"Bootcamp veri depolama formatları\"}",
+              "name": "retrieve_documents"
+            },
+            "type": "function"
+          }
+        ],
+        "refusal": null
+      },
+      "response_metadata": {
+        "token_usage": {
+          "completion_tokens": 22,
+          "prompt_tokens": 178,
+          "total_tokens": 200,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 0
+          }
+        },
+        "model_name": "gpt-4o-mini-2024-07-18",
+        "system_fingerprint": "fp_06737a9306",
+        "id": "chatcmpl-BCQslydR37EFowDMnEJEpDdXzuzb1",
+        "finish_reason": "tool_calls",
+        "logprobs": null
+      },
+      "type": "ai",
+      "name": null,
+      "id": "run-8ec040d7-3012-4b9b-a3a3-ae0a3dd48d53-0",
+      "example": false,
+      "tool_calls": [
+        {
+          "name": "retrieve_documents",
+          "args": {
+            "query": "Bootcamp veri depolama formatları"
+          },
+          "id": "call_Ptcv2KXOmmp9zAjl5qjA3o2K",
+          "type": "tool_call"
+        }
+      ],
+      "invalid_tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 178,
+        "output_tokens": 22,
+        "total_tokens": 200,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      }
+    },
+    {
+      "content": "Error: UnexpectedResponse()\n Please fix your mistakes.",
+      "additional_kwargs": {},
+      "response_metadata": {},
+      "type": "tool",
+      "name": "retrieve_documents",
+      "id": "d983b446-6316-4709-a4d7-737ef8097e3b",
+      "tool_call_id": "call_Ptcv2KXOmmp9zAjl5qjA3o2K",
+      "artifact": null,
+      "status": "error"
+    },
+    {
+      "content": "Görünüşe göre veri tabanımda bu konu hakkında bir bilgiye ulaşamıyorum. Ancak, genel olarak bir Bootcamp programında yaygın olarak kullanılan veri depolama formatları aşağıda listelenmiştir:\n\n1. **CSV (Comma-Separated Values)**: Verilerin basit bir metin dosyası formatında saklanması için sıkça kullanılır.\n2. **JSON (JavaScript Object Notation)**: Verileri yapılandırılmış bir formatta depolamak için kullanılır. Özellikle web uygulamalarında yaygındır.\n3. **XML (eXtensible Markup Language)**: Veri değişimi için kullanılan bir başka yaygın format.\n4. **Parquet**: Büyük veri sistemlerinde sütun bazlı veri depolama için kullanılır.\n5. **HDF5 (Hierarchical Data Format version 5)**: Bilimsel verilerin depolanmasında kullanılır ve hiyerarşisel veri yapıları sunar.\n\nEğer belirli bir Bootcamp programı veya daha fazla detay isterseniz, lütfen belirtin!",
+      "additional_kwargs": {
+        "refusal": null
+      },
+      "response_metadata": {
+        "token_usage": {
+          "completion_tokens": 227,
+          "prompt_tokens": 217,
+          "total_tokens": 444,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": 0,
+            "audio_tokens": 0,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": 0
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": 0,
+            "cached_tokens": 0
+          }
+        },
+        "model_name": "gpt-4o-mini-2024-07-18",
+        "system_fingerprint": "fp_06737a9306",
+        "id": "chatcmpl-BCQsmHkzy3NzBBJQETK1Q9pGahz6V",
+        "finish_reason": "stop",
+        "logprobs": null
+      },
+      "type": "ai",
+      "name": null,
+      "id": "run-92774ec8-a280-457a-ae93-a3b0c03887ec-0",
+      "example": false,
+      "tool_calls": [],
+      "invalid_tool_calls": [],
+      "usage_metadata": {
+        "input_tokens": 217,
+        "output_tokens": 227,
+        "total_tokens": 444,
+        "input_token_details": {
+          "audio": 0,
+          "cache_read": 0
+        },
+        "output_token_details": {
+          "audio": 0,
+          "reasoning": 0
+        }
+      }
+    }
+  ]
+}
