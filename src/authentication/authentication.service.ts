@@ -349,7 +349,6 @@ export class AuthenticationService {
           accessToken: tokens.accessToken,
         };
       }
-
       return null;
     });
   }

@@ -11,6 +11,7 @@ import { FileModule } from './file/file.module';
 import { MinioClientModule } from './minio-client/minio-client.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { MulterModule } from '@nestjs/platform-express';
+import { BotModule } from './bot/bot.module';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { MulterModule } from '@nestjs/platform-express';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule],
   controllers: [AppController],
   providers: [AppService],
 })

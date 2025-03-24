@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
 import { catchError, firstValueFrom, } from 'rxjs';
 import { AxiosError } from 'axios';
+import { FileStorageType } from 'src/minio-client/file.model';
 
 
 @Injectable()
@@ -107,7 +108,11 @@ export class FileService {
         return fileList
     }
 
-    async ingest(userId: string) {
+    async ingest(userId: string, fileType: string) {
+
+        return {
+            message: "Ingest service is not available"
+        }
 
         const findUser = await this.prisma.user.findFirst({
             where: {
@@ -122,12 +127,19 @@ export class FileService {
         }
 
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
-        console.log("ingestUrl", ingestUrl);
 
         console.log("uuid", userId)
+        console.log("file_extension", FileStorageType[fileType]);
+
+
+        //ingest servisi dosya tipine göre çağrılacak....
+
+
+
         const { data } = await firstValueFrom(
-            this.httpService.post(`${ingestUrl}/ingest-documents/`, {
-                uuid: userId
+            this.httpService.post(`${ingestUrl}/ingest-documents/${FileStorageType[fileType]}`, {
+                cuid: userId,
+                file_extension: FileStorageType[fileType]
             }
             )
                 .pipe(

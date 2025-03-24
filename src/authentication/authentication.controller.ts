@@ -7,6 +7,7 @@ import { AccessTokenGuard } from './utils/accesstoken.guard';
 import { ActivateRegistrationRequest } from './dto/activateregister.request';
 import { LoginRequest } from './dto/login.request';
 import { Language } from 'src/lang';
+import { PasswordRequestChange } from './dto/passwordChangeRequest';
 
 @Controller('auth')
 export class AuthenticationController {

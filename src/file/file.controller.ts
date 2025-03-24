@@ -1,4 +1,4 @@
-import { Controller, UseInterceptors, Post, Body, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator, UploadedFiles, Get, UseGuards, Req, Param } from '@nestjs/common';
+import { Controller, UseInterceptors, Post, Body, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator, UploadedFiles, Get, UseGuards, Req, Param, Put } from '@nestjs/common';
 import { FileService } from './file.service';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
@@ -47,8 +47,8 @@ export class FileController {
 
     @Post('ingest')
     @UseGuards(AccessTokenGuard)
-    async ingest(@Body() body: { user: string }) {
-        return await this.fileService.ingest(body.user)
+    async ingest(@Body() body: { user: string, type: string }) {
+        return await this.fileService.ingest(body.user, body.type)
     }
 
     @Get('check')
@@ -56,4 +56,5 @@ export class FileController {
         return await this.fileService.check()
 
     }
+
 }   
