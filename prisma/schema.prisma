@@ -13,18 +13,36 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum QuotaType {
+  BOT
+  FILE
+}
+
 model User {
-  id            String    @id @default(cuid())
-  name          String    
-  email         String    @unique
-  phonenumber   String?    @unique
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  phonenumber   String?        @unique
   password      String
   refreshToken  String?
-  emailVerified Boolean   @default(false)
-  phoneVerified Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  emailVerified Boolean        @default(false)
+  phoneVerified Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   Storage       Storage[]
+  CustomerBots  CustomerBots[]
+  Quota         Quota[]
+}
+
+model Quota {
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  quotaType QuotaType?
+  limit     Int        @default(0)
+  used      Int        @default(0)
+
+  @@unique([userId, quotaType])
 }
 
 model Storage {
@@ -39,4 +57,18 @@ model Storage {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   isDeleted Boolean   @default(false)
+}
+
+model CustomerBots {
+  id           String    @id @default(cuid())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  botName      String
+  botAvatar    String
+  systemPrompt String    @default("")
+  active       Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
 }
