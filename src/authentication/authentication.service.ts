@@ -28,7 +28,6 @@ export class AuthenticationService {
         email: user.email,
       },
     });
-    //Kullanıcı daha önce kayıt olmuş ise onu login sayfasına şifresini girecek bir şekilde yönlendir.
 
     if (findUser) {
       return false;
@@ -36,7 +35,6 @@ export class AuthenticationService {
       const bcrypt = require('bcrypt');
       user.password = await bcrypt.hash(user.password, 10);
 
-      //create temp code 6 digits
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       await this.cacheManager.set(user.email, code, 60 * 60 * 24);
 
@@ -318,6 +316,45 @@ export class AuthenticationService {
     });
 
     return { accessToken: tokens.accessToken };
+  }
+
+  async resetPassword(
+    email: string,
+    code: string,
+    newPassword: string,
+    lang: string,
+  ) {
+    const findUser = await this.prisma.user.findFirst({
+      where: { email: email },
+    });
+
+    if (!findUser) {
+      throw new Error('Bu e-posta adresine sahip kullanıcı bulunamadı.');
+    }
+
+    const storedCode = await this.cacheManager.get<string>(
+      `reset_code_${email}`,
+    );
+
+    if (!storedCode || storedCode !== code) {
+      throw new Error('Geçersiz veya süresi dolmuş kod.');
+    }
+
+    // Yeni şifreyi hashle
+    const bcrypt = require('bcrypt');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Kullanıcının şifresini güncelle
+    await this.prisma.user.update({
+      where: { email: email },
+      data: { password: hashedPassword, updatedAt: new Date().toISOString() },
+    });
+
+    // Kullanılmış kodu cache'den sil
+    await this.cacheManager.del(`reset_code_${email}`);
+
+    await this.mail.sendPasswordChangedMail(email, code, lang);
+    return { success: true, message: 'Şifreniz başarıyla güncellendi.' };
   }
 
   async validateUserByJwt(email: string, password: string) {
