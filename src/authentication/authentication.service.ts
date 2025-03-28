@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthenticationService {
@@ -19,7 +20,7 @@ export class AuthenticationService {
     private quoteService: QuotaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
-  ) { }
+  ) {}
 
   async register(user: any, lang: string) {
     user.refreshToken = '';
@@ -30,7 +31,6 @@ export class AuthenticationService {
         email: user.email,
       },
     });
-    //Kullanıcı daha önce kayıt olmuş ise onu login sayfasına şifresini girecek bir şekilde yönlendir.
 
     if (findUser) {
       return false;
@@ -38,7 +38,6 @@ export class AuthenticationService {
       const bcrypt = require('bcrypt');
       user.password = await bcrypt.hash(user.password, 10);
 
-      //create temp code 6 digits
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       await this.cacheManager.set(user.email, code, 60 * 60 * 24);
 
@@ -53,7 +52,7 @@ export class AuthenticationService {
         },
       });
 
-      await this.quoteService.createDefaultQuotas(createdUser.id)
+      await this.quoteService.createDefaultQuotas(createdUser.id);
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -120,7 +119,89 @@ export class AuthenticationService {
     }
     return { success: false };
   }
+  async lostPassword(user: any, lang: string) {
+    user.refreshToken = '';
+    user.updatedAt = new Date().toISOString();
 
+    const findUser = await this.prisma.user.findFirst({
+      where: {
+        email: user.email,
+      },
+    });
+
+    if (!findUser) {
+      return false; // Kullanıcı yoksa false dön
+    }
+
+    // // Kullanıcı varsa, kod üret ve e-posta gönder
+    // const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const uuidVerificationCode = randomUUID();
+
+    // await this.cacheManager.set(
+    //   findUser.id,
+    //   uuidVerificationCode,
+    //   60 * 60 * 24,
+    // );
+
+    await this.cacheManager.set(
+      findUser.id,
+      uuidVerificationCode,
+      60 * 60 * 24,
+    );
+
+    const redirectUrl =
+      process.env.FRONTEND_URL +
+      '/reset-password?token=' +
+      uuidVerificationCode +
+      '&uId=' +
+      findUser.id;
+    this.mail.sendActivateLostPasswordMail(
+      user.email,
+      uuidVerificationCode,
+      lang,
+      redirectUrl,
+    );
+    return true;
+
+    if (findUser) {
+      return false;
+    } else {
+      const bcrypt = require('bcrypt');
+      user.password = await bcrypt.hash(user.password, 10);
+
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      await this.cacheManager.set(user.email, code, 60 * 60 * 24);
+
+      const createdUser = await this.prisma.user.create({
+        data: {
+          name: user.name,
+          email: user.email,
+          password: user.password,
+          phonenumber: user.phonenumber,
+          emailVerified: true,
+          phoneVerified: false,
+        },
+      });
+
+      await this.quoteService.createDefaultQuotas(createdUser.id);
+
+      const activationUrl =
+        process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
+
+      this.mail.sendActivateLostPasswordMail(
+        user.email,
+        code,
+        lang,
+
+        activationUrl,
+      );
+
+      this.logger.info('Registering user', user.email);
+    }
+
+    return true;
+  }
   async login(email: string, password: string) {
     const bcrypt = require('bcrypt');
 
@@ -185,7 +266,6 @@ export class AuthenticationService {
       });
 
       await this.quoteService.createDefaultQuotas(findUser.id);
-
     }
 
     const { password, ...data } = findUser;
@@ -210,12 +290,9 @@ export class AuthenticationService {
     };
   }
 
-  async registerGoogleUser(user: any) { }
+  async registerGoogleUser(user: any) {}
 
   async logout(email: string) {
-    // Check schema to use the correct field name instead of 'refreshToken'
-    // For example, if you have a 'token' field:
-
     const findUser = await this.prisma.user.findFirst({
       where: {
         email: email,
@@ -248,12 +325,6 @@ export class AuthenticationService {
   }
 
   async refreshTokens(accessToken: string) {
-    //TODO: Access Token Revocation List
-    //Access Token Revocation List
-
-    //check access token is valid and time is expired
-    // if this values are valid then get access token from db
-
     const decodedToken = this.jwtService.decode(accessToken);
 
     if (
@@ -319,6 +390,44 @@ export class AuthenticationService {
     });
 
     return { accessToken: tokens.accessToken };
+  }
+
+  async resetPassword(
+    newPassword: string,
+    confirmPassword: string,
+    userId: string,
+    token: string,
+  ) {
+    const findUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!findUser) {
+      throw new Error('Kullanıcı bulunamadı.');
+    }
+
+    if (newPassword !== confirmPassword) {
+      throw new Error('Şifreler uyuşmuyor.');
+    }
+
+    const cachedToken = await this.cacheManager.get(userId);
+
+    if (cachedToken !== token) {
+      throw new Error('Geçersiz token.');
+    }
+
+    const bcrypt = require('bcrypt');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword, updatedAt: new Date().toISOString() },
+    });
+
+    await this.cacheManager.del(`${userId}`);
+
+    await this.mail.sendPasswordChangedMail(findUser.email, cachedToken, 'en');
+    return { success: true, message: 'Şifreniz başarıyla güncellendi.' };
   }
 
   async validateUserByJwt(email: string, password: string) {
