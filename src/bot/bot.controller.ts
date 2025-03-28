@@ -42,5 +42,9 @@ export class BotController {
         return this.botService.changeStatus(body);
     }
 
-
+    @Post('chat')
+    @UseGuards(AccessTokenGuard)
+    async chat(@Body() body: any) {
+        return this.botService.chat(body);
+    }
 }

@@ -1,13 +1,12 @@
 import { IsNotEmpty, IsString } from "@nestjs/class-validator";
 
-export class UploadSingleFileRequest {
-
-    @IsString()
-    @IsNotEmpty()
-    userId: string;
+export class ChatRequest {
 
     @IsString()
     @IsNotEmpty()
     botId: string;
 
+    @IsString()
+    @IsNotEmpty()
+    message: string;
 }

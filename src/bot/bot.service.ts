@@ -6,10 +6,20 @@ import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
 import { QuotaType } from 'src/util/enums';
 import { debug } from 'console';
+import { ChatRequest } from './dto/chatRequest';
+import { catchError, firstValueFrom } from 'rxjs';
+import { HttpService } from '@nestjs/axios';
+import { ConfigService } from '@nestjs/config';
+import { AxiosError } from 'axios';
 
 @Injectable()
 export class BotService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private httpService: HttpService,
+        private configService: ConfigService,
+
+    ) { }
 
     async createBot(body: CreateBotRequest) {
 
@@ -221,5 +231,52 @@ export class BotService {
         }
         throw new Error('Error changing bot status');
 
+    }
+
+    async chat(body: ChatRequest) {
+
+        const botUser = await this.prisma.customerBots.findFirst({
+            where: {
+                id: body.botId
+            }
+        });
+
+        if (!botUser) {
+            throw new Error('Error acuring bot');
+        }
+
+        const ingestUrl = this.configService.get('INGEST_ENPOINT')
+
+
+        // "bot_cuid": "clt9m2kz001xyzc8ya3f9qwe",
+        // "customer_cuid": "clsgyvz7001xezc8ya3f9p3",
+        // "messages": [
+        //   "Airflow dersi hangi haftalarda işleniyor?"
+        // ],
+        // "system_prompt": "Sen bir eğitim sitesi yapay zeka asistanısın. Eğitimlerle ilgili sorulara vektör veri tabanından cevap verirsin."
+
+
+        console.log("bot_cuid", botUser.id);
+        console.log("customer_cuid", botUser.userId);
+        console.log("messages", [body.message]);
+        console.log("system_prompt", botUser.systemPrompt);
+
+
+        const { data } = await firstValueFrom(
+            this.httpService.post(`${ingestUrl}/chat`, {
+                "bot_cuid": botUser.id,
+                "customer_cuid": botUser.userId,
+                "messages": [body.message],
+                "system_prompt": botUser.systemPrompt
+            }
+            )
+                .pipe(
+                    catchError((error: AxiosError) => {
+                        console.log("error", error);
+                        throw 'An error happened!';
+                    }),
+                ));
+        console.log("ingest gelen", data);
+        return data;
     }
 }

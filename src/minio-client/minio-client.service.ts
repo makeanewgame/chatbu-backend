@@ -14,7 +14,7 @@ export class MinioClientService {
 
     constructor(private readonly minio: MinioService, private configService: ConfigService) { }
 
-    public async upload(file: Express.Multer.File, baseBucket: string, userId: string) {
+    public async upload(file: Express.Multer.File, baseBucket: string, userId: string, botId: string): Promise<{ url: string }> {
 
         let userFolder = false
         //Check user directory created
@@ -40,7 +40,7 @@ export class MinioClientService {
             'Content-Type': file.mimetype,
             'X-Amz-Meta-Testing': 1234,
         };
-        let filename = userId + '/' + FileStorageType[file.mimetype] + '/' + hashedFileName + ext
+        let filename = userId + '/' + botId + '/' + FileStorageType[file.mimetype] + '/' + hashedFileName + ext
         const fileName: string = `${filename}`;
         const fileBuffer = file.buffer;
         this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err, exists) {

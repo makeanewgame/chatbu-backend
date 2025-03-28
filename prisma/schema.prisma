@@ -19,19 +19,20 @@ enum QuotaType {
 }
 
 model User {
-  id            String         @id @default(cuid())
+  id            String          @id @default(cuid())
   name          String
-  email         String         @unique
-  phonenumber   String?        @unique
+  email         String          @unique
+  phonenumber   String?         @unique
   password      String
   refreshToken  String?
-  emailVerified Boolean        @default(false)
-  phoneVerified Boolean        @default(false)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  emailVerified Boolean         @default(false)
+  phoneVerified Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   Storage       Storage[]
   CustomerBots  CustomerBots[]
   Quota         Quota[]
+  CustomerChats CustomerChats[]
 }
 
 model Quota {
@@ -49,6 +50,7 @@ model Storage {
   id        String    @id @default(cuid())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
+  botId     String
   fileName  String
   fileUrl   String
   type      String
@@ -71,4 +73,26 @@ model CustomerBots {
   updatedAt    DateTime  @updatedAt
   isDeleted    Boolean   @default(false)
   deletedAt    DateTime?
+}
+
+model CustomerChats {
+  id                  String                @id @default(cuid())
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId              String
+  botId               String
+  chatId              String
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  isDeleted           Boolean               @default(false)
+  deletedAt           DateTime?
+  CustomerChatDetails CustomerChatDetails[]
+}
+
+model CustomerChatDetails {
+  id        String        @id @default(cuid())
+  chat      CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId    String
+  message   String
+  sender    String
+  createdAt DateTime      @default(now())
 }
