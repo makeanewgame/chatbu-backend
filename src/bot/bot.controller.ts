@@ -4,9 +4,11 @@ import { Request } from 'express';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { BotService } from './bot.service';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
-import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
+import { ChageStatusBotRequest, ChageStatusBotResponse } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiOAuth2, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Chat Bot Operations')
 @Controller('bot')
 export class BotController {
     constructor(private botService: BotService) { }
@@ -36,11 +38,25 @@ export class BotController {
         return this.botService.renameBot(body);
     }
 
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Change bot status' })
+    @ApiResponse({
+        status: 200,
+        description: 'Bot status changed',
+        type: ChageStatusBotResponse,
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
     @Post('changeStatus')
     @UseGuards(AccessTokenGuard)
     async changeStatus(@Body() body: ChageStatusBotRequest) {
         return this.botService.changeStatus(body);
     }
 
-
+    @Post('chat')
+    @UseGuards(AccessTokenGuard)
+    async chat(@Body() body: any) {
+        return this.botService.chat(body);
+    }
 }

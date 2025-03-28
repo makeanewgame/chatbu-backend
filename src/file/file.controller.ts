@@ -4,6 +4,7 @@ import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { Request } from 'express';
 import { CustomMaxFileSizeValidator } from './customFileValidator';
+import { IngestRequest } from './dto/ingestRequest';
 
 @Controller('file')
 export class FileController {
@@ -41,20 +42,19 @@ export class FileController {
     @Get('getFiles')
     @UseGuards(AccessTokenGuard)
     async getFiles(@Req() req: Request) {
-        const { user } = req.query;
-        return await this.fileService.getFiles(user as string)
+        const { user, botId } = req.query;
+        return await this.fileService.getFiles(user as string, botId as string)
     }
 
     @Post('ingest')
     @UseGuards(AccessTokenGuard)
-    async ingest(@Body() body: { user: string, type: string }) {
-        return await this.fileService.ingest(body.user, body.type)
+    async ingest(@Body() body: IngestRequest) {
+        return await this.fileService.ingest(body)
     }
 
     @Get('check')
     async check() {
         return await this.fileService.check()
-
     }
 
 }   

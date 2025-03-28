@@ -8,6 +8,7 @@ import { HttpService } from '@nestjs/axios';
 import { catchError, firstValueFrom, } from 'rxjs';
 import { AxiosError } from 'axios';
 import { FileStorageType } from 'src/minio-client/file.model';
+import { IngestRequest } from './dto/ingestRequest';
 
 
 @Injectable()
@@ -27,11 +28,12 @@ export class FileService {
 
         //async function to upload files
         for (const file of files) {
-            const uploaded_file = await this.minioClientService.upload(file, this.configService.get('S3_BUCKET_NAME'), body.userId)
+            const uploaded_file = await this.minioClientService.upload(file, this.configService.get('S3_BUCKET_NAME'), body.userId, body.botId)
 
             await this.prisma.storage.create({
                 data: {
                     userId: body.userId,
+                    botId: body.botId,
                     fileUrl: uploaded_file.url,
                     type: file.mimetype,
                     size: file.size.toString(),
@@ -98,29 +100,30 @@ export class FileService {
         }
     }
 
-    async getFiles(userId: string) {
+    async getFiles(userId: string, botId: string) {
 
         const fileList = await this.prisma.storage.findMany({
             where: {
-                userId: userId ? userId : ''
+                userId: userId ? userId : '',
+                botId: botId ? botId : ''
             }
         })
         return fileList
     }
 
-    async ingest(userId: string, fileType: string) {
+    async ingest(body: IngestRequest) {
 
-        return {
-            message: "Ingest service is not available"
-        }
+        // return {
+        //     message: "Ingest service is not available"
+        // }
 
         const findUser = await this.prisma.user.findFirst({
             where: {
-                id: userId
+                id: body.userId
             }
         })
 
-        if (userId && !findUser) {
+        if (body.userId && !findUser) {
             return {
                 message: "User not found"
             }
@@ -128,18 +131,17 @@ export class FileService {
 
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
-        console.log("uuid", userId)
-        console.log("file_extension", FileStorageType[fileType]);
+        console.log("uuid", body.userId)
+        console.log("file_extension", FileStorageType[body.type]);
 
 
         //ingest servisi dosya tipine göre çağrılacak....
 
-
-
         const { data } = await firstValueFrom(
-            this.httpService.post(`${ingestUrl}/ingest-documents/${FileStorageType[fileType]}`, {
-                cuid: userId,
-                file_extension: FileStorageType[fileType]
+            this.httpService.post(`${ingestUrl}/ingest-documents/${FileStorageType[body.type]}`, {
+                "bot_cuid": body.botId,
+                "customer_cuid": body.userId,
+                "file_extension": FileStorageType[body.type],
             }
             )
                 .pipe(
