@@ -1,17 +1,19 @@
-import { IsNotEmpty, IsString } from "@nestjs/class-validator";
+import { IsNotEmpty, IsString } from '@nestjs/class-validator';
 
 export class PasswordRequestChange {
+  @IsString()
+  @IsNotEmpty()
+  newPassword: string;
 
-    @IsString()
-    @IsNotEmpty()
-    email: string;
+  @IsString()
+  @IsNotEmpty()
+  confirmPassword: string;
 
-    @IsString()
-    @IsNotEmpty()
-    code: string;
+  @IsString()
+  @IsNotEmpty()
+  token: string;
 
-    @IsString()
-    @IsNotEmpty()
-    userId: string;
-
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
 }
