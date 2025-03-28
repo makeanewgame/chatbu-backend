@@ -1,6 +1,7 @@
+
 import { IsNotEmpty, IsString } from "@nestjs/class-validator";
 
-export class UploadSingleFileRequest {
+export class IngestRequest {
 
     @IsString()
     @IsNotEmpty()
@@ -9,5 +10,9 @@ export class UploadSingleFileRequest {
     @IsString()
     @IsNotEmpty()
     botId: string;
+
+    @IsString()
+    @IsNotEmpty()
+    type: string;
 
 }
