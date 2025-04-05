@@ -6,7 +6,7 @@ import { BotService } from './bot.service';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
 import { ChageStatusBotRequest, ChageStatusBotResponse } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiOAuth2, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiOAuth2, ApiOkResponse, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Chat Bot Operations')
 @Controller('bot')
@@ -25,6 +25,22 @@ export class BotController {
         return this.botService.deleteBot(body);
     }
 
+
+    @ApiOperation({ summary: 'List all bots for a user' })
+    @ApiResponse({
+        status: 200,
+        description: 'List of bots',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiParam({
+        name: 'user',
+        description: 'User ID in uuid format',
+        required: true,
+        type: String,
+    })
     @Get('list')
     @UseGuards(AccessTokenGuard)
     async listBots(@Req() req: Request) {
