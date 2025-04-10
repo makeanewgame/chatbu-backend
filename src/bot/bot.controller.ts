@@ -72,7 +72,11 @@ export class BotController {
 
     @Post('chat')
     @UseGuards(AccessTokenGuard)
-    async chat(@Body() body: any) {
-        return this.botService.chat(body);
+    async chat(@Body() body: any, @Req() req: Request) {
+
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        console.log("User IP: ", ip);
+
+        return this.botService.chat(body, ip.toString());
     }
 }

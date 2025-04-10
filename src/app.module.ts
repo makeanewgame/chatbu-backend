@@ -13,6 +13,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { MulterModule } from '@nestjs/platform-express';
 import { BotModule } from './bot/bot.module';
 import { QuotaModule } from './quota/quota.module';
+import { ReportModule } from './report/report.module';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { QuotaModule } from './quota/quota.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule],
   controllers: [AppController],
   providers: [AppService],
 })

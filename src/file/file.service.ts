@@ -138,7 +138,7 @@ export class FileService {
         //ingest servisi dosya tipine göre çağrılacak....
 
         const { data } = await firstValueFrom(
-            this.httpService.post(`${ingestUrl}/ingest-documents/${FileStorageType[body.type]}`, {
+            this.httpService.post(`${ingestUrl}/ingest-documents`, {
                 "bot_cuid": body.botId,
                 "customer_cuid": body.userId,
                 "file_extension": FileStorageType[body.type],
