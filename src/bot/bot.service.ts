@@ -297,7 +297,7 @@ export class BotService {
                             timezone: geo.data.timezone || '',
                             organization: geo.data.organization || '',
                             organization_name: geo.data.organization_name || '',
-                            accuracy: geo.data.accuracy || '',
+                            accuracy: Number(geo.data.accuracy) || 0,
                         }
                     }
                 }
