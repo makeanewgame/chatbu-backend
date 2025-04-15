@@ -3863,6 +3863,8 @@ export namespace Prisma {
     fileUrl: string | null
     type: string | null
     size: string | null
+    status: string | null
+    taskId: string | null
     createdAt: Date | null
     updatedAt: Date | null
     deletedAt: Date | null
@@ -3877,6 +3879,8 @@ export namespace Prisma {
     fileUrl: string | null
     type: string | null
     size: string | null
+    status: string | null
+    taskId: string | null
     createdAt: Date | null
     updatedAt: Date | null
     deletedAt: Date | null
@@ -3891,6 +3895,9 @@ export namespace Prisma {
     fileUrl: number
     type: number
     size: number
+    status: number
+    taskId: number
+    ingestionInfo: number
     createdAt: number
     updatedAt: number
     deletedAt: number
@@ -3907,6 +3914,8 @@ export namespace Prisma {
     fileUrl?: true
     type?: true
     size?: true
+    status?: true
+    taskId?: true
     createdAt?: true
     updatedAt?: true
     deletedAt?: true
@@ -3921,6 +3930,8 @@ export namespace Prisma {
     fileUrl?: true
     type?: true
     size?: true
+    status?: true
+    taskId?: true
     createdAt?: true
     updatedAt?: true
     deletedAt?: true
@@ -3935,6 +3946,9 @@ export namespace Prisma {
     fileUrl?: true
     type?: true
     size?: true
+    status?: true
+    taskId?: true
+    ingestionInfo?: true
     createdAt?: true
     updatedAt?: true
     deletedAt?: true
@@ -4022,6 +4036,9 @@ export namespace Prisma {
     fileUrl: string
     type: string
     size: string
+    status: string
+    taskId: string
+    ingestionInfo: JsonValue | null
     createdAt: Date
     updatedAt: Date
     deletedAt: Date | null
@@ -4053,6 +4070,9 @@ export namespace Prisma {
     fileUrl?: boolean
     type?: boolean
     size?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     deletedAt?: boolean
@@ -4068,6 +4088,9 @@ export namespace Prisma {
     fileUrl?: boolean
     type?: boolean
     size?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     deletedAt?: boolean
@@ -4083,6 +4106,9 @@ export namespace Prisma {
     fileUrl?: boolean
     type?: boolean
     size?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     deletedAt?: boolean
@@ -4098,13 +4124,16 @@ export namespace Prisma {
     fileUrl?: boolean
     type?: boolean
     size?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
     createdAt?: boolean
     updatedAt?: boolean
     deletedAt?: boolean
     isDeleted?: boolean
   }
 
-  export type StorageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "botId" | "fileName" | "fileUrl" | "type" | "size" | "createdAt" | "updatedAt" | "deletedAt" | "isDeleted", ExtArgs["result"]["storage"]>
+  export type StorageOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "botId" | "fileName" | "fileUrl" | "type" | "size" | "status" | "taskId" | "ingestionInfo" | "createdAt" | "updatedAt" | "deletedAt" | "isDeleted", ExtArgs["result"]["storage"]>
   export type StorageInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     user?: boolean | UserDefaultArgs<ExtArgs>
   }
@@ -4128,6 +4157,9 @@ export namespace Prisma {
       fileUrl: string
       type: string
       size: string
+      status: string
+      taskId: string
+      ingestionInfo: Prisma.JsonValue | null
       createdAt: Date
       updatedAt: Date
       deletedAt: Date | null
@@ -4563,6 +4595,9 @@ export namespace Prisma {
     readonly fileUrl: FieldRef<"Storage", 'String'>
     readonly type: FieldRef<"Storage", 'String'>
     readonly size: FieldRef<"Storage", 'String'>
+    readonly status: FieldRef<"Storage", 'String'>
+    readonly taskId: FieldRef<"Storage", 'String'>
+    readonly ingestionInfo: FieldRef<"Storage", 'Json'>
     readonly createdAt: FieldRef<"Storage", 'DateTime'>
     readonly updatedAt: FieldRef<"Storage", 'DateTime'>
     readonly deletedAt: FieldRef<"Storage", 'DateTime'>
@@ -9648,6 +9683,9 @@ export namespace Prisma {
     fileUrl: 'fileUrl',
     type: 'type',
     size: 'size',
+    status: 'status',
+    taskId: 'taskId',
+    ingestionInfo: 'ingestionInfo',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',
     deletedAt: 'deletedAt',
@@ -10019,6 +10057,9 @@ export namespace Prisma {
     fileUrl?: StringFilter<"Storage"> | string
     type?: StringFilter<"Storage"> | string
     size?: StringFilter<"Storage"> | string
+    status?: StringFilter<"Storage"> | string
+    taskId?: StringFilter<"Storage"> | string
+    ingestionInfo?: JsonNullableFilter<"Storage">
     createdAt?: DateTimeFilter<"Storage"> | Date | string
     updatedAt?: DateTimeFilter<"Storage"> | Date | string
     deletedAt?: DateTimeNullableFilter<"Storage"> | Date | string | null
@@ -10034,6 +10075,9 @@ export namespace Prisma {
     fileUrl?: SortOrder
     type?: SortOrder
     size?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    ingestionInfo?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     deletedAt?: SortOrderInput | SortOrder
@@ -10052,6 +10096,9 @@ export namespace Prisma {
     fileUrl?: StringFilter<"Storage"> | string
     type?: StringFilter<"Storage"> | string
     size?: StringFilter<"Storage"> | string
+    status?: StringFilter<"Storage"> | string
+    taskId?: StringFilter<"Storage"> | string
+    ingestionInfo?: JsonNullableFilter<"Storage">
     createdAt?: DateTimeFilter<"Storage"> | Date | string
     updatedAt?: DateTimeFilter<"Storage"> | Date | string
     deletedAt?: DateTimeNullableFilter<"Storage"> | Date | string | null
@@ -10067,6 +10114,9 @@ export namespace Prisma {
     fileUrl?: SortOrder
     type?: SortOrder
     size?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    ingestionInfo?: SortOrderInput | SortOrder
     createdAt?: SortOrder
     updatedAt?: SortOrder
     deletedAt?: SortOrderInput | SortOrder
@@ -10087,6 +10137,9 @@ export namespace Prisma {
     fileUrl?: StringWithAggregatesFilter<"Storage"> | string
     type?: StringWithAggregatesFilter<"Storage"> | string
     size?: StringWithAggregatesFilter<"Storage"> | string
+    status?: StringWithAggregatesFilter<"Storage"> | string
+    taskId?: StringWithAggregatesFilter<"Storage"> | string
+    ingestionInfo?: JsonNullableWithAggregatesFilter<"Storage">
     createdAt?: DateTimeWithAggregatesFilter<"Storage"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"Storage"> | Date | string
     deletedAt?: DateTimeNullableWithAggregatesFilter<"Storage"> | Date | string | null
@@ -10592,6 +10645,9 @@ export namespace Prisma {
     fileUrl: string
     type: string
     size: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: Date | string
     updatedAt?: Date | string
     deletedAt?: Date | string | null
@@ -10607,6 +10663,9 @@ export namespace Prisma {
     fileUrl: string
     type: string
     size: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: Date | string
     updatedAt?: Date | string
     deletedAt?: Date | string | null
@@ -10620,6 +10679,9 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -10635,6 +10697,9 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -10649,6 +10714,9 @@ export namespace Prisma {
     fileUrl: string
     type: string
     size: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: Date | string
     updatedAt?: Date | string
     deletedAt?: Date | string | null
@@ -10662,6 +10730,9 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -10676,6 +10747,9 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -11325,73 +11399,6 @@ export namespace Prisma {
     _min?: NestedIntFilter<$PrismaModel>
     _max?: NestedIntFilter<$PrismaModel>
   }
-
-  export type DateTimeNullableFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
-    in?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
-    notIn?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeNullableFilter<$PrismaModel> | Date | string | null
-  }
-
-  export type StorageCountOrderByAggregateInput = {
-    id?: SortOrder
-    userId?: SortOrder
-    botId?: SortOrder
-    fileName?: SortOrder
-    fileUrl?: SortOrder
-    type?: SortOrder
-    size?: SortOrder
-    createdAt?: SortOrder
-    updatedAt?: SortOrder
-    deletedAt?: SortOrder
-    isDeleted?: SortOrder
-  }
-
-  export type StorageMaxOrderByAggregateInput = {
-    id?: SortOrder
-    userId?: SortOrder
-    botId?: SortOrder
-    fileName?: SortOrder
-    fileUrl?: SortOrder
-    type?: SortOrder
-    size?: SortOrder
-    createdAt?: SortOrder
-    updatedAt?: SortOrder
-    deletedAt?: SortOrder
-    isDeleted?: SortOrder
-  }
-
-  export type StorageMinOrderByAggregateInput = {
-    id?: SortOrder
-    userId?: SortOrder
-    botId?: SortOrder
-    fileName?: SortOrder
-    fileUrl?: SortOrder
-    type?: SortOrder
-    size?: SortOrder
-    createdAt?: SortOrder
-    updatedAt?: SortOrder
-    deletedAt?: SortOrder
-    isDeleted?: SortOrder
-  }
-
-  export type DateTimeNullableWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
-    in?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
-    notIn?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeNullableWithAggregatesFilter<$PrismaModel> | Date | string | null
-    _count?: NestedIntNullableFilter<$PrismaModel>
-    _min?: NestedDateTimeNullableFilter<$PrismaModel>
-    _max?: NestedDateTimeNullableFilter<$PrismaModel>
-  }
   export type JsonNullableFilter<$PrismaModel = never> =
     | PatchUndefined<
         Either<Required<JsonNullableFilterBase<$PrismaModel>>, Exclude<keyof Required<JsonNullableFilterBase<$PrismaModel>>, 'path'>>,
@@ -11414,6 +11421,106 @@ export namespace Prisma {
     gt?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
     gte?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
     not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+  }
+
+  export type DateTimeNullableFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
+    in?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
+    notIn?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeNullableFilter<$PrismaModel> | Date | string | null
+  }
+
+  export type StorageCountOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    fileName?: SortOrder
+    fileUrl?: SortOrder
+    type?: SortOrder
+    size?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    ingestionInfo?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrder
+    isDeleted?: SortOrder
+  }
+
+  export type StorageMaxOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    fileName?: SortOrder
+    fileUrl?: SortOrder
+    type?: SortOrder
+    size?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrder
+    isDeleted?: SortOrder
+  }
+
+  export type StorageMinOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    fileName?: SortOrder
+    fileUrl?: SortOrder
+    type?: SortOrder
+    size?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrder
+    isDeleted?: SortOrder
+  }
+  export type JsonNullableWithAggregatesFilter<$PrismaModel = never> =
+    | PatchUndefined<
+        Either<Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, Exclude<keyof Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, 'path'>>,
+        Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>
+      >
+    | OptionalFlat<Omit<Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, 'path'>>
+
+  export type JsonNullableWithAggregatesFilterBase<$PrismaModel = never> = {
+    equals?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+    path?: string[]
+    mode?: QueryMode | EnumQueryModeFieldRefInput<$PrismaModel>
+    string_contains?: string | StringFieldRefInput<$PrismaModel>
+    string_starts_with?: string | StringFieldRefInput<$PrismaModel>
+    string_ends_with?: string | StringFieldRefInput<$PrismaModel>
+    array_starts_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_ends_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    array_contains?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
+    lt?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
+    lte?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
+    gt?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
+    gte?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
+    not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+    _count?: NestedIntNullableFilter<$PrismaModel>
+    _min?: NestedJsonNullableFilter<$PrismaModel>
+    _max?: NestedJsonNullableFilter<$PrismaModel>
+  }
+
+  export type DateTimeNullableWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
+    in?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
+    notIn?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeNullableWithAggregatesFilter<$PrismaModel> | Date | string | null
+    _count?: NestedIntNullableFilter<$PrismaModel>
+    _min?: NestedDateTimeNullableFilter<$PrismaModel>
+    _max?: NestedDateTimeNullableFilter<$PrismaModel>
   }
 
   export type CustomerBotsCountOrderByAggregateInput = {
@@ -11454,32 +11561,6 @@ export namespace Prisma {
     updatedAt?: SortOrder
     isDeleted?: SortOrder
     deletedAt?: SortOrder
-  }
-  export type JsonNullableWithAggregatesFilter<$PrismaModel = never> =
-    | PatchUndefined<
-        Either<Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, Exclude<keyof Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, 'path'>>,
-        Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>
-      >
-    | OptionalFlat<Omit<Required<JsonNullableWithAggregatesFilterBase<$PrismaModel>>, 'path'>>
-
-  export type JsonNullableWithAggregatesFilterBase<$PrismaModel = never> = {
-    equals?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
-    path?: string[]
-    mode?: QueryMode | EnumQueryModeFieldRefInput<$PrismaModel>
-    string_contains?: string | StringFieldRefInput<$PrismaModel>
-    string_starts_with?: string | StringFieldRefInput<$PrismaModel>
-    string_ends_with?: string | StringFieldRefInput<$PrismaModel>
-    array_starts_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
-    array_ends_with?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
-    array_contains?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | null
-    lt?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
-    lte?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
-    gt?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
-    gte?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
-    not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
-    _count?: NestedIntNullableFilter<$PrismaModel>
-    _min?: NestedJsonNullableFilter<$PrismaModel>
-    _max?: NestedJsonNullableFilter<$PrismaModel>
   }
 
   export type IntNullableFilter<$PrismaModel = never> = {
@@ -12253,20 +12334,6 @@ export namespace Prisma {
     gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
     not?: NestedDateTimeNullableFilter<$PrismaModel> | Date | string | null
   }
-
-  export type NestedDateTimeNullableWithAggregatesFilter<$PrismaModel = never> = {
-    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
-    in?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
-    notIn?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
-    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
-    not?: NestedDateTimeNullableWithAggregatesFilter<$PrismaModel> | Date | string | null
-    _count?: NestedIntNullableFilter<$PrismaModel>
-    _min?: NestedDateTimeNullableFilter<$PrismaModel>
-    _max?: NestedDateTimeNullableFilter<$PrismaModel>
-  }
   export type NestedJsonNullableFilter<$PrismaModel = never> =
     | PatchUndefined<
         Either<Required<NestedJsonNullableFilterBase<$PrismaModel>>, Exclude<keyof Required<NestedJsonNullableFilterBase<$PrismaModel>>, 'path'>>,
@@ -12289,6 +12356,20 @@ export namespace Prisma {
     gt?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
     gte?: InputJsonValue | JsonFieldRefInput<$PrismaModel>
     not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
+  }
+
+  export type NestedDateTimeNullableWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: Date | string | DateTimeFieldRefInput<$PrismaModel> | null
+    in?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
+    notIn?: Date[] | string[] | ListDateTimeFieldRefInput<$PrismaModel> | null
+    lt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    lte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gt?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    gte?: Date | string | DateTimeFieldRefInput<$PrismaModel>
+    not?: NestedDateTimeNullableWithAggregatesFilter<$PrismaModel> | Date | string | null
+    _count?: NestedIntNullableFilter<$PrismaModel>
+    _min?: NestedDateTimeNullableFilter<$PrismaModel>
+    _max?: NestedDateTimeNullableFilter<$PrismaModel>
   }
 
   export type NestedIntNullableWithAggregatesFilter<$PrismaModel = never> = {
@@ -12341,6 +12422,9 @@ export namespace Prisma {
     fileUrl: string
     type: string
     size: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: Date | string
     updatedAt?: Date | string
     deletedAt?: Date | string | null
@@ -12354,6 +12438,9 @@ export namespace Prisma {
     fileUrl: string
     type: string
     size: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: Date | string
     updatedAt?: Date | string
     deletedAt?: Date | string | null
@@ -12493,6 +12580,9 @@ export namespace Prisma {
     fileUrl?: StringFilter<"Storage"> | string
     type?: StringFilter<"Storage"> | string
     size?: StringFilter<"Storage"> | string
+    status?: StringFilter<"Storage"> | string
+    taskId?: StringFilter<"Storage"> | string
+    ingestionInfo?: JsonNullableFilter<"Storage">
     createdAt?: DateTimeFilter<"Storage"> | Date | string
     updatedAt?: DateTimeFilter<"Storage"> | Date | string
     deletedAt?: DateTimeNullableFilter<"Storage"> | Date | string | null
@@ -13185,6 +13275,9 @@ export namespace Prisma {
     fileUrl: string
     type: string
     size: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: Date | string
     updatedAt?: Date | string
     deletedAt?: Date | string | null
@@ -13229,6 +13322,9 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -13242,6 +13338,9 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -13255,6 +13354,9 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
