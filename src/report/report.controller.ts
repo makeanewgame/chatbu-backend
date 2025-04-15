@@ -11,6 +11,7 @@ export class ReportController {
 
     constructor(private readonly reportService: ReportService) { }
 
+    //#region chatHistory-List
     @ApiOperation({ summary: 'List chat history for user' })
     @ApiResponse({
         status: 200,
@@ -32,8 +33,9 @@ export class ReportController {
         const user = req.user as IUser;
         return this.reportService.getChatHistory(user.sub);
     }
+    //#endregion
 
-
+    //#region chatHistory-Detail
     @ApiOperation({ summary: 'Get chat history detail for user and chat' })
     @ApiResponse({
         status: 200,
@@ -61,8 +63,24 @@ export class ReportController {
         const user = req.user as IUser;
         return this.reportService.getChatHistoryDetail(user.sub, chatId);
     }
+    //#endregion
 
-
-
+    //#region user-Usage
+    @ApiOperation({ summary: 'Get user quota usage for uploaded file,comsumed token, and created bots' })
+    @ApiResponse({
+        status: 200,
+        description: 'List user usage',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @Get('user/usage')
+    @UseGuards(AccessTokenGuard)
+    async getUserUsage(@Req() req: Request) {
+        const user = req.user as IUser;
+        return this.reportService.getUserUsage(user.sub);
+    }
+    //#endregion
 
 }

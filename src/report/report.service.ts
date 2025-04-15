@@ -82,4 +82,62 @@ export class ReportService {
 
         return chatHistoryList;
     }
+
+    async getUserUsage(user: string) {
+        const userUsage = await this.prisma.quota.findMany({
+            where: {
+                userId: user,
+            },
+            select: {
+                id: true,
+                quotaType: true,
+                limit: true,
+                used: true,
+            }
+        });
+
+        if (!userUsage) {
+            return {
+                message: 'No user found',
+                data: [],
+            }
+        }
+        return userUsage;
+    }
+
+    async getChatRequestsByUser(user: string) {
+        // const chatRequests = await this.prisma.geoLocation.findMany({
+        //     where: {
+        //         userId: user,
+        //     },
+        //     select: {
+        //         id: true,
+        //         userId: true,
+        //         createdAt: true,
+        //         updatedAt: true,
+        //         CustomerChatRequestDetails: {
+        //             where: {
+        //                 sender: "user",
+        //             },
+        //             take: 1,
+        //             orderBy: {
+        //                 createdAt: "desc",
+        //             },
+        //             select: {
+        //                 message: true,
+        //                 createdAt: true
+        //             }
+        //         },
+        //     },
+        // });
+
+        // if (!chatRequests) {
+        //     return {
+        //         message: 'No chat requests found',
+        //         data: [],
+        //     }
+        // }
+
+        return "ok";
+    }
 }

@@ -49,18 +49,21 @@ model Quota {
 }
 
 model Storage {
-  id        String    @id @default(cuid())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  botId     String
-  fileName  String
-  fileUrl   String
-  type      String
-  size      String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  isDeleted Boolean   @default(false)
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  botId         String
+  fileName      String
+  fileUrl       String
+  type          String
+  size          String
+  status        String
+  taskId        String
+  ingestionInfo Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  isDeleted     Boolean   @default(false)
 }
 
 model CustomerBots {

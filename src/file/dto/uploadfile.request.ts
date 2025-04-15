@@ -4,10 +4,6 @@ export class UploadSingleFileRequest {
 
     @IsString()
     @IsNotEmpty()
-    userId: string;
-
-    @IsString()
-    @IsNotEmpty()
     botId: string;
 
 }
