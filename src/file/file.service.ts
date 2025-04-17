@@ -82,6 +82,9 @@ export class FileService {
                         fileUrl: uploaded_file.url,
                         type: file.mimetype,
                         size: file.size.toString(),
+                        status: 'UPLOADED',
+                        ingestionInfo: {},
+                        taskId: '',
                         fileName: file.originalname,
                         createdAt: new Date(),
                     }
