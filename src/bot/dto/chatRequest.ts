@@ -1,12 +1,11 @@
-import { IsNotEmpty, IsString } from "@nestjs/class-validator";
+import { IsNotEmpty, IsString } from '@nestjs/class-validator';
 
 export class ChatRequest {
+  @IsString()
+  @IsNotEmpty()
+  botId: string;
 
-    @IsString()
-    @IsNotEmpty()
-    botId: string;
-
-    @IsString()
-    @IsNotEmpty()
-    message: string;
+  @IsString()
+  @IsNotEmpty()
+  message: string;
 }

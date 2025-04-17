@@ -57,6 +57,7 @@ CREATE TABLE "CustomerBots" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "isDeleted" BOOLEAN NOT NULL DEFAULT false,
     "deletedAt" TIMESTAMP(3),
+    "settings" JSONB,
 
     CONSTRAINT "CustomerBots_pkey" PRIMARY KEY ("id")
 );
