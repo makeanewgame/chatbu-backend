@@ -140,4 +140,37 @@ export class ReportService {
 
         return "ok";
     }
+
+    async getGeoLocations(user: string) {
+        const geoLocation = await this.prisma.customerChats.findMany({
+            where: {
+                userId: user,
+            },
+            select: {
+                id: true,
+                GeoLocation: {
+                    select: {
+                        country: true,
+                        city: true,
+                        region: true,
+                        latitude: true,
+                        longitude: true,
+                        ip: true,
+                    }
+                }
+            }
+
+        });
+
+        console.log(geoLocation);
+
+        if (!geoLocation) {
+            return {
+                message: 'No geo location found',
+                data: [],
+            }
+        }
+
+        return geoLocation;
+    }
 }

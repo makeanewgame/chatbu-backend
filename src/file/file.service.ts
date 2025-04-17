@@ -264,7 +264,15 @@ export class FileService {
                         throw 'An error happened!';
                     }),
                 ));
-        console.log("ingest collection-count gelen", data);
+        // console.log("ingest collection-count gelen", data);
+
+        if (data.status.code === 500) {
+            console.log("ingest service not available");
+            return {
+                message: "Ingest service is not available"
+            }
+        }
+
         return data;
 
     }

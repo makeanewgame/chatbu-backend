@@ -83,4 +83,22 @@ export class ReportController {
     }
     //#endregion
 
+    //#region geo-locations
+    @ApiOperation({ summary: 'Get geo locations for completed chats' })
+
+    @ApiResponse({
+        status: 200,
+        description: 'List geo locations',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+
+    @Get('geoLocations')
+    @UseGuards(AccessTokenGuard)
+    async getGeoLocations(@Req() req: Request) {
+        const user = req.user as IUser;
+        return this.reportService.getGeoLocations(user.sub);
+    }
 }
