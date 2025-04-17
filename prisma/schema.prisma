@@ -79,7 +79,6 @@ model CustomerBots {
   updatedAt    DateTime  @updatedAt
   isDeleted    Boolean   @default(false)
   deletedAt    DateTime?
-  settings     Json? 
 }
 
 model CustomerChats {

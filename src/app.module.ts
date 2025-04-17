@@ -14,6 +14,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { BotModule } from './bot/bot.module';
 import { QuotaModule } from './quota/quota.module';
 import { ReportModule } from './report/report.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -30,7 +31,7 @@ import { ReportModule } from './report/report.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule],
   controllers: [AppController],
   providers: [AppService],
 })
