@@ -6,6 +6,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../prisma/generated"
 }
 
 datasource db {
@@ -16,6 +17,7 @@ datasource db {
 enum QuotaType {
   BOT
   FILE
+  TOKEN
 }
 
 model User {
@@ -47,18 +49,21 @@ model Quota {
 }
 
 model Storage {
-  id        String    @id @default(cuid())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  botId     String
-  fileName  String
-  fileUrl   String
-  type      String
-  size      String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  isDeleted Boolean   @default(false)
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  botId         String
+  fileName      String
+  fileUrl       String
+  type          String
+  size          String
+  status        String
+  taskId        String
+  ingestionInfo Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  isDeleted     Boolean   @default(false)
 }
 
 model CustomerBots {
@@ -66,8 +71,9 @@ model CustomerBots {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId       String
   botName      String
-  botAvatar    String
+  botAvatar    String //rakam gelirse 0-20 hazır image, kullanıcı upload ederse url'i yazalım. /$userId/$botId/botimage/bot.png 
   systemPrompt String    @default("")
+  settings     Json?
   active       Boolean   @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -86,14 +92,35 @@ model CustomerChats {
   updatedAt           DateTime              @updatedAt
   isDeleted           Boolean               @default(false)
   deletedAt           DateTime?
+  totalTokens         Int?
   CustomerChatDetails CustomerChatDetails[]
+  GeoLocation         GeoLocation[]
 }
 
 model CustomerChatDetails {
-  id        String        @id @default(cuid())
-  chat      CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  chatId    String
-  message   String
-  sender    String
-  createdAt DateTime      @default(now())
+  id           String        @id @default(cuid())
+  chat         CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId       String
+  message      String
+  sender       String
+  tokenDetails Json?
+  createdAt    DateTime      @default(now())
+}
+
+model GeoLocation {
+  id                String        @id @default(cuid())
+  chat              CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId            String
+  ip                String
+  country           String
+  countryCode       String
+  region            String
+  city              String
+  timezone          String
+  organization      String
+  organization_name String
+  latitude          Float
+  longitude         Float
+  accuracy          Int
+  createdAt         DateTime      @default(now())
 }

@@ -23,8 +23,6 @@ import { RenameBotRequest } from './dto/renameBotRequest';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
-  ApiOAuth2,
-  ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiResponse,
@@ -134,10 +132,12 @@ export class BotController {
   async changeStatus(@Body() body: ChageStatusBotRequest) {
     return this.botService.changeStatus(body);
   }
-
   @Post('chat')
   @UseGuards(AccessTokenGuard)
-  async chat(@Body() body: any) {
-    return this.botService.chat(body);
+  async chat(@Body() body: any, @Req() req: Request) {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    console.log('User IP: ', ip);
+
+    return this.botService.chat(body, ip.toString());
   }
 }

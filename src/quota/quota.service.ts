@@ -50,6 +50,18 @@ export class QuotaService {
             }
         });
 
+        await this.prisma.quota.create({
+            data: {
+                user: {
+                    connect: {
+                        id: userId
+                    }
+                },
+                quotaType: 'TOKEN',
+                limit: 20000,
+                used: 0
+            }
+        });
 
         return { message: 'This action adds a new quota' };
     }

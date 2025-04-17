@@ -5,10 +5,6 @@ export class IngestRequest {
 
     @IsString()
     @IsNotEmpty()
-    userId: string;
-
-    @IsString()
-    @IsNotEmpty()
     botId: string;
 
     @IsString()

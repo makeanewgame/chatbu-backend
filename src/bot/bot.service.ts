@@ -5,8 +5,6 @@ import { DeleteBotRequest } from './dto/deleteBotRequest';
 import { UpdateSettingsRequest } from './dto/updateSettingsRequest';
 import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
-import { QuotaType } from 'src/util/enums';
-import { debug } from 'console';
 import { ChatRequest } from './dto/chatRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
@@ -255,18 +253,100 @@ export class BotService {
     throw new Error('Error changing bot status');
   }
 
-  async chat(body: ChatRequest) {
+  async chat(body: ChatRequest, ip: string) {
+
+
     const botUser = await this.prisma.customerBots.findFirst({
-      where: {
-        id: body.botId,
-      },
+        where: {
+            id: body.botId
+        }
     });
 
     if (!botUser) {
-      throw new Error('Error acuring bot');
+        throw new Error('Error acuring bot');
     }
 
-    const ingestUrl = this.configService.get('INGEST_ENPOINT');
+    let activeChat = await this.prisma.customerChats.findFirst({
+        where: {
+            botId: body.botId,
+            userId: body.userId,
+            chatId: body.chatId,
+            isDeleted: false
+        }
+    });
+
+    if (!activeChat) {
+        //get user geolocation from GeoJS
+        //https://get.geojs.io/v1/ip/geo.json
+        //send request to geojs
+        //check local request
+        let ipAddress = ip === "::1" ? "176.40.241.220" : ip;
+
+        const geo = await firstValueFrom(
+            this.httpService.get(`https://get.geojs.io/v1/ip/geo/${ipAddress}.json`)
+                .pipe(
+                    catchError((error: AxiosError) => {
+                        console.log("error", error);
+                        throw 'An error happened!';
+                    }),
+                ));
+        console.log("geo", geo.data);
+
+        activeChat = await this.prisma.customerChats.create({
+            data: {
+                botId: body.botId,
+                userId: body.userId,
+                chatId: body.chatId,
+                isDeleted: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                CustomerChatDetails: {
+                    create: {
+                        sender: body.sender,
+                        message: body.message,
+                        createdAt: new Date(body.date),
+                    }
+                },
+                GeoLocation: {
+                    create: {
+                        ip: geo.data.ip || '',
+                        country: geo.data.country || '',
+                        countryCode: geo.data.country_code || '',
+                        region: geo.data.region || '',
+                        city: geo.data.city || '',
+                        latitude: parseFloat(geo.data.latitude) || 0,
+                        longitude: parseFloat(geo.data.longitude) || 0,
+                        timezone: geo.data.timezone || '',
+                        organization: geo.data.organization || '',
+                        organization_name: geo.data.organization_name || '',
+                        accuracy: Number(geo.data.accuracy) || 0,
+                    }
+                }
+            }
+        });
+    }
+    else {
+        activeChat = await this.prisma.customerChats.update({
+            where: {
+                id: activeChat.id
+            },
+            data: {
+                updatedAt: new Date(),
+                CustomerChatDetails: {
+                    create: {
+                        sender: body.sender,
+                        message: body.message,
+                        createdAt: new Date(body.date),
+                    }
+                }
+            }
+        });
+    }
+    if (!activeChat) {
+        throw new Error('Error acuring chat');
+    }
+    const ingestUrl = this.configService.get('INGEST_ENPOINT')
+
 
     // "bot_cuid": "clt9m2kz001xyzc8ya3f9qwe",
     // "customer_cuid": "clsgyvz7001xezc8ya3f9p3",
@@ -275,27 +355,84 @@ export class BotService {
     // ],
     // "system_prompt": "Sen bir eğitim sitesi yapay zeka asistanısın. Eğitimlerle ilgili sorulara vektör veri tabanından cevap verirsin."
 
-    console.log('bot_cuid', botUser.id);
-    console.log('customer_cuid', botUser.userId);
-    console.log('messages', [body.message]);
-    console.log('system_prompt', botUser.systemPrompt);
+
+    console.log("bot_cuid", botUser.id);
+    console.log("customer_cuid", botUser.userId);
+    console.log("messages", [body.message]);
+    console.log("system_prompt", botUser.systemPrompt);
+
+    //TODO: check user TOKEN quota
+    const userQuota = await this.prisma.quota.findFirst({
+        where: {
+            userId: body.userId,
+            quotaType: "TOKEN"
+        }
+    });
+
+    if (userQuota.used >= userQuota.limit) {
+        throw new ForbiddenException('Token quota exceeded');
+    }
 
     const { data } = await firstValueFrom(
-      this.httpService
-        .post(`${ingestUrl}/chat`, {
-          bot_cuid: botUser.id,
-          customer_cuid: botUser.userId,
-          messages: [body.message],
-          system_prompt: botUser.systemPrompt,
-        })
-        .pipe(
-          catchError((error: AxiosError) => {
-            console.log('error', error);
-            throw 'An error happened!';
-          }),
-        ),
-    );
-    console.log('ingest gelen', data);
+        this.httpService.post(`${ingestUrl}/chat`, {
+            "bot_cuid": botUser.id,
+            "customer_cuid": botUser.userId,
+            "messages": [body.message],
+            "system_prompt": botUser.systemPrompt
+        }
+        )
+            .pipe(
+                catchError((error: AxiosError) => {
+                    console.log("error", error);
+                    throw 'An error happened!';
+                }),
+            ));
+    console.log("ingest gelen", data);
+
+    if (!data) {
+        throw new Error('Error acuring chat');
+    }
+
+    const tokenArr = data.content.split(" ");
+    const tokenCount = data.tokens?.total_tokens || tokenArr.length;
+
+    console.log("tokenArr", tokenArr.length);
+    console.log("token count", tokenCount);
+
+    //update user quota
+    if (userQuota) {
+        await this.prisma.quota.update({
+            where: {
+                id: userQuota.id
+            },
+            data: {
+                used: (userQuota.used + tokenCount)
+            }
+        });
+    }
+
+    await this.prisma.customerChats.update({
+        where: {
+            id: activeChat.id
+        },
+        data: {
+            updatedAt: new Date(),
+            totalTokens: tokenCount,
+            isDeleted: false,
+        }
+    });
+
+    const chatDetails = await this.prisma.customerChatDetails.create({
+        data: {
+            chatId: activeChat.id,
+            sender: "bot",
+            message: data.content,
+            tokenDetails: data.tokens,
+            createdAt: new Date(),
+        }
+    });
+
+
     return data;
-  }
+}
 }

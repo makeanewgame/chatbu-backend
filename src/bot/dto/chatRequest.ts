@@ -8,4 +8,20 @@ export class ChatRequest {
   @IsString()
   @IsNotEmpty()
   message: string;
+
+  @IsString()
+  @IsNotEmpty()
+  chatId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  userId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  sender: string;
+
+  @IsString()
+  @IsNotEmpty()
+  date: string;
 }
