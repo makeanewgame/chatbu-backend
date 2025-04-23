@@ -23,7 +23,13 @@ export class EventsService implements OnModuleInit {
             // Mesajı websocket üzerinden frontend'e ilet
             // Burada socket.io ile frontend'e bildirim gönderebilirsiniz
             // Örnek: this.eventsGateway.notifyUser(payload.userId, payload)
-            await this.eventGateWay.notifyUser(payload.userId, payload);
+
+            const tempPayload = {
+                type: 'file',
+                data: [payload],
+            }
+
+            await this.eventGateWay.notifyUser(payload.userId, tempPayload);
 
         });
 

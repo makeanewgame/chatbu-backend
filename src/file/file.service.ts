@@ -163,9 +163,93 @@ export class FileService {
                         }
                     })
 
+                    const existingQuota = await this.prisma.user.findFirst({
+                        where: {
+                            id: user.sub,
+                            Quota: {
+                                some: {
+                                    quotaType: 'FILE',
+                                }
+                            }
+                        },
+                        include: {
+                            Quota: {
+                                where: {
+                                    quotaType: 'FILE',
+                                }
+                            }
+                        },
+                    })
+
+                    console.log("existingQuota", existingQuota);
+
+                    const decreaseQuota = await this.prisma.user.update({
+                        where: {
+                            id: user.sub,
+                            Quota: {
+                                some: {
+                                    quotaType: 'FILE',
+                                }
+                            }
+                        },
+                        data: {
+                            Quota: {
+                                update: {
+                                    where: {
+                                        userId_quotaType: {
+                                            userId: user.sub,
+                                            quotaType: 'FILE'
+                                        }
+                                    },
+                                    data: {
+                                        used: existingQuota.Quota[0].used - 1
+                                    }
+                                }
+                            }
+                        }
+                    })
+
+                    console.log("decreaseQuota", decreaseQuota);
+
+
+                    //deLete from vector db
+                    const ingestUrl = this.configService.get('INGEST_ENPOINT')
+
+                    console.log("deletede Vectors data", {
+                        "bot_cuid": file.botId,
+                        "customer_cuid": user.sub,
+                        "source": file.fileUrl,
+                    })
+
+                    const { data } = await firstValueFrom(
+                        this.httpService.post(`${ingestUrl}/delete-vectors`, {
+                            "bot_cuid": file.botId,
+                            "customer_cuid": user.sub,
+                            "source": file.fileUrl,
+                        })
+                            .pipe(
+                                catchError((error: AxiosError) => {
+                                    console.log("error", error);
+                                    throw 'An error happened!';
+                                }),
+                            ));
+                    // console.log("ingest collection-count gelen", data);
+
+                    if (data?.status?.code === 500) {
+                        console.log("ingest service not available");
+                        return {
+                            message: "Ingest service is not available"
+                        }
+                    }
+
                     return {
                         message: "File deleted successfully"
                     }
+
+
+
+
+
                 })
         }
         catch (err) {
@@ -273,7 +357,18 @@ export class FileService {
             }
         }
 
-        return data;
+
+        const userStorage = await this.prisma.storage.count({
+            where: {
+                userId: user.sub,
+                type: 'UPLOADED',
+            }
+        })
+
+
+        console.log("ingest gelen", data);
+
+        return { ...data, pending_count: userStorage };
 
     }
 

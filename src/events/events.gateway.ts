@@ -45,8 +45,6 @@ export class EventsGateway {
   async notifyUser(userId: string, payload: any) {
     const socketId = await this.cacheManager.get<string>(`user_socket:${userId}`);
     if (socketId) {
-      console.log('socket call', socketId);
-      console.log('payload', payload);
       this.server.to(socketId).emit('message', payload);
     }
   }
