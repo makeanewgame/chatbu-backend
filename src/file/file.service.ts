@@ -266,7 +266,7 @@ export class FileService {
                 ));
         // console.log("ingest collection-count gelen", data);
 
-        if (data.status.code === 500) {
+        if (data?.status?.code === 500) {
             console.log("ingest service not available");
             return {
                 message: "Ingest service is not available"
