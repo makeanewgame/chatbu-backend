@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { UploadSingleFileRequest } from './dto/uploadfile.request';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { JwtService } from '@nestjs/jwt';
 import { HttpService } from '@nestjs/axios';
 import { catchError, firstValueFrom, } from 'rxjs';
 import { AxiosError } from 'axios';
@@ -132,6 +131,24 @@ export class FileService {
 
     async delete(fileId: string, user: IUser) {
 
+
+        const findUser = await this.prisma.user.findFirst({
+            where: {
+                id: user.sub,
+                Storage: {
+                    some: {
+                        id: fileId
+                    }
+                }
+            }
+        })
+
+        if (user.sub && !findUser) {
+            return {
+                message: "User or Bot not found"
+            }
+        }
+
         const file = await this.prisma.storage.findFirst({
             where: {
                 userId: user.sub,
@@ -245,11 +262,6 @@ export class FileService {
                     return {
                         message: "File deleted successfully"
                     }
-
-
-
-
-
                 })
         }
         catch (err) {

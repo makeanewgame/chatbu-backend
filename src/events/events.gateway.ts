@@ -21,16 +21,14 @@ export class EventsGateway {
     if (userId) {
       await this.cacheManager.set(`user_socket:${userId}`, client.id, 0); // TTL: sonsuz
       client.emit('message', { msg: 'connecting chatbu...' });
-      console.log(`User ${userId} connected with socket ${client.id}`);
+      // console.log(`User ${userId} connected with socket ${client.id}`);
     }
   }
 
   async handleDisconnect(client: Socket) {
     const userId = client.handshake.query.userId as string;
-    console.log(`User ${userId} disconnected from socket ${client.id}`);
+    // console.log(`User ${userId} disconnected from socket ${client.id}`);
     if (userId) {
-
-
       await this.cacheManager.del(`user_socket:${userId}`);
     }
   }

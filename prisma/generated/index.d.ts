@@ -29,6 +29,11 @@ export type Quota = $Result.DefaultSelection<Prisma.$QuotaPayload>
  */
 export type Storage = $Result.DefaultSelection<Prisma.$StoragePayload>
 /**
+ * Model Content
+ * 
+ */
+export type Content = $Result.DefaultSelection<Prisma.$ContentPayload>
+/**
  * Model CustomerBots
  * 
  */
@@ -221,6 +226,16 @@ export class PrismaClient<
     * ```
     */
   get storage(): Prisma.StorageDelegate<ExtArgs, ClientOptions>;
+
+  /**
+   * `prisma.content`: Exposes CRUD operations for the **Content** model.
+    * Example usage:
+    * ```ts
+    * // Fetch zero or more Contents
+    * const contents = await prisma.content.findMany()
+    * ```
+    */
+  get content(): Prisma.ContentDelegate<ExtArgs, ClientOptions>;
 
   /**
    * `prisma.customerBots`: Exposes CRUD operations for the **CustomerBots** model.
@@ -704,6 +719,7 @@ export namespace Prisma {
     User: 'User',
     Quota: 'Quota',
     Storage: 'Storage',
+    Content: 'Content',
     CustomerBots: 'CustomerBots',
     CustomerChats: 'CustomerChats',
     CustomerChatDetails: 'CustomerChatDetails',
@@ -726,7 +742,7 @@ export namespace Prisma {
       omit: GlobalOmitOptions
     }
     meta: {
-      modelProps: "user" | "quota" | "storage" | "customerBots" | "customerChats" | "customerChatDetails" | "geoLocation"
+      modelProps: "user" | "quota" | "storage" | "content" | "customerBots" | "customerChats" | "customerChatDetails" | "geoLocation"
       txIsolationLevel: Prisma.TransactionIsolationLevel
     }
     model: {
@@ -949,6 +965,80 @@ export namespace Prisma {
           count: {
             args: Prisma.StorageCountArgs<ExtArgs>
             result: $Utils.Optional<StorageCountAggregateOutputType> | number
+          }
+        }
+      }
+      Content: {
+        payload: Prisma.$ContentPayload<ExtArgs>
+        fields: Prisma.ContentFieldRefs
+        operations: {
+          findUnique: {
+            args: Prisma.ContentFindUniqueArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload> | null
+          }
+          findUniqueOrThrow: {
+            args: Prisma.ContentFindUniqueOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>
+          }
+          findFirst: {
+            args: Prisma.ContentFindFirstArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload> | null
+          }
+          findFirstOrThrow: {
+            args: Prisma.ContentFindFirstOrThrowArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>
+          }
+          findMany: {
+            args: Prisma.ContentFindManyArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>[]
+          }
+          create: {
+            args: Prisma.ContentCreateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>
+          }
+          createMany: {
+            args: Prisma.ContentCreateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          createManyAndReturn: {
+            args: Prisma.ContentCreateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>[]
+          }
+          delete: {
+            args: Prisma.ContentDeleteArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>
+          }
+          update: {
+            args: Prisma.ContentUpdateArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>
+          }
+          deleteMany: {
+            args: Prisma.ContentDeleteManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateMany: {
+            args: Prisma.ContentUpdateManyArgs<ExtArgs>
+            result: BatchPayload
+          }
+          updateManyAndReturn: {
+            args: Prisma.ContentUpdateManyAndReturnArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>[]
+          }
+          upsert: {
+            args: Prisma.ContentUpsertArgs<ExtArgs>
+            result: $Utils.PayloadToResult<Prisma.$ContentPayload>
+          }
+          aggregate: {
+            args: Prisma.ContentAggregateArgs<ExtArgs>
+            result: $Utils.Optional<AggregateContent>
+          }
+          groupBy: {
+            args: Prisma.ContentGroupByArgs<ExtArgs>
+            result: $Utils.Optional<ContentGroupByOutputType>[]
+          }
+          count: {
+            args: Prisma.ContentCountArgs<ExtArgs>
+            result: $Utils.Optional<ContentCountAggregateOutputType> | number
           }
         }
       }
@@ -1335,6 +1425,7 @@ export namespace Prisma {
     user?: UserOmit
     quota?: QuotaOmit
     storage?: StorageOmit
+    content?: ContentOmit
     customerBots?: CustomerBotsOmit
     customerChats?: CustomerChatsOmit
     customerChatDetails?: CustomerChatDetailsOmit
@@ -1437,6 +1528,7 @@ export namespace Prisma {
     CustomerBots: number
     Quota: number
     CustomerChats: number
+    Content: number
   }
 
   export type UserCountOutputTypeSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
@@ -1444,6 +1536,7 @@ export namespace Prisma {
     CustomerBots?: boolean | UserCountOutputTypeCountCustomerBotsArgs
     Quota?: boolean | UserCountOutputTypeCountQuotaArgs
     CustomerChats?: boolean | UserCountOutputTypeCountCustomerChatsArgs
+    Content?: boolean | UserCountOutputTypeCountContentArgs
   }
 
   // Custom InputTypes
@@ -1483,6 +1576,13 @@ export namespace Prisma {
    */
   export type UserCountOutputTypeCountCustomerChatsArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     where?: CustomerChatsWhereInput
+  }
+
+  /**
+   * UserCountOutputType without action
+   */
+  export type UserCountOutputTypeCountContentArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ContentWhereInput
   }
 
 
@@ -1738,6 +1838,7 @@ export namespace Prisma {
     CustomerBots?: boolean | User$CustomerBotsArgs<ExtArgs>
     Quota?: boolean | User$QuotaArgs<ExtArgs>
     CustomerChats?: boolean | User$CustomerChatsArgs<ExtArgs>
+    Content?: boolean | User$ContentArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["user"]>
 
@@ -1786,6 +1887,7 @@ export namespace Prisma {
     CustomerBots?: boolean | User$CustomerBotsArgs<ExtArgs>
     Quota?: boolean | User$QuotaArgs<ExtArgs>
     CustomerChats?: boolean | User$CustomerChatsArgs<ExtArgs>
+    Content?: boolean | User$ContentArgs<ExtArgs>
     _count?: boolean | UserCountOutputTypeDefaultArgs<ExtArgs>
   }
   export type UserIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {}
@@ -1798,6 +1900,7 @@ export namespace Prisma {
       CustomerBots: Prisma.$CustomerBotsPayload<ExtArgs>[]
       Quota: Prisma.$QuotaPayload<ExtArgs>[]
       CustomerChats: Prisma.$CustomerChatsPayload<ExtArgs>[]
+      Content: Prisma.$ContentPayload<ExtArgs>[]
     }
     scalars: $Extensions.GetPayloadResult<{
       id: string
@@ -2208,6 +2311,7 @@ export namespace Prisma {
     CustomerBots<T extends User$CustomerBotsArgs<ExtArgs> = {}>(args?: Subset<T, User$CustomerBotsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$CustomerBotsPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     Quota<T extends User$QuotaArgs<ExtArgs> = {}>(args?: Subset<T, User$QuotaArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$QuotaPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     CustomerChats<T extends User$CustomerChatsArgs<ExtArgs> = {}>(args?: Subset<T, User$CustomerChatsArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$CustomerChatsPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+    Content<T extends User$ContentArgs<ExtArgs> = {}>(args?: Subset<T, User$ContentArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2728,6 +2832,30 @@ export namespace Prisma {
     take?: number
     skip?: number
     distinct?: CustomerChatsScalarFieldEnum | CustomerChatsScalarFieldEnum[]
+  }
+
+  /**
+   * User.Content
+   */
+  export type User$ContentArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    where?: ContentWhereInput
+    orderBy?: ContentOrderByWithRelationInput | ContentOrderByWithRelationInput[]
+    cursor?: ContentWhereUniqueInput
+    take?: number
+    skip?: number
+    distinct?: ContentScalarFieldEnum | ContentScalarFieldEnum[]
   }
 
   /**
@@ -5013,6 +5141,1147 @@ export namespace Prisma {
      * Choose, which related nodes to fetch as well
      */
     include?: StorageInclude<ExtArgs> | null
+  }
+
+
+  /**
+   * Model Content
+   */
+
+  export type AggregateContent = {
+    _count: ContentCountAggregateOutputType | null
+    _min: ContentMinAggregateOutputType | null
+    _max: ContentMaxAggregateOutputType | null
+  }
+
+  export type ContentMinAggregateOutputType = {
+    id: string | null
+    userId: string | null
+    botId: string | null
+    type: string | null
+    status: string | null
+    taskId: string | null
+    createdAt: Date | null
+    updatedAt: Date | null
+    deletedAt: Date | null
+    isDeleted: boolean | null
+  }
+
+  export type ContentMaxAggregateOutputType = {
+    id: string | null
+    userId: string | null
+    botId: string | null
+    type: string | null
+    status: string | null
+    taskId: string | null
+    createdAt: Date | null
+    updatedAt: Date | null
+    deletedAt: Date | null
+    isDeleted: boolean | null
+  }
+
+  export type ContentCountAggregateOutputType = {
+    id: number
+    userId: number
+    botId: number
+    content: number
+    type: number
+    status: number
+    taskId: number
+    ingestionInfo: number
+    createdAt: number
+    updatedAt: number
+    deletedAt: number
+    isDeleted: number
+    _all: number
+  }
+
+
+  export type ContentMinAggregateInputType = {
+    id?: true
+    userId?: true
+    botId?: true
+    type?: true
+    status?: true
+    taskId?: true
+    createdAt?: true
+    updatedAt?: true
+    deletedAt?: true
+    isDeleted?: true
+  }
+
+  export type ContentMaxAggregateInputType = {
+    id?: true
+    userId?: true
+    botId?: true
+    type?: true
+    status?: true
+    taskId?: true
+    createdAt?: true
+    updatedAt?: true
+    deletedAt?: true
+    isDeleted?: true
+  }
+
+  export type ContentCountAggregateInputType = {
+    id?: true
+    userId?: true
+    botId?: true
+    content?: true
+    type?: true
+    status?: true
+    taskId?: true
+    ingestionInfo?: true
+    createdAt?: true
+    updatedAt?: true
+    deletedAt?: true
+    isDeleted?: true
+    _all?: true
+  }
+
+  export type ContentAggregateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which Content to aggregate.
+     */
+    where?: ContentWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Contents to fetch.
+     */
+    orderBy?: ContentOrderByWithRelationInput | ContentOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the start position
+     */
+    cursor?: ContentWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Contents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Contents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Count returned Contents
+    **/
+    _count?: true | ContentCountAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the minimum value
+    **/
+    _min?: ContentMinAggregateInputType
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
+     * 
+     * Select which fields to find the maximum value
+    **/
+    _max?: ContentMaxAggregateInputType
+  }
+
+  export type GetContentAggregateType<T extends ContentAggregateArgs> = {
+        [P in keyof T & keyof AggregateContent]: P extends '_count' | 'count'
+      ? T[P] extends true
+        ? number
+        : GetScalarType<T[P], AggregateContent[P]>
+      : GetScalarType<T[P], AggregateContent[P]>
+  }
+
+
+
+
+  export type ContentGroupByArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    where?: ContentWhereInput
+    orderBy?: ContentOrderByWithAggregationInput | ContentOrderByWithAggregationInput[]
+    by: ContentScalarFieldEnum[] | ContentScalarFieldEnum
+    having?: ContentScalarWhereWithAggregatesInput
+    take?: number
+    skip?: number
+    _count?: ContentCountAggregateInputType | true
+    _min?: ContentMinAggregateInputType
+    _max?: ContentMaxAggregateInputType
+  }
+
+  export type ContentGroupByOutputType = {
+    id: string
+    userId: string
+    botId: string
+    content: JsonValue | null
+    type: string
+    status: string
+    taskId: string
+    ingestionInfo: JsonValue | null
+    createdAt: Date
+    updatedAt: Date
+    deletedAt: Date | null
+    isDeleted: boolean
+    _count: ContentCountAggregateOutputType | null
+    _min: ContentMinAggregateOutputType | null
+    _max: ContentMaxAggregateOutputType | null
+  }
+
+  type GetContentGroupByPayload<T extends ContentGroupByArgs> = Prisma.PrismaPromise<
+    Array<
+      PickEnumerable<ContentGroupByOutputType, T['by']> &
+        {
+          [P in ((keyof T) & (keyof ContentGroupByOutputType))]: P extends '_count'
+            ? T[P] extends boolean
+              ? number
+              : GetScalarType<T[P], ContentGroupByOutputType[P]>
+            : GetScalarType<T[P], ContentGroupByOutputType[P]>
+        }
+      >
+    >
+
+
+  export type ContentSelect<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    userId?: boolean
+    botId?: boolean
+    content?: boolean
+    type?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
+    createdAt?: boolean
+    updatedAt?: boolean
+    deletedAt?: boolean
+    isDeleted?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["content"]>
+
+  export type ContentSelectCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    userId?: boolean
+    botId?: boolean
+    content?: boolean
+    type?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
+    createdAt?: boolean
+    updatedAt?: boolean
+    deletedAt?: boolean
+    isDeleted?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["content"]>
+
+  export type ContentSelectUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetSelect<{
+    id?: boolean
+    userId?: boolean
+    botId?: boolean
+    content?: boolean
+    type?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
+    createdAt?: boolean
+    updatedAt?: boolean
+    deletedAt?: boolean
+    isDeleted?: boolean
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }, ExtArgs["result"]["content"]>
+
+  export type ContentSelectScalar = {
+    id?: boolean
+    userId?: boolean
+    botId?: boolean
+    content?: boolean
+    type?: boolean
+    status?: boolean
+    taskId?: boolean
+    ingestionInfo?: boolean
+    createdAt?: boolean
+    updatedAt?: boolean
+    deletedAt?: boolean
+    isDeleted?: boolean
+  }
+
+  export type ContentOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "userId" | "botId" | "content" | "type" | "status" | "taskId" | "ingestionInfo" | "createdAt" | "updatedAt" | "deletedAt" | "isDeleted", ExtArgs["result"]["content"]>
+  export type ContentInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type ContentIncludeCreateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+  export type ContentIncludeUpdateManyAndReturn<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    user?: boolean | UserDefaultArgs<ExtArgs>
+  }
+
+  export type $ContentPayload<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    name: "Content"
+    objects: {
+      user: Prisma.$UserPayload<ExtArgs>
+    }
+    scalars: $Extensions.GetPayloadResult<{
+      id: string
+      userId: string
+      botId: string
+      content: Prisma.JsonValue | null
+      type: string
+      status: string
+      taskId: string
+      ingestionInfo: Prisma.JsonValue | null
+      createdAt: Date
+      updatedAt: Date
+      deletedAt: Date | null
+      isDeleted: boolean
+    }, ExtArgs["result"]["content"]>
+    composites: {}
+  }
+
+  type ContentGetPayload<S extends boolean | null | undefined | ContentDefaultArgs> = $Result.GetResult<Prisma.$ContentPayload, S>
+
+  type ContentCountArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> =
+    Omit<ContentFindManyArgs, 'select' | 'include' | 'distinct' | 'omit'> & {
+      select?: ContentCountAggregateInputType | true
+    }
+
+  export interface ContentDelegate<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> {
+    [K: symbol]: { types: Prisma.TypeMap<ExtArgs>['model']['Content'], meta: { name: 'Content' } }
+    /**
+     * Find zero or one Content that matches the filter.
+     * @param {ContentFindUniqueArgs} args - Arguments to find a Content
+     * @example
+     * // Get one Content
+     * const content = await prisma.content.findUnique({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUnique<T extends ContentFindUniqueArgs>(args: SelectSubset<T, ContentFindUniqueArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "findUnique", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find one Content that matches the filter or throw an error with `error.code='P2025'`
+     * if no matches were found.
+     * @param {ContentFindUniqueOrThrowArgs} args - Arguments to find a Content
+     * @example
+     * // Get one Content
+     * const content = await prisma.content.findUniqueOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findUniqueOrThrow<T extends ContentFindUniqueOrThrowArgs>(args: SelectSubset<T, ContentFindUniqueOrThrowArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first Content that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ContentFindFirstArgs} args - Arguments to find a Content
+     * @example
+     * // Get one Content
+     * const content = await prisma.content.findFirst({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirst<T extends ContentFindFirstArgs>(args?: SelectSubset<T, ContentFindFirstArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "findFirst", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find the first Content that matches the filter or
+     * throw `PrismaKnownClientError` with `P2025` code if no matches were found.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ContentFindFirstOrThrowArgs} args - Arguments to find a Content
+     * @example
+     * // Get one Content
+     * const content = await prisma.content.findFirstOrThrow({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     */
+    findFirstOrThrow<T extends ContentFindFirstOrThrowArgs>(args?: SelectSubset<T, ContentFindFirstOrThrowArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "findFirstOrThrow", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Find zero or more Contents that matches the filter.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ContentFindManyArgs} args - Arguments to filter and select certain fields only.
+     * @example
+     * // Get all Contents
+     * const contents = await prisma.content.findMany()
+     * 
+     * // Get first 10 Contents
+     * const contents = await prisma.content.findMany({ take: 10 })
+     * 
+     * // Only select the `id`
+     * const contentWithIdOnly = await prisma.content.findMany({ select: { id: true } })
+     * 
+     */
+    findMany<T extends ContentFindManyArgs>(args?: SelectSubset<T, ContentFindManyArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "findMany", GlobalOmitOptions>>
+
+    /**
+     * Create a Content.
+     * @param {ContentCreateArgs} args - Arguments to create a Content.
+     * @example
+     * // Create one Content
+     * const Content = await prisma.content.create({
+     *   data: {
+     *     // ... data to create a Content
+     *   }
+     * })
+     * 
+     */
+    create<T extends ContentCreateArgs>(args: SelectSubset<T, ContentCreateArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "create", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Create many Contents.
+     * @param {ContentCreateManyArgs} args - Arguments to create many Contents.
+     * @example
+     * // Create many Contents
+     * const content = await prisma.content.createMany({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     *     
+     */
+    createMany<T extends ContentCreateManyArgs>(args?: SelectSubset<T, ContentCreateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Create many Contents and returns the data saved in the database.
+     * @param {ContentCreateManyAndReturnArgs} args - Arguments to create many Contents.
+     * @example
+     * // Create many Contents
+     * const content = await prisma.content.createManyAndReturn({
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Create many Contents and only return the `id`
+     * const contentWithIdOnly = await prisma.content.createManyAndReturn({
+     *   select: { id: true },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    createManyAndReturn<T extends ContentCreateManyAndReturnArgs>(args?: SelectSubset<T, ContentCreateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "createManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Delete a Content.
+     * @param {ContentDeleteArgs} args - Arguments to delete one Content.
+     * @example
+     * // Delete one Content
+     * const Content = await prisma.content.delete({
+     *   where: {
+     *     // ... filter to delete one Content
+     *   }
+     * })
+     * 
+     */
+    delete<T extends ContentDeleteArgs>(args: SelectSubset<T, ContentDeleteArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "delete", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Update one Content.
+     * @param {ContentUpdateArgs} args - Arguments to update one Content.
+     * @example
+     * // Update one Content
+     * const content = await prisma.content.update({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    update<T extends ContentUpdateArgs>(args: SelectSubset<T, ContentUpdateArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "update", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+    /**
+     * Delete zero or more Contents.
+     * @param {ContentDeleteManyArgs} args - Arguments to filter Contents to delete.
+     * @example
+     * // Delete a few Contents
+     * const { count } = await prisma.content.deleteMany({
+     *   where: {
+     *     // ... provide filter here
+     *   }
+     * })
+     * 
+     */
+    deleteMany<T extends ContentDeleteManyArgs>(args?: SelectSubset<T, ContentDeleteManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more Contents.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ContentUpdateManyArgs} args - Arguments to update one or more rows.
+     * @example
+     * // Update many Contents
+     * const content = await prisma.content.updateMany({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: {
+     *     // ... provide data here
+     *   }
+     * })
+     * 
+     */
+    updateMany<T extends ContentUpdateManyArgs>(args: SelectSubset<T, ContentUpdateManyArgs<ExtArgs>>): Prisma.PrismaPromise<BatchPayload>
+
+    /**
+     * Update zero or more Contents and returns the data updated in the database.
+     * @param {ContentUpdateManyAndReturnArgs} args - Arguments to update many Contents.
+     * @example
+     * // Update many Contents
+     * const content = await prisma.content.updateManyAndReturn({
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * 
+     * // Update zero or more Contents and only return the `id`
+     * const contentWithIdOnly = await prisma.content.updateManyAndReturn({
+     *   select: { id: true },
+     *   where: {
+     *     // ... provide filter here
+     *   },
+     *   data: [
+     *     // ... provide data here
+     *   ]
+     * })
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * 
+     */
+    updateManyAndReturn<T extends ContentUpdateManyAndReturnArgs>(args: SelectSubset<T, ContentUpdateManyAndReturnArgs<ExtArgs>>): Prisma.PrismaPromise<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "updateManyAndReturn", GlobalOmitOptions>>
+
+    /**
+     * Create or update one Content.
+     * @param {ContentUpsertArgs} args - Arguments to update or create a Content.
+     * @example
+     * // Update or create a Content
+     * const content = await prisma.content.upsert({
+     *   create: {
+     *     // ... data to create a Content
+     *   },
+     *   update: {
+     *     // ... in case it already exists, update
+     *   },
+     *   where: {
+     *     // ... the filter for the Content we want to update
+     *   }
+     * })
+     */
+    upsert<T extends ContentUpsertArgs>(args: SelectSubset<T, ContentUpsertArgs<ExtArgs>>): Prisma__ContentClient<$Result.GetResult<Prisma.$ContentPayload<ExtArgs>, T, "upsert", GlobalOmitOptions>, never, ExtArgs, GlobalOmitOptions>
+
+
+    /**
+     * Count the number of Contents.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ContentCountArgs} args - Arguments to filter Contents to count.
+     * @example
+     * // Count the number of Contents
+     * const count = await prisma.content.count({
+     *   where: {
+     *     // ... the filter for the Contents we want to count
+     *   }
+     * })
+    **/
+    count<T extends ContentCountArgs>(
+      args?: Subset<T, ContentCountArgs>,
+    ): Prisma.PrismaPromise<
+      T extends $Utils.Record<'select', any>
+        ? T['select'] extends true
+          ? number
+          : GetScalarType<T['select'], ContentCountAggregateOutputType>
+        : number
+    >
+
+    /**
+     * Allows you to perform aggregations operations on a Content.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ContentAggregateArgs} args - Select which aggregations you would like to apply and on what fields.
+     * @example
+     * // Ordered by age ascending
+     * // Where email contains prisma.io
+     * // Limited to the 10 users
+     * const aggregations = await prisma.user.aggregate({
+     *   _avg: {
+     *     age: true,
+     *   },
+     *   where: {
+     *     email: {
+     *       contains: "prisma.io",
+     *     },
+     *   },
+     *   orderBy: {
+     *     age: "asc",
+     *   },
+     *   take: 10,
+     * })
+    **/
+    aggregate<T extends ContentAggregateArgs>(args: Subset<T, ContentAggregateArgs>): Prisma.PrismaPromise<GetContentAggregateType<T>>
+
+    /**
+     * Group by Content.
+     * Note, that providing `undefined` is treated as the value not being there.
+     * Read more here: https://pris.ly/d/null-undefined
+     * @param {ContentGroupByArgs} args - Group by arguments.
+     * @example
+     * // Group by city, order by createdAt, get count
+     * const result = await prisma.user.groupBy({
+     *   by: ['city', 'createdAt'],
+     *   orderBy: {
+     *     createdAt: true
+     *   },
+     *   _count: {
+     *     _all: true
+     *   },
+     * })
+     * 
+    **/
+    groupBy<
+      T extends ContentGroupByArgs,
+      HasSelectOrTake extends Or<
+        Extends<'skip', Keys<T>>,
+        Extends<'take', Keys<T>>
+      >,
+      OrderByArg extends True extends HasSelectOrTake
+        ? { orderBy: ContentGroupByArgs['orderBy'] }
+        : { orderBy?: ContentGroupByArgs['orderBy'] },
+      OrderFields extends ExcludeUnderscoreKeys<Keys<MaybeTupleToUnion<T['orderBy']>>>,
+      ByFields extends MaybeTupleToUnion<T['by']>,
+      ByValid extends Has<ByFields, OrderFields>,
+      HavingFields extends GetHavingFields<T['having']>,
+      HavingValid extends Has<ByFields, HavingFields>,
+      ByEmpty extends T['by'] extends never[] ? True : False,
+      InputErrors extends ByEmpty extends True
+      ? `Error: "by" must not be empty.`
+      : HavingValid extends False
+      ? {
+          [P in HavingFields]: P extends ByFields
+            ? never
+            : P extends string
+            ? `Error: Field "${P}" used in "having" needs to be provided in "by".`
+            : [
+                Error,
+                'Field ',
+                P,
+                ` in "having" needs to be provided in "by"`,
+              ]
+        }[HavingFields]
+      : 'take' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "take", you also need to provide "orderBy"'
+      : 'skip' extends Keys<T>
+      ? 'orderBy' extends Keys<T>
+        ? ByValid extends True
+          ? {}
+          : {
+              [P in OrderFields]: P extends ByFields
+                ? never
+                : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+            }[OrderFields]
+        : 'Error: If you provide "skip", you also need to provide "orderBy"'
+      : ByValid extends True
+      ? {}
+      : {
+          [P in OrderFields]: P extends ByFields
+            ? never
+            : `Error: Field "${P}" in "orderBy" needs to be provided in "by"`
+        }[OrderFields]
+    >(args: SubsetIntersection<T, ContentGroupByArgs, OrderByArg> & InputErrors): {} extends InputErrors ? GetContentGroupByPayload<T> : Prisma.PrismaPromise<InputErrors>
+  /**
+   * Fields of the Content model
+   */
+  readonly fields: ContentFieldRefs;
+  }
+
+  /**
+   * The delegate class that acts as a "Promise-like" for Content.
+   * Why is this prefixed with `Prisma__`?
+   * Because we want to prevent naming conflicts as mentioned in
+   * https://github.com/prisma/prisma-client-js/issues/707
+   */
+  export interface Prisma__ContentClient<T, Null = never, ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
+    readonly [Symbol.toStringTag]: "PrismaPromise"
+    user<T extends UserDefaultArgs<ExtArgs> = {}>(args?: Subset<T, UserDefaultArgs<ExtArgs>>): Prisma__UserClient<$Result.GetResult<Prisma.$UserPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, TResult2 = never>(onfulfilled?: ((value: T) => TResult1 | PromiseLike<TResult1>) | undefined | null, onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null): $Utils.JsPromise<TResult1 | TResult2>
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never>(onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | undefined | null): $Utils.JsPromise<T | TResult>
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally(onfinally?: (() => void) | undefined | null): $Utils.JsPromise<T>
+  }
+
+
+
+
+  /**
+   * Fields of the Content model
+   */
+  interface ContentFieldRefs {
+    readonly id: FieldRef<"Content", 'String'>
+    readonly userId: FieldRef<"Content", 'String'>
+    readonly botId: FieldRef<"Content", 'String'>
+    readonly content: FieldRef<"Content", 'Json'>
+    readonly type: FieldRef<"Content", 'String'>
+    readonly status: FieldRef<"Content", 'String'>
+    readonly taskId: FieldRef<"Content", 'String'>
+    readonly ingestionInfo: FieldRef<"Content", 'Json'>
+    readonly createdAt: FieldRef<"Content", 'DateTime'>
+    readonly updatedAt: FieldRef<"Content", 'DateTime'>
+    readonly deletedAt: FieldRef<"Content", 'DateTime'>
+    readonly isDeleted: FieldRef<"Content", 'Boolean'>
+  }
+    
+
+  // Custom InputTypes
+  /**
+   * Content findUnique
+   */
+  export type ContentFindUniqueArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * Filter, which Content to fetch.
+     */
+    where: ContentWhereUniqueInput
+  }
+
+  /**
+   * Content findUniqueOrThrow
+   */
+  export type ContentFindUniqueOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * Filter, which Content to fetch.
+     */
+    where: ContentWhereUniqueInput
+  }
+
+  /**
+   * Content findFirst
+   */
+  export type ContentFindFirstArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * Filter, which Content to fetch.
+     */
+    where?: ContentWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Contents to fetch.
+     */
+    orderBy?: ContentOrderByWithRelationInput | ContentOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for Contents.
+     */
+    cursor?: ContentWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Contents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Contents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of Contents.
+     */
+    distinct?: ContentScalarFieldEnum | ContentScalarFieldEnum[]
+  }
+
+  /**
+   * Content findFirstOrThrow
+   */
+  export type ContentFindFirstOrThrowArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * Filter, which Content to fetch.
+     */
+    where?: ContentWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Contents to fetch.
+     */
+    orderBy?: ContentOrderByWithRelationInput | ContentOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for searching for Contents.
+     */
+    cursor?: ContentWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Contents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Contents.
+     */
+    skip?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+     * 
+     * Filter by unique combinations of Contents.
+     */
+    distinct?: ContentScalarFieldEnum | ContentScalarFieldEnum[]
+  }
+
+  /**
+   * Content findMany
+   */
+  export type ContentFindManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * Filter, which Contents to fetch.
+     */
+    where?: ContentWhereInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/sorting Sorting Docs}
+     * 
+     * Determine the order of Contents to fetch.
+     */
+    orderBy?: ContentOrderByWithRelationInput | ContentOrderByWithRelationInput[]
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination#cursor-based-pagination Cursor Docs}
+     * 
+     * Sets the position for listing Contents.
+     */
+    cursor?: ContentWhereUniqueInput
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Take `±n` Contents from the position of the cursor.
+     */
+    take?: number
+    /**
+     * {@link https://www.prisma.io/docs/concepts/components/prisma-client/pagination Pagination Docs}
+     * 
+     * Skip the first `n` Contents.
+     */
+    skip?: number
+    distinct?: ContentScalarFieldEnum | ContentScalarFieldEnum[]
+  }
+
+  /**
+   * Content create
+   */
+  export type ContentCreateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * The data needed to create a Content.
+     */
+    data: XOR<ContentCreateInput, ContentUncheckedCreateInput>
+  }
+
+  /**
+   * Content createMany
+   */
+  export type ContentCreateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to create many Contents.
+     */
+    data: ContentCreateManyInput | ContentCreateManyInput[]
+    skipDuplicates?: boolean
+  }
+
+  /**
+   * Content createManyAndReturn
+   */
+  export type ContentCreateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelectCreateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * The data used to create many Contents.
+     */
+    data: ContentCreateManyInput | ContentCreateManyInput[]
+    skipDuplicates?: boolean
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentIncludeCreateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * Content update
+   */
+  export type ContentUpdateArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * The data needed to update a Content.
+     */
+    data: XOR<ContentUpdateInput, ContentUncheckedUpdateInput>
+    /**
+     * Choose, which Content to update.
+     */
+    where: ContentWhereUniqueInput
+  }
+
+  /**
+   * Content updateMany
+   */
+  export type ContentUpdateManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * The data used to update Contents.
+     */
+    data: XOR<ContentUpdateManyMutationInput, ContentUncheckedUpdateManyInput>
+    /**
+     * Filter which Contents to update
+     */
+    where?: ContentWhereInput
+    /**
+     * Limit how many Contents to update.
+     */
+    limit?: number
+  }
+
+  /**
+   * Content updateManyAndReturn
+   */
+  export type ContentUpdateManyAndReturnArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelectUpdateManyAndReturn<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * The data used to update Contents.
+     */
+    data: XOR<ContentUpdateManyMutationInput, ContentUncheckedUpdateManyInput>
+    /**
+     * Filter which Contents to update
+     */
+    where?: ContentWhereInput
+    /**
+     * Limit how many Contents to update.
+     */
+    limit?: number
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentIncludeUpdateManyAndReturn<ExtArgs> | null
+  }
+
+  /**
+   * Content upsert
+   */
+  export type ContentUpsertArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * The filter to search for the Content to update in case it exists.
+     */
+    where: ContentWhereUniqueInput
+    /**
+     * In case the Content found by the `where` argument doesn't exist, create a new Content with this data.
+     */
+    create: XOR<ContentCreateInput, ContentUncheckedCreateInput>
+    /**
+     * In case the Content was found with the provided `where` argument, update it with this data.
+     */
+    update: XOR<ContentUpdateInput, ContentUncheckedUpdateInput>
+  }
+
+  /**
+   * Content delete
+   */
+  export type ContentDeleteArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
+    /**
+     * Filter which Content to delete.
+     */
+    where: ContentWhereUniqueInput
+  }
+
+  /**
+   * Content deleteMany
+   */
+  export type ContentDeleteManyArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Filter which Contents to delete
+     */
+    where?: ContentWhereInput
+    /**
+     * Limit how many Contents to delete.
+     */
+    limit?: number
+  }
+
+  /**
+   * Content without action
+   */
+  export type ContentDefaultArgs<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
+    /**
+     * Select specific fields to fetch from the Content
+     */
+    select?: ContentSelect<ExtArgs> | null
+    /**
+     * Omit specific fields from the Content
+     */
+    omit?: ContentOmit<ExtArgs> | null
+    /**
+     * Choose, which related nodes to fetch as well
+     */
+    include?: ContentInclude<ExtArgs> | null
   }
 
 
@@ -9695,6 +10964,24 @@ export namespace Prisma {
   export type StorageScalarFieldEnum = (typeof StorageScalarFieldEnum)[keyof typeof StorageScalarFieldEnum]
 
 
+  export const ContentScalarFieldEnum: {
+    id: 'id',
+    userId: 'userId',
+    botId: 'botId',
+    content: 'content',
+    type: 'type',
+    status: 'status',
+    taskId: 'taskId',
+    ingestionInfo: 'ingestionInfo',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt',
+    deletedAt: 'deletedAt',
+    isDeleted: 'isDeleted'
+  };
+
+  export type ContentScalarFieldEnum = (typeof ContentScalarFieldEnum)[keyof typeof ContentScalarFieldEnum]
+
+
   export const CustomerBotsScalarFieldEnum: {
     id: 'id',
     userId: 'userId',
@@ -9917,6 +11204,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsListRelationFilter
     Quota?: QuotaListRelationFilter
     CustomerChats?: CustomerChatsListRelationFilter
+    Content?: ContentListRelationFilter
   }
 
   export type UserOrderByWithRelationInput = {
@@ -9934,6 +11222,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsOrderByRelationAggregateInput
     Quota?: QuotaOrderByRelationAggregateInput
     CustomerChats?: CustomerChatsOrderByRelationAggregateInput
+    Content?: ContentOrderByRelationAggregateInput
   }
 
   export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -9954,6 +11243,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsListRelationFilter
     Quota?: QuotaListRelationFilter
     CustomerChats?: CustomerChatsListRelationFilter
+    Content?: ContentListRelationFilter
   }, "id" | "email" | "phonenumber">
 
   export type UserOrderByWithAggregationInput = {
@@ -10144,6 +11434,96 @@ export namespace Prisma {
     updatedAt?: DateTimeWithAggregatesFilter<"Storage"> | Date | string
     deletedAt?: DateTimeNullableWithAggregatesFilter<"Storage"> | Date | string | null
     isDeleted?: BoolWithAggregatesFilter<"Storage"> | boolean
+  }
+
+  export type ContentWhereInput = {
+    AND?: ContentWhereInput | ContentWhereInput[]
+    OR?: ContentWhereInput[]
+    NOT?: ContentWhereInput | ContentWhereInput[]
+    id?: StringFilter<"Content"> | string
+    userId?: StringFilter<"Content"> | string
+    botId?: StringFilter<"Content"> | string
+    content?: JsonNullableFilter<"Content">
+    type?: StringFilter<"Content"> | string
+    status?: StringFilter<"Content"> | string
+    taskId?: StringFilter<"Content"> | string
+    ingestionInfo?: JsonNullableFilter<"Content">
+    createdAt?: DateTimeFilter<"Content"> | Date | string
+    updatedAt?: DateTimeFilter<"Content"> | Date | string
+    deletedAt?: DateTimeNullableFilter<"Content"> | Date | string | null
+    isDeleted?: BoolFilter<"Content"> | boolean
+    user?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }
+
+  export type ContentOrderByWithRelationInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    content?: SortOrderInput | SortOrder
+    type?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    ingestionInfo?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrderInput | SortOrder
+    isDeleted?: SortOrder
+    user?: UserOrderByWithRelationInput
+  }
+
+  export type ContentWhereUniqueInput = Prisma.AtLeast<{
+    id?: string
+    AND?: ContentWhereInput | ContentWhereInput[]
+    OR?: ContentWhereInput[]
+    NOT?: ContentWhereInput | ContentWhereInput[]
+    userId?: StringFilter<"Content"> | string
+    botId?: StringFilter<"Content"> | string
+    content?: JsonNullableFilter<"Content">
+    type?: StringFilter<"Content"> | string
+    status?: StringFilter<"Content"> | string
+    taskId?: StringFilter<"Content"> | string
+    ingestionInfo?: JsonNullableFilter<"Content">
+    createdAt?: DateTimeFilter<"Content"> | Date | string
+    updatedAt?: DateTimeFilter<"Content"> | Date | string
+    deletedAt?: DateTimeNullableFilter<"Content"> | Date | string | null
+    isDeleted?: BoolFilter<"Content"> | boolean
+    user?: XOR<UserScalarRelationFilter, UserWhereInput>
+  }, "id">
+
+  export type ContentOrderByWithAggregationInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    content?: SortOrderInput | SortOrder
+    type?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    ingestionInfo?: SortOrderInput | SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrderInput | SortOrder
+    isDeleted?: SortOrder
+    _count?: ContentCountOrderByAggregateInput
+    _max?: ContentMaxOrderByAggregateInput
+    _min?: ContentMinOrderByAggregateInput
+  }
+
+  export type ContentScalarWhereWithAggregatesInput = {
+    AND?: ContentScalarWhereWithAggregatesInput | ContentScalarWhereWithAggregatesInput[]
+    OR?: ContentScalarWhereWithAggregatesInput[]
+    NOT?: ContentScalarWhereWithAggregatesInput | ContentScalarWhereWithAggregatesInput[]
+    id?: StringWithAggregatesFilter<"Content"> | string
+    userId?: StringWithAggregatesFilter<"Content"> | string
+    botId?: StringWithAggregatesFilter<"Content"> | string
+    content?: JsonNullableWithAggregatesFilter<"Content">
+    type?: StringWithAggregatesFilter<"Content"> | string
+    status?: StringWithAggregatesFilter<"Content"> | string
+    taskId?: StringWithAggregatesFilter<"Content"> | string
+    ingestionInfo?: JsonNullableWithAggregatesFilter<"Content">
+    createdAt?: DateTimeWithAggregatesFilter<"Content"> | Date | string
+    updatedAt?: DateTimeWithAggregatesFilter<"Content"> | Date | string
+    deletedAt?: DateTimeNullableWithAggregatesFilter<"Content"> | Date | string | null
+    isDeleted?: BoolWithAggregatesFilter<"Content"> | boolean
   }
 
   export type CustomerBotsWhereInput = {
@@ -10491,6 +11871,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsCreateNestedManyWithoutUserInput
     Quota?: QuotaCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsCreateNestedManyWithoutUserInput
+    Content?: ContentCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateInput = {
@@ -10508,6 +11889,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsUncheckedCreateNestedManyWithoutUserInput
     Quota?: QuotaUncheckedCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsUncheckedCreateNestedManyWithoutUserInput
+    Content?: ContentUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserUpdateInput = {
@@ -10525,6 +11907,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsUpdateManyWithoutUserNestedInput
     Quota?: QuotaUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUpdateManyWithoutUserNestedInput
+    Content?: ContentUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateInput = {
@@ -10542,6 +11925,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsUncheckedUpdateManyWithoutUserNestedInput
     Quota?: QuotaUncheckedUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUncheckedUpdateManyWithoutUserNestedInput
+    Content?: ContentUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateManyInput = {
@@ -10747,6 +12131,110 @@ export namespace Prisma {
     fileUrl?: StringFieldUpdateOperationsInput | string
     type?: StringFieldUpdateOperationsInput | string
     size?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    isDeleted?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type ContentCreateInput = {
+    id?: string
+    botId: string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    deletedAt?: Date | string | null
+    isDeleted?: boolean
+    user: UserCreateNestedOneWithoutContentInput
+  }
+
+  export type ContentUncheckedCreateInput = {
+    id?: string
+    userId: string
+    botId: string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    deletedAt?: Date | string | null
+    isDeleted?: boolean
+  }
+
+  export type ContentUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    botId?: StringFieldUpdateOperationsInput | string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    isDeleted?: BoolFieldUpdateOperationsInput | boolean
+    user?: UserUpdateOneRequiredWithoutContentNestedInput
+  }
+
+  export type ContentUncheckedUpdateInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    botId?: StringFieldUpdateOperationsInput | string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    isDeleted?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type ContentCreateManyInput = {
+    id?: string
+    userId: string
+    botId: string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    deletedAt?: Date | string | null
+    isDeleted?: boolean
+  }
+
+  export type ContentUpdateManyMutationInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    botId?: StringFieldUpdateOperationsInput | string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    isDeleted?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type ContentUncheckedUpdateManyInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    userId?: StringFieldUpdateOperationsInput | string
+    botId?: StringFieldUpdateOperationsInput | string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type?: StringFieldUpdateOperationsInput | string
     status?: StringFieldUpdateOperationsInput | string
     taskId?: StringFieldUpdateOperationsInput | string
     ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
@@ -11194,6 +12682,12 @@ export namespace Prisma {
     none?: CustomerChatsWhereInput
   }
 
+  export type ContentListRelationFilter = {
+    every?: ContentWhereInput
+    some?: ContentWhereInput
+    none?: ContentWhereInput
+  }
+
   export type SortOrderInput = {
     sort: SortOrder
     nulls?: NullsOrder
@@ -11212,6 +12706,10 @@ export namespace Prisma {
   }
 
   export type CustomerChatsOrderByRelationAggregateInput = {
+    _count?: SortOrder
+  }
+
+  export type ContentOrderByRelationAggregateInput = {
     _count?: SortOrder
   }
 
@@ -11523,6 +13021,47 @@ export namespace Prisma {
     _max?: NestedDateTimeNullableFilter<$PrismaModel>
   }
 
+  export type ContentCountOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    content?: SortOrder
+    type?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    ingestionInfo?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrder
+    isDeleted?: SortOrder
+  }
+
+  export type ContentMaxOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    type?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrder
+    isDeleted?: SortOrder
+  }
+
+  export type ContentMinOrderByAggregateInput = {
+    id?: SortOrder
+    userId?: SortOrder
+    botId?: SortOrder
+    type?: SortOrder
+    status?: SortOrder
+    taskId?: SortOrder
+    createdAt?: SortOrder
+    updatedAt?: SortOrder
+    deletedAt?: SortOrder
+    isDeleted?: SortOrder
+  }
+
   export type CustomerBotsCountOrderByAggregateInput = {
     id?: SortOrder
     userId?: SortOrder
@@ -11802,6 +13341,13 @@ export namespace Prisma {
     connect?: CustomerChatsWhereUniqueInput | CustomerChatsWhereUniqueInput[]
   }
 
+  export type ContentCreateNestedManyWithoutUserInput = {
+    create?: XOR<ContentCreateWithoutUserInput, ContentUncheckedCreateWithoutUserInput> | ContentCreateWithoutUserInput[] | ContentUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ContentCreateOrConnectWithoutUserInput | ContentCreateOrConnectWithoutUserInput[]
+    createMany?: ContentCreateManyUserInputEnvelope
+    connect?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+  }
+
   export type StorageUncheckedCreateNestedManyWithoutUserInput = {
     create?: XOR<StorageCreateWithoutUserInput, StorageUncheckedCreateWithoutUserInput> | StorageCreateWithoutUserInput[] | StorageUncheckedCreateWithoutUserInput[]
     connectOrCreate?: StorageCreateOrConnectWithoutUserInput | StorageCreateOrConnectWithoutUserInput[]
@@ -11828,6 +13374,13 @@ export namespace Prisma {
     connectOrCreate?: CustomerChatsCreateOrConnectWithoutUserInput | CustomerChatsCreateOrConnectWithoutUserInput[]
     createMany?: CustomerChatsCreateManyUserInputEnvelope
     connect?: CustomerChatsWhereUniqueInput | CustomerChatsWhereUniqueInput[]
+  }
+
+  export type ContentUncheckedCreateNestedManyWithoutUserInput = {
+    create?: XOR<ContentCreateWithoutUserInput, ContentUncheckedCreateWithoutUserInput> | ContentCreateWithoutUserInput[] | ContentUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ContentCreateOrConnectWithoutUserInput | ContentCreateOrConnectWithoutUserInput[]
+    createMany?: ContentCreateManyUserInputEnvelope
+    connect?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
   }
 
   export type StringFieldUpdateOperationsInput = {
@@ -11902,6 +13455,20 @@ export namespace Prisma {
     deleteMany?: CustomerChatsScalarWhereInput | CustomerChatsScalarWhereInput[]
   }
 
+  export type ContentUpdateManyWithoutUserNestedInput = {
+    create?: XOR<ContentCreateWithoutUserInput, ContentUncheckedCreateWithoutUserInput> | ContentCreateWithoutUserInput[] | ContentUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ContentCreateOrConnectWithoutUserInput | ContentCreateOrConnectWithoutUserInput[]
+    upsert?: ContentUpsertWithWhereUniqueWithoutUserInput | ContentUpsertWithWhereUniqueWithoutUserInput[]
+    createMany?: ContentCreateManyUserInputEnvelope
+    set?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    disconnect?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    delete?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    connect?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    update?: ContentUpdateWithWhereUniqueWithoutUserInput | ContentUpdateWithWhereUniqueWithoutUserInput[]
+    updateMany?: ContentUpdateManyWithWhereWithoutUserInput | ContentUpdateManyWithWhereWithoutUserInput[]
+    deleteMany?: ContentScalarWhereInput | ContentScalarWhereInput[]
+  }
+
   export type StorageUncheckedUpdateManyWithoutUserNestedInput = {
     create?: XOR<StorageCreateWithoutUserInput, StorageUncheckedCreateWithoutUserInput> | StorageCreateWithoutUserInput[] | StorageUncheckedCreateWithoutUserInput[]
     connectOrCreate?: StorageCreateOrConnectWithoutUserInput | StorageCreateOrConnectWithoutUserInput[]
@@ -11958,6 +13525,20 @@ export namespace Prisma {
     deleteMany?: CustomerChatsScalarWhereInput | CustomerChatsScalarWhereInput[]
   }
 
+  export type ContentUncheckedUpdateManyWithoutUserNestedInput = {
+    create?: XOR<ContentCreateWithoutUserInput, ContentUncheckedCreateWithoutUserInput> | ContentCreateWithoutUserInput[] | ContentUncheckedCreateWithoutUserInput[]
+    connectOrCreate?: ContentCreateOrConnectWithoutUserInput | ContentCreateOrConnectWithoutUserInput[]
+    upsert?: ContentUpsertWithWhereUniqueWithoutUserInput | ContentUpsertWithWhereUniqueWithoutUserInput[]
+    createMany?: ContentCreateManyUserInputEnvelope
+    set?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    disconnect?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    delete?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    connect?: ContentWhereUniqueInput | ContentWhereUniqueInput[]
+    update?: ContentUpdateWithWhereUniqueWithoutUserInput | ContentUpdateWithWhereUniqueWithoutUserInput[]
+    updateMany?: ContentUpdateManyWithWhereWithoutUserInput | ContentUpdateManyWithWhereWithoutUserInput[]
+    deleteMany?: ContentScalarWhereInput | ContentScalarWhereInput[]
+  }
+
   export type UserCreateNestedOneWithoutQuotaInput = {
     create?: XOR<UserCreateWithoutQuotaInput, UserUncheckedCreateWithoutQuotaInput>
     connectOrCreate?: UserCreateOrConnectWithoutQuotaInput
@@ -12000,6 +13581,20 @@ export namespace Prisma {
     upsert?: UserUpsertWithoutStorageInput
     connect?: UserWhereUniqueInput
     update?: XOR<XOR<UserUpdateToOneWithWhereWithoutStorageInput, UserUpdateWithoutStorageInput>, UserUncheckedUpdateWithoutStorageInput>
+  }
+
+  export type UserCreateNestedOneWithoutContentInput = {
+    create?: XOR<UserCreateWithoutContentInput, UserUncheckedCreateWithoutContentInput>
+    connectOrCreate?: UserCreateOrConnectWithoutContentInput
+    connect?: UserWhereUniqueInput
+  }
+
+  export type UserUpdateOneRequiredWithoutContentNestedInput = {
+    create?: XOR<UserCreateWithoutContentInput, UserUncheckedCreateWithoutContentInput>
+    connectOrCreate?: UserCreateOrConnectWithoutContentInput
+    upsert?: UserUpsertWithoutContentInput
+    connect?: UserWhereUniqueInput
+    update?: XOR<XOR<UserUpdateToOneWithWhereWithoutContentInput, UserUpdateWithoutContentInput>, UserUncheckedUpdateWithoutContentInput>
   }
 
   export type UserCreateNestedOneWithoutCustomerBotsInput = {
@@ -12553,6 +14148,44 @@ export namespace Prisma {
     skipDuplicates?: boolean
   }
 
+  export type ContentCreateWithoutUserInput = {
+    id?: string
+    botId: string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    deletedAt?: Date | string | null
+    isDeleted?: boolean
+  }
+
+  export type ContentUncheckedCreateWithoutUserInput = {
+    id?: string
+    botId: string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    deletedAt?: Date | string | null
+    isDeleted?: boolean
+  }
+
+  export type ContentCreateOrConnectWithoutUserInput = {
+    where: ContentWhereUniqueInput
+    create: XOR<ContentCreateWithoutUserInput, ContentUncheckedCreateWithoutUserInput>
+  }
+
+  export type ContentCreateManyUserInputEnvelope = {
+    data: ContentCreateManyUserInput | ContentCreateManyUserInput[]
+    skipDuplicates?: boolean
+  }
+
   export type StorageUpsertWithWhereUniqueWithoutUserInput = {
     where: StorageWhereUniqueInput
     update: XOR<StorageUpdateWithoutUserInput, StorageUncheckedUpdateWithoutUserInput>
@@ -12680,6 +14313,40 @@ export namespace Prisma {
     totalTokens?: IntNullableFilter<"CustomerChats"> | number | null
   }
 
+  export type ContentUpsertWithWhereUniqueWithoutUserInput = {
+    where: ContentWhereUniqueInput
+    update: XOR<ContentUpdateWithoutUserInput, ContentUncheckedUpdateWithoutUserInput>
+    create: XOR<ContentCreateWithoutUserInput, ContentUncheckedCreateWithoutUserInput>
+  }
+
+  export type ContentUpdateWithWhereUniqueWithoutUserInput = {
+    where: ContentWhereUniqueInput
+    data: XOR<ContentUpdateWithoutUserInput, ContentUncheckedUpdateWithoutUserInput>
+  }
+
+  export type ContentUpdateManyWithWhereWithoutUserInput = {
+    where: ContentScalarWhereInput
+    data: XOR<ContentUpdateManyMutationInput, ContentUncheckedUpdateManyWithoutUserInput>
+  }
+
+  export type ContentScalarWhereInput = {
+    AND?: ContentScalarWhereInput | ContentScalarWhereInput[]
+    OR?: ContentScalarWhereInput[]
+    NOT?: ContentScalarWhereInput | ContentScalarWhereInput[]
+    id?: StringFilter<"Content"> | string
+    userId?: StringFilter<"Content"> | string
+    botId?: StringFilter<"Content"> | string
+    content?: JsonNullableFilter<"Content">
+    type?: StringFilter<"Content"> | string
+    status?: StringFilter<"Content"> | string
+    taskId?: StringFilter<"Content"> | string
+    ingestionInfo?: JsonNullableFilter<"Content">
+    createdAt?: DateTimeFilter<"Content"> | Date | string
+    updatedAt?: DateTimeFilter<"Content"> | Date | string
+    deletedAt?: DateTimeNullableFilter<"Content"> | Date | string | null
+    isDeleted?: BoolFilter<"Content"> | boolean
+  }
+
   export type UserCreateWithoutQuotaInput = {
     id?: string
     name: string
@@ -12694,6 +14361,7 @@ export namespace Prisma {
     Storage?: StorageCreateNestedManyWithoutUserInput
     CustomerBots?: CustomerBotsCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsCreateNestedManyWithoutUserInput
+    Content?: ContentCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutQuotaInput = {
@@ -12710,6 +14378,7 @@ export namespace Prisma {
     Storage?: StorageUncheckedCreateNestedManyWithoutUserInput
     CustomerBots?: CustomerBotsUncheckedCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsUncheckedCreateNestedManyWithoutUserInput
+    Content?: ContentUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutQuotaInput = {
@@ -12742,6 +14411,7 @@ export namespace Prisma {
     Storage?: StorageUpdateManyWithoutUserNestedInput
     CustomerBots?: CustomerBotsUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUpdateManyWithoutUserNestedInput
+    Content?: ContentUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutQuotaInput = {
@@ -12758,6 +14428,7 @@ export namespace Prisma {
     Storage?: StorageUncheckedUpdateManyWithoutUserNestedInput
     CustomerBots?: CustomerBotsUncheckedUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUncheckedUpdateManyWithoutUserNestedInput
+    Content?: ContentUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutStorageInput = {
@@ -12774,6 +14445,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsCreateNestedManyWithoutUserInput
     Quota?: QuotaCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsCreateNestedManyWithoutUserInput
+    Content?: ContentCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutStorageInput = {
@@ -12790,6 +14462,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsUncheckedCreateNestedManyWithoutUserInput
     Quota?: QuotaUncheckedCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsUncheckedCreateNestedManyWithoutUserInput
+    Content?: ContentUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutStorageInput = {
@@ -12822,6 +14495,7 @@ export namespace Prisma {
     CustomerBots?: CustomerBotsUpdateManyWithoutUserNestedInput
     Quota?: QuotaUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUpdateManyWithoutUserNestedInput
+    Content?: ContentUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutStorageInput = {
@@ -12835,6 +14509,91 @@ export namespace Prisma {
     phoneVerified?: BoolFieldUpdateOperationsInput | boolean
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    CustomerBots?: CustomerBotsUncheckedUpdateManyWithoutUserNestedInput
+    Quota?: QuotaUncheckedUpdateManyWithoutUserNestedInput
+    CustomerChats?: CustomerChatsUncheckedUpdateManyWithoutUserNestedInput
+    Content?: ContentUncheckedUpdateManyWithoutUserNestedInput
+  }
+
+  export type UserCreateWithoutContentInput = {
+    id?: string
+    name: string
+    email: string
+    phonenumber?: string | null
+    password: string
+    refreshToken?: string | null
+    emailVerified?: boolean
+    phoneVerified?: boolean
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    Storage?: StorageCreateNestedManyWithoutUserInput
+    CustomerBots?: CustomerBotsCreateNestedManyWithoutUserInput
+    Quota?: QuotaCreateNestedManyWithoutUserInput
+    CustomerChats?: CustomerChatsCreateNestedManyWithoutUserInput
+  }
+
+  export type UserUncheckedCreateWithoutContentInput = {
+    id?: string
+    name: string
+    email: string
+    phonenumber?: string | null
+    password: string
+    refreshToken?: string | null
+    emailVerified?: boolean
+    phoneVerified?: boolean
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    Storage?: StorageUncheckedCreateNestedManyWithoutUserInput
+    CustomerBots?: CustomerBotsUncheckedCreateNestedManyWithoutUserInput
+    Quota?: QuotaUncheckedCreateNestedManyWithoutUserInput
+    CustomerChats?: CustomerChatsUncheckedCreateNestedManyWithoutUserInput
+  }
+
+  export type UserCreateOrConnectWithoutContentInput = {
+    where: UserWhereUniqueInput
+    create: XOR<UserCreateWithoutContentInput, UserUncheckedCreateWithoutContentInput>
+  }
+
+  export type UserUpsertWithoutContentInput = {
+    update: XOR<UserUpdateWithoutContentInput, UserUncheckedUpdateWithoutContentInput>
+    create: XOR<UserCreateWithoutContentInput, UserUncheckedCreateWithoutContentInput>
+    where?: UserWhereInput
+  }
+
+  export type UserUpdateToOneWithWhereWithoutContentInput = {
+    where?: UserWhereInput
+    data: XOR<UserUpdateWithoutContentInput, UserUncheckedUpdateWithoutContentInput>
+  }
+
+  export type UserUpdateWithoutContentInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    email?: StringFieldUpdateOperationsInput | string
+    phonenumber?: NullableStringFieldUpdateOperationsInput | string | null
+    password?: StringFieldUpdateOperationsInput | string
+    refreshToken?: NullableStringFieldUpdateOperationsInput | string | null
+    emailVerified?: BoolFieldUpdateOperationsInput | boolean
+    phoneVerified?: BoolFieldUpdateOperationsInput | boolean
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    Storage?: StorageUpdateManyWithoutUserNestedInput
+    CustomerBots?: CustomerBotsUpdateManyWithoutUserNestedInput
+    Quota?: QuotaUpdateManyWithoutUserNestedInput
+    CustomerChats?: CustomerChatsUpdateManyWithoutUserNestedInput
+  }
+
+  export type UserUncheckedUpdateWithoutContentInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    name?: StringFieldUpdateOperationsInput | string
+    email?: StringFieldUpdateOperationsInput | string
+    phonenumber?: NullableStringFieldUpdateOperationsInput | string | null
+    password?: StringFieldUpdateOperationsInput | string
+    refreshToken?: NullableStringFieldUpdateOperationsInput | string | null
+    emailVerified?: BoolFieldUpdateOperationsInput | boolean
+    phoneVerified?: BoolFieldUpdateOperationsInput | boolean
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    Storage?: StorageUncheckedUpdateManyWithoutUserNestedInput
     CustomerBots?: CustomerBotsUncheckedUpdateManyWithoutUserNestedInput
     Quota?: QuotaUncheckedUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUncheckedUpdateManyWithoutUserNestedInput
@@ -12854,6 +14613,7 @@ export namespace Prisma {
     Storage?: StorageCreateNestedManyWithoutUserInput
     Quota?: QuotaCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsCreateNestedManyWithoutUserInput
+    Content?: ContentCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutCustomerBotsInput = {
@@ -12870,6 +14630,7 @@ export namespace Prisma {
     Storage?: StorageUncheckedCreateNestedManyWithoutUserInput
     Quota?: QuotaUncheckedCreateNestedManyWithoutUserInput
     CustomerChats?: CustomerChatsUncheckedCreateNestedManyWithoutUserInput
+    Content?: ContentUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutCustomerBotsInput = {
@@ -12902,6 +14663,7 @@ export namespace Prisma {
     Storage?: StorageUpdateManyWithoutUserNestedInput
     Quota?: QuotaUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUpdateManyWithoutUserNestedInput
+    Content?: ContentUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutCustomerBotsInput = {
@@ -12918,6 +14680,7 @@ export namespace Prisma {
     Storage?: StorageUncheckedUpdateManyWithoutUserNestedInput
     Quota?: QuotaUncheckedUpdateManyWithoutUserNestedInput
     CustomerChats?: CustomerChatsUncheckedUpdateManyWithoutUserNestedInput
+    Content?: ContentUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type UserCreateWithoutCustomerChatsInput = {
@@ -12934,6 +14697,7 @@ export namespace Prisma {
     Storage?: StorageCreateNestedManyWithoutUserInput
     CustomerBots?: CustomerBotsCreateNestedManyWithoutUserInput
     Quota?: QuotaCreateNestedManyWithoutUserInput
+    Content?: ContentCreateNestedManyWithoutUserInput
   }
 
   export type UserUncheckedCreateWithoutCustomerChatsInput = {
@@ -12950,6 +14714,7 @@ export namespace Prisma {
     Storage?: StorageUncheckedCreateNestedManyWithoutUserInput
     CustomerBots?: CustomerBotsUncheckedCreateNestedManyWithoutUserInput
     Quota?: QuotaUncheckedCreateNestedManyWithoutUserInput
+    Content?: ContentUncheckedCreateNestedManyWithoutUserInput
   }
 
   export type UserCreateOrConnectWithoutCustomerChatsInput = {
@@ -13050,6 +14815,7 @@ export namespace Prisma {
     Storage?: StorageUpdateManyWithoutUserNestedInput
     CustomerBots?: CustomerBotsUpdateManyWithoutUserNestedInput
     Quota?: QuotaUpdateManyWithoutUserNestedInput
+    Content?: ContentUpdateManyWithoutUserNestedInput
   }
 
   export type UserUncheckedUpdateWithoutCustomerChatsInput = {
@@ -13066,6 +14832,7 @@ export namespace Prisma {
     Storage?: StorageUncheckedUpdateManyWithoutUserNestedInput
     CustomerBots?: CustomerBotsUncheckedUpdateManyWithoutUserNestedInput
     Quota?: QuotaUncheckedUpdateManyWithoutUserNestedInput
+    Content?: ContentUncheckedUpdateManyWithoutUserNestedInput
   }
 
   export type CustomerChatDetailsUpsertWithWhereUniqueWithoutChatInput = {
@@ -13315,6 +15082,20 @@ export namespace Prisma {
     totalTokens?: number | null
   }
 
+  export type ContentCreateManyUserInput = {
+    id?: string
+    botId: string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type: string
+    status: string
+    taskId: string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: Date | string
+    updatedAt?: Date | string
+    deletedAt?: Date | string | null
+    isDeleted?: boolean
+  }
+
   export type StorageUpdateWithoutUserInput = {
     id?: StringFieldUpdateOperationsInput | string
     botId?: StringFieldUpdateOperationsInput | string
@@ -13458,6 +15239,48 @@ export namespace Prisma {
     isDeleted?: BoolFieldUpdateOperationsInput | boolean
     deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
     totalTokens?: NullableIntFieldUpdateOperationsInput | number | null
+  }
+
+  export type ContentUpdateWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    botId?: StringFieldUpdateOperationsInput | string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    isDeleted?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type ContentUncheckedUpdateWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    botId?: StringFieldUpdateOperationsInput | string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    isDeleted?: BoolFieldUpdateOperationsInput | boolean
+  }
+
+  export type ContentUncheckedUpdateManyWithoutUserInput = {
+    id?: StringFieldUpdateOperationsInput | string
+    botId?: StringFieldUpdateOperationsInput | string
+    content?: NullableJsonNullValueInput | InputJsonValue
+    type?: StringFieldUpdateOperationsInput | string
+    status?: StringFieldUpdateOperationsInput | string
+    taskId?: StringFieldUpdateOperationsInput | string
+    ingestionInfo?: NullableJsonNullValueInput | InputJsonValue
+    createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
+    deletedAt?: NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+    isDeleted?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type CustomerChatDetailsCreateManyChatInput = {

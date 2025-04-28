@@ -35,6 +35,7 @@ model User {
   CustomerBots  CustomerBots[]
   Quota         Quota[]
   CustomerChats CustomerChats[]
+  Content       Content[]
 }
 
 model Quota {
@@ -57,6 +58,22 @@ model Storage {
   fileUrl       String
   type          String
   size          String
+  status        String
+  taskId        String
+  ingestionInfo Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  isDeleted     Boolean   @default(false)
+}
+
+model Content {
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  botId         String
+  content       Json?
+  type          String
   status        String
   taskId        String
   ingestionInfo Json?

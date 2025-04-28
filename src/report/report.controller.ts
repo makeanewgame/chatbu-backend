@@ -101,4 +101,5 @@ export class ReportController {
         const user = req.user as IUser;
         return this.reportService.getGeoLocations(user.sub);
     }
+    //#endregion
 }

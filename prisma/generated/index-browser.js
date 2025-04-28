@@ -155,6 +155,21 @@ exports.Prisma.StorageScalarFieldEnum = {
   isDeleted: 'isDeleted'
 };
 
+exports.Prisma.ContentScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  botId: 'botId',
+  content: 'content',
+  type: 'type',
+  status: 'status',
+  taskId: 'taskId',
+  ingestionInfo: 'ingestionInfo',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt',
+  deletedAt: 'deletedAt',
+  isDeleted: 'isDeleted'
+};
+
 exports.Prisma.CustomerBotsScalarFieldEnum = {
   id: 'id',
   userId: 'userId',
@@ -242,6 +257,7 @@ exports.Prisma.ModelName = {
   User: 'User',
   Quota: 'Quota',
   Storage: 'Storage',
+  Content: 'Content',
   CustomerBots: 'CustomerBots',
   CustomerChats: 'CustomerChats',
   CustomerChatDetails: 'CustomerChatDetails',
