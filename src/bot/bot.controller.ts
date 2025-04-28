@@ -66,39 +66,20 @@ export class BotController {
     required: true,
     type: String,
   })
-  // @Post('list')
-  // @UseGuards(AccessTokenGuard)
-  // async botDetail(@Body() body: FetchSingleBotRequest) {
-  //   const botId = body.botId;
-  //   return this.botService.botDetail(botId);
-  // }
-  // @Post('list')
-  // @UseGuards(AccessTokenGuard)
-  // async getBotSettings(@Body() body: any, @Req() req: Request) {
-  //   const userId = req.user.id;
-
-  //   const { botId } = body;
-
-  //   if (!botId) {
-  //     throw new BadRequestException('Bot ID is required');
-  //   }
-
-  //   const bot = await this.botService.findOne(botId);
-
-  //   if (!bot || bot.userId !== userId) {
-  //     throw new ForbiddenException("You don't have access to this bot");
-  //   }
-
-  //   return bot;
-  // }
   @Post('list')
   @UseGuards(AccessTokenGuard)
-  async getBotSettings(@Body() body: FetchSingleBotRequest) {
-    const botId = body.botId;
+  async getBotSettings(
+    @Req() req: Request,
+    @Body() body: FetchSingleBotRequest,
+  ) {
+    const { botId } = body;
     if (!botId) {
       throw new BadRequestException('Bot ID is required');
     }
-    const bot = await this.botService.botDetail(botId);
+
+    const userId = (req as any).user.id as string;
+
+    const bot = await this.botService.botDetail(botId, userId);
     if (!bot) {
       throw new ForbiddenException("You don't have access to this bot");
     }
