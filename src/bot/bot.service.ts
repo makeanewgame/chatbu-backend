@@ -176,6 +176,9 @@ export class BotService {
         userId: user,
         isDeleted: false,
       },
+      orderBy: {
+        createdAt: 'desc',
+      }
     });
 
     if (bots) {
