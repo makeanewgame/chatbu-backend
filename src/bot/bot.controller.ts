@@ -219,7 +219,7 @@ export class BotController {
   })
   @Post('chat')
   @UseGuards(AccessTokenGuard)
-  async chat(@Body() body: any, @Req() req: Request, @Res() res: Response) {
+  async chat(@Body() body: any, @Req() req: Request) {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     console.log('User IP: ', ip);
 
@@ -264,7 +264,7 @@ export class BotController {
   }
   //#endregion
 
-  //@region saveBotAppearance
+  //#region saveBotAppearance
   @ApiOperation({ summary: 'Save bot appearance settings' })
   @ApiResponse({
     status: 200,
