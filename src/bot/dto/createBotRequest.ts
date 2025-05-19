@@ -18,4 +18,7 @@ export class CreateBotRequest {
     @IsNotEmpty()
     systemPrompt: string;
 
+    @IsNotEmpty()
+    settings: object;
+
 }

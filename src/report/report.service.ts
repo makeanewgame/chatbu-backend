@@ -18,6 +18,7 @@ export class ReportService {
                 createdAt: true,
                 updatedAt: true,
                 totalTokens: true,
+                botId: true,
                 CustomerChatDetails: {
                     where: {
                         sender: "user",

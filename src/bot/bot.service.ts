@@ -55,12 +55,15 @@ export class BotService {
         throw new ForbiddenException('Bot quota exceeded');
       } else if (bots.length < botQuota.limit) {
         console.log('bot creation...', body.systemPrompt);
+        console.log('bot creation...', body.settings);
+
 
         const bot = await this.prisma.customerBots.create({
           data: {
             botName: body.botName,
             botAvatar: body.botAvatar.toString(),
             systemPrompt: body.systemPrompt,
+            settings: body.settings,
             user: {
               connect: {
                 id: body.user,
@@ -348,21 +351,9 @@ export class BotService {
     if (!activeChat) {
       throw new Error('Error acuring chat');
     }
-    const ingestUrl = this.configService.get('INGEST_ENPOINT')
+    const ingestUrl = this.configService.get('INGEST_ENPOINT');
 
 
-    // "bot_cuid": "clt9m2kz001xyzc8ya3f9qwe",
-    // "customer_cuid": "clsgyvz7001xezc8ya3f9p3",
-    // "messages": [
-    //   "Airflow dersi hangi haftalarda işleniyor?"
-    // ],
-    // "system_prompt": "Sen bir eğitim sitesi yapay zeka asistanısın. Eğitimlerle ilgili sorulara vektör veri tabanından cevap verirsin."
-
-
-    console.log("bot_cuid", botUser.id);
-    console.log("customer_cuid", botUser.userId);
-    console.log("messages", [body.message]);
-    console.log("system_prompt", botUser.systemPrompt);
 
     //TODO: check user TOKEN quota
     const userQuota = await this.prisma.quota.findFirst({
@@ -376,26 +367,25 @@ export class BotService {
       throw new ForbiddenException('Token quota exceeded');
     }
 
-    const { data } = await firstValueFrom(
-      this.httpService.post(`${ingestUrl}/chat`, {
-        "bot_cuid": botUser.id,
-        "customer_cuid": botUser.userId,
-        "messages": [body.message],
-        "system_prompt": botUser.systemPrompt
+    let data;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(`${ingestUrl}/chat`, {
+          bot_cuid: botUser.id,
+          customer_cuid: botUser.userId,
+          messages: [body.message],
+          system_prompt: botUser.systemPrompt,
+        })
+      );
+      data = response.data;
+    } catch (error) {
+      console.log('error', error.response?.status);
+      if (error instanceof AxiosError && error.response?.status === 503) {
+        return { message: 'Service busy, retry later' };
       }
-      )
-        .pipe(
-          catchError((error: AxiosError) => {
-            console.log("error", error);
-            throw 'An error happened!';
-          }),
-        ));
-    console.log("ingest gelen", data);
-
-    if (!data) {
-      throw new Error('Error acuring chat');
+      throw error;
     }
-
+    console.log("ingest gelen", data);
     const tokenArr = data.content.split(" ");
     const tokenCount = data.tokens?.total_tokens || tokenArr.length;
 
@@ -459,6 +449,25 @@ export class BotService {
 
     return bot;
 
+
+  }
+
+  async saveBotAppearance(userId: string, botId: string, settings: object) {
+
+    const bot = await this.prisma.customerBots.update({
+      where: {
+        id: botId,
+      },
+      data: {
+        settings: settings,
+      }
+    });
+
+    if (!bot) {
+      throw new Error('Error acuring bot');
+    }
+
+    return bot;
 
   }
 }

@@ -7,9 +7,10 @@ import {
   UseGuards,
   BadRequestException,
   ForbiddenException,
+  Res,
 } from '@nestjs/common';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { FetchSingleBotRequest } from './dto/fetchSingleBot';
 import { UpdateSettingsRequest } from './dto/updateSettingsRequest';
@@ -90,11 +91,6 @@ export class BotController {
   async deleteBot(@Body() body: DeleteBotRequest) {
     return this.botService.deleteBot(body);
   }
-  @Post('update-settings')
-  @UseGuards(AccessTokenGuard)
-  async updateSettings(@Body() body: UpdateSettingsRequest) {
-    return this.botService.updateSettings(body);
-  }
   //#endregion
 
   // #region Post getBotList
@@ -148,8 +144,8 @@ export class BotController {
   @Get('list')
   @UseGuards(AccessTokenGuard)
   async listBots(@Req() req: Request) {
-    const { user } = req.query;
-    return this.botService.listBots(user.toString());
+    const user = req.user as IUser;
+    return this.botService.listBots(user.sub);
   }
   //#endregion
 
@@ -223,9 +219,14 @@ export class BotController {
   })
   @Post('chat')
   @UseGuards(AccessTokenGuard)
-  async chat(@Body() body: any, @Req() req: Request) {
+  async chat(@Body() body: any, @Req() req: Request, @Res() res: Response) {
     const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     console.log('User IP: ', ip);
+
+
+    // return res.status(503).json({
+    //   message: 'Service is not available',
+    // });
 
     return this.botService.chat(body, ip.toString());
   }
@@ -262,4 +263,41 @@ export class BotController {
     return this.botService.getBotAppearance(body.botId, user.sub);
   }
   //#endregion
+
+  //@region saveBotAppearance
+  @ApiOperation({ summary: 'Save bot appearance settings' })
+  @ApiResponse({
+    status: 200,
+    description: 'Bot appearance settings saved',
+  })
+  @ApiBadRequestResponse({
+    description: 'Bad request in payload',
+  })
+  @ApiBearerAuth()
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+
+        settings: { type: 'object' },
+      },
+      required: ['botId', 'settings'],
+    },
+  })
+  @Post('saveAppearance')
+  @UseGuards(AccessTokenGuard)
+  async saveBotAppearance(
+    @Body() body: UpdateSettingsRequest,
+    @Req() req: Request,
+  ) {
+    const user = req.user as IUser;
+    return this.botService.saveBotAppearance(
+      user.sub,
+      body.botId,
+      body.settings,
+    );
+  }
+  //#endregion
+
 }
