@@ -15,7 +15,7 @@ export class FileController {
 
     //#region upload
 
-    @ApiOperation({ summary: 'Upload files to minio , approved file formats: png, jpeg, jpg, gif, svg, webp, pdf, doc, docx, xls, xlsx, ppt, pptx, csv, txt, md ' })
+    @ApiOperation({ summary: 'Upload files to minio , approved file formats: png, jpeg, jpg, gif, svg, webp, pdf, doc, docx, xls, xlsx, ppt, pptx, csv, txt, md, json ' })
     @ApiResponse({
         status: 200,
         description: 'Files uploaded successfully',
@@ -54,7 +54,7 @@ export class FileController {
             validators: [
                 new CustomMaxFileSizeValidator({ maxSize: 10000000 }),
                 new FileTypeValidator({
-                    fileType: /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|text\/csv|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|text\/plain|text\/markdown)$/,
+                    fileType: /^(application\/pdf|application\/msword|application\/json|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|text\/csv|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|text\/plain|text\/markdown)$/,
                 })
             ]
         })

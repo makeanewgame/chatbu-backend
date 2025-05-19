@@ -353,8 +353,6 @@ export class BotService {
     }
     const ingestUrl = this.configService.get('INGEST_ENPOINT');
 
-
-
     //TODO: check user TOKEN quota
     const userQuota = await this.prisma.quota.findFirst({
       where: {
@@ -392,38 +390,38 @@ export class BotService {
     console.log("tokenArr", tokenArr.length);
     console.log("token count", tokenCount);
 
-    //update user quota
-    if (userQuota) {
-      await this.prisma.quota.update({
-        where: {
-          id: userQuota.id
-        },
-        data: {
-          used: (userQuota.used + tokenCount)
-        }
-      });
-    }
+    // //update user quota
+    // if (userQuota) {
+    //   await this.prisma.quota.update({
+    //     where: {
+    //       id: userQuota.id
+    //     },
+    //     data: {
+    //       used: (userQuota.used + tokenCount)
+    //     }
+    //   });
+    // }
 
-    await this.prisma.customerChats.update({
-      where: {
-        id: activeChat.id
-      },
-      data: {
-        updatedAt: new Date(),
-        totalTokens: tokenCount,
-        isDeleted: false,
-      }
-    });
+    // await this.prisma.customerChats.update({
+    //   where: {
+    //     id: activeChat.id
+    //   },
+    //   data: {
+    //     updatedAt: new Date(),
+    //     totalTokens: tokenCount,
+    //     isDeleted: false,
+    //   }
+    // });
 
-    const chatDetails = await this.prisma.customerChatDetails.create({
-      data: {
-        chatId: activeChat.id,
-        sender: "bot",
-        message: data.content,
-        tokenDetails: data.tokens,
-        createdAt: new Date(),
-      }
-    });
+    // const chatDetails = await this.prisma.customerChatDetails.create({
+    //   data: {
+    //     chatId: activeChat.id,
+    //     sender: "bot",
+    //     message: data.content,
+    //     tokenDetails: data.tokens,
+    //     createdAt: new Date(),
+    //   }
+    // });
 
 
     return data;
