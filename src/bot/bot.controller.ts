@@ -300,4 +300,68 @@ export class BotController {
   }
   //#endregion
 
+  //#region checkIntegration
+  @ApiOperation({ summary: 'Check bot integration' })
+  @ApiResponse({
+    status: 200,
+    description: 'Bot integration status',
+  })
+  @ApiBadRequestResponse({
+    description: 'Bad request in payload',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+      },
+      required: ['botId', 'userId', 'integrationType'],
+    },
+  })
+  @Post('checkIntegration')
+  async checkIntegration(@Body() body: any) {
+
+    return this.botService.checkIntegration(
+      body.botId,
+    );
+  }
+  //#endregion
+
+  //#region generateEmbedToken
+  // @ApiOperation({ summary: 'Generate embed token for bot' })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: 'Embed token generated successfully',
+  // })
+  // @ApiBadRequestResponse({
+  //   description: 'Bad request in payload',
+  // })
+  // @ApiBearerAuth()
+  // @ApiBody({
+  //   schema: {
+  //     type: 'object',
+  //     properties: {
+  //       botId: { type: 'string' },
+  //       userId: { type: 'string' },
+  //       integrationType: { type: 'string' },
+  //     },
+  //     required: ['botId', 'userId', 'integrationType'],
+  //   },
+  // })
+  // @Post('generateEmbedToken')
+  // @UseGuards(AccessTokenGuard)
+  // async generateEmbedToken(
+  //   @Body() body: any,
+  //   @Req() req: Request,
+  // ): Promise<{ token: string }> {
+  //   const user = req.user as IUser;
+  //   if (!body.botId || !body.integrationType) {
+  //     throw new BadRequestException('Bot ID and integration type are required');
+  //   }
+  //   return this.botService.generateEmbedToken(
+  //     body.botId,
+  //     user.sub,
+  //   );
+  // }
+  //#endregion
 }

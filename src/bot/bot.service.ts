@@ -10,7 +10,7 @@ import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError } from 'axios';
-import { error } from 'console';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class BotService {
@@ -18,6 +18,7 @@ export class BotService {
     private prisma: PrismaService,
     private httpService: HttpService,
     private configService: ConfigService,
+    private jwtService: JwtService,
   ) { }
 
   async createBot(body: CreateBotRequest) {
@@ -479,4 +480,68 @@ export class BotService {
     return bot;
 
   }
+
+  async checkIntegration(botId: string) {
+    console.log("checkIntegration botId", botId);
+    const bot = await this.prisma.customerBots.findUnique({
+      where: {
+        id: botId,
+        isDeleted: false
+      },
+      select: {
+        id: true,
+      }
+    });
+
+    console.log("bot", bot);
+
+    if (!bot) {
+      throw new Error('Error acuring bot');
+    }
+
+    const token = await this.jwtService.signAsync(
+      { botId: bot.id, type: "embed" },
+      {
+        expiresIn: '2d', // Token expiration time
+        secret: this.configService.get('JWT_SECRET'), // Use your JWT secret from config
+      },
+    );
+
+    return {
+      control: true,
+      token: token,
+    }
+  }
+
+  // async generateEmbedToken(
+  //   botId: string,
+  //   userId: string,
+  // ) {
+  //   const bot = await this.prisma.customerBots.findUnique({
+  //     where: {
+  //       id: botId,
+  //       userId: userId,
+  //       isDeleted: false
+  //     },
+  //     select: {
+  //       id: true,
+  //     }
+  //   });
+
+  //   if (!bot) {
+  //     throw new Error('Error acuring bot');
+  //   }
+
+  //   // Generate a token for the bot
+  //   const token = this.prisma.customerEmbedTokens.create({
+  //     data: {
+  //       botId: bot.id,
+  //       userId: userId,
+  //       integrationType: integrationType,
+  //       token: this.generateRandomToken(),
+  //     }
+  //   });
+
+  //   return token;
+  // }
 }

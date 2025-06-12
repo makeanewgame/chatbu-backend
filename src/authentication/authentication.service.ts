@@ -20,7 +20,7 @@ export class AuthenticationService {
     private quoteService: QuotaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
-  ) {}
+  ) { }
 
   async register(user: any, lang: string) {
     user.refreshToken = '';
@@ -290,7 +290,7 @@ export class AuthenticationService {
     };
   }
 
-  async registerGoogleUser(user: any) {}
+  async registerGoogleUser(user: any) { }
 
   async logout(email: string) {
     const findUser = await this.prisma.user.findFirst({
@@ -311,11 +311,11 @@ export class AuthenticationService {
 
   getTokens(userId: string, email: string) {
     const accessToken = this.jwtService.sign(
-      { sub: userId, email },
+      { sub: userId, email, type: 'auth' },
       { expiresIn: '1d', secret: this.configService.get('JWT_SECRET') },
     );
     const refreshToken = this.jwtService.sign(
-      { sub: userId, email },
+      { sub: userId, email, type: 'refresh' },
       {
         expiresIn: '10d',
         secret: this.configService.get('JWT_REFRESH_SECRET'),

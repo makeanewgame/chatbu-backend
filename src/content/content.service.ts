@@ -48,17 +48,27 @@ export class ContentService {
             }
         })
 
+        console.log("content created", body.type);
+
 
         if (body.type === 'WEBPAGE') {
             console.log("webpage content ingest started", body.type);
             await this.ingestWebPage(body, user, body.content.url);
         }
 
+        if (body.type === 'Q&A') {
+            console.log("Q&A content ingest started", body.type);
+            await this.ingestWebPage(body, user, body.content.url);
+        }
+
+        if (body.type === 'CONTENT') {
+            console.log("CONTENT ingest started", body.type);
+            await this.ingestWebPage(body, user, body.content.url);
+        }
+
         return {
             message: "Content created successfully"
         }
-
-
     }
 
     async getContent(user: IUser, botId: string, type: string) {
@@ -66,7 +76,8 @@ export class ContentService {
         const content = await this.prisma.content.findMany({
             where: {
                 botId: botId,
-                userId: user.sub
+                userId: user.sub,
+                type: type,
             }
         })
         return content;

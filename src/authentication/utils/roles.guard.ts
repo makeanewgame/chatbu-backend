@@ -15,6 +15,25 @@ export class RolesGuard implements CanActivate {
         if (!permission) {
             return true;
         }
+        const req = context.switchToHttp().getRequest();
+        const authHeader = req.headers['authorization'];
+        if (!authHeader?.startsWith('Bearer ')) return false;
+
+        try {
+            const token = authHeader.split(' ')[1];
+            const decoded = this.jwtService.verify(token, { secret: process.env.JWT_SECRET });
+
+            console.log('Decoded JWT:', decoded);
+
+            if (decoded.type !== 'auth') return false;
+
+            req.user = decoded;
+            return true;
+        } catch (e) {
+            return false;
+        }
+
+
 
         // const token = ExtractJwt.fromAuthHeaderAsBearerToken()(context.switchToHttp().getRequest());
         // const decodedToken: JwtPayload = this.jwtService.decode(token, { complete: true } as any);
