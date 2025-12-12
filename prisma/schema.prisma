@@ -5,13 +5,12 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../prisma/generated"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum QuotaType {
@@ -140,3 +139,4 @@ model GeoLocation {
   accuracy          Int
   createdAt         DateTime      @default(now())
 }
+

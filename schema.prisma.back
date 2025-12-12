@@ -1,0 +1,141 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "./generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum QuotaType {
+  BOT
+  FILE
+  TOKEN
+}
+
+model User {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  phonenumber   String?         @unique
+  password      String
+  refreshToken  String?
+  emailVerified Boolean         @default(false)
+  phoneVerified Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  Storage       Storage[]
+  CustomerBots  CustomerBots[]
+  Quota         Quota[]
+  CustomerChats CustomerChats[]
+  Content       Content[]
+}
+
+model Quota {
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  quotaType QuotaType?
+  limit     Int        @default(0)
+  used      Int        @default(0)
+
+  @@unique([userId, quotaType])
+}
+
+model Storage {
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  botId         String
+  fileName      String
+  fileUrl       String
+  type          String
+  size          String
+  status        String
+  taskId        String
+  ingestionInfo Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  isDeleted     Boolean   @default(false)
+}
+
+model Content {
+  id            String    @id @default(cuid())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  botId         String
+  content       Json?
+  type          String
+  status        String
+  taskId        String
+  ingestionInfo Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  isDeleted     Boolean   @default(false)
+}
+
+model CustomerBots {
+  id           String    @id @default(cuid())
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  botName      String
+  botAvatar    String //rakam gelirse 0-20 hazır image, kullanıcı upload ederse url'i yazalım. /$userId/$botId/botimage/bot.png 
+  systemPrompt String    @default("")
+  settings     Json?
+  active       Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
+}
+
+model CustomerChats {
+  id                  String                @id @default(cuid())
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId              String
+  botId               String
+  chatId              String
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  isDeleted           Boolean               @default(false)
+  deletedAt           DateTime?
+  totalTokens         Int?
+  CustomerChatDetails CustomerChatDetails[]
+  GeoLocation         GeoLocation[]
+}
+
+model CustomerChatDetails {
+  id           String        @id @default(cuid())
+  chat         CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId       String
+  message      String
+  sender       String
+  tokenDetails Json?
+  createdAt    DateTime      @default(now())
+}
+
+model GeoLocation {
+  id                String        @id @default(cuid())
+  chat              CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId            String
+  ip                String
+  country           String
+  countryCode       String
+  region            String
+  city              String
+  timezone          String
+  organization      String
+  organization_name String
+  latitude          Float
+  longitude         Float
+  accuracy          Int
+  createdAt         DateTime      @default(now())
+}

@@ -380,7 +380,7 @@ export class BotService {
         );
         data = response.data;
       } catch (error) {
-        console.log('error', error.response?.status);
+        console.log('error', error);
         if (error instanceof AxiosError && error.response?.status === 503) {
           return { message: 'Service busy, retry later' };
         }
