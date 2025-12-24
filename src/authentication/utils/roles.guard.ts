@@ -23,8 +23,6 @@ export class RolesGuard implements CanActivate {
             const token = authHeader.split(' ')[1];
             const decoded = this.jwtService.verify(token, { secret: process.env.JWT_SECRET });
 
-            console.log('Decoded JWT:', decoded);
-
             if (decoded.type !== 'auth') return false;
 
             req.user = decoded;

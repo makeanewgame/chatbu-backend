@@ -33,13 +33,15 @@ export class AuthenticationService {
     });
 
     if (findUser) {
-      return false;
+      return new UnauthorizedException('User already exists');
     } else {
       const bcrypt = require('bcrypt');
       user.password = await bcrypt.hash(user.password, 10);
 
       const code = Math.floor(100000 + Math.random() * 900000).toString();
-      await this.cacheManager.set(user.email, code, 60 * 60 * 24);
+      //disabled for cache bug
+      //await this.cacheManager.set(user.email, code, 60 * 60 * 24);
+
 
       const createdUser = await this.prisma.user.create({
         data: {
@@ -47,8 +49,9 @@ export class AuthenticationService {
           email: user.email,
           password: user.password,
           phonenumber: user.phonenumber,
-          emailVerified: true,
+          emailVerified: false,
           phoneVerified: false,
+          activationCode: code,
         },
       });
 
@@ -60,6 +63,7 @@ export class AuthenticationService {
       const company = process.env.COMPANY_NAME;
       const company_address = process.env.COMPANY_ADDRESS;
 
+      console.log('Sending registration mail to:', user.email, 'with code:', code); // --- IGNORE ---
       this.mail.sendRegisterMail(
         user.email,
         code,
@@ -77,20 +81,21 @@ export class AuthenticationService {
   }
 
   async activateRegistration(email: string, code: string) {
-    const cachedCode = await this.cacheManager.get(email);
     const findUser = await this.prisma.user.findFirst({
       where: {
         email: email,
       },
     });
 
-    if (cachedCode === code) {
+    if (findUser.activationCode === code) {
       await this.prisma.user.update({
         where: {
           id: findUser.id,
         },
         data: {
           emailVerified: true,
+          verifiedAt: new Date(),
+          activationCode: null,
         },
       });
 

@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -11,12 +5,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-}
-
-enum QuotaType {
-  BOT
-  FILE
-  TOKEN
 }
 
 model User {
@@ -30,27 +18,31 @@ model User {
   phoneVerified Boolean         @default(false)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
-  Storage       Storage[]
-  CustomerBots  CustomerBots[]
-  Quota         Quota[]
-  CustomerChats CustomerChats[]
+  activationCode String?
+  verifiedAt    DateTime?
+  resetCode     String?
+  isDeleted     Boolean         @default(false)
+  deletedAt     DateTime?
   Content       Content[]
+  CustomerBots  CustomerBots[]
+  CustomerChats CustomerChats[]
+  Quota         Quota[]
+  Storage       Storage[]
 }
 
 model Quota {
   id        String     @id @default(cuid())
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   quotaType QuotaType?
   limit     Int        @default(0)
   used      Int        @default(0)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, quotaType])
 }
 
 model Storage {
   id            String    @id @default(cuid())
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
   botId         String
   fileName      String
@@ -64,11 +56,11 @@ model Storage {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
   isDeleted     Boolean   @default(false)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Content {
   id            String    @id @default(cuid())
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
   botId         String
   content       Json?
@@ -80,14 +72,14 @@ model Content {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
   isDeleted     Boolean   @default(false)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model CustomerBots {
   id           String    @id @default(cuid())
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId       String
   botName      String
-  botAvatar    String //rakam gelirse 0-20 hazır image, kullanıcı upload ederse url'i yazalım. /$userId/$botId/botimage/bot.png 
+  botAvatar    String
   systemPrompt String    @default("")
   settings     Json?
   active       Boolean   @default(false)
@@ -95,11 +87,11 @@ model CustomerBots {
   updatedAt    DateTime  @updatedAt
   isDeleted    Boolean   @default(false)
   deletedAt    DateTime?
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model CustomerChats {
   id                  String                @id @default(cuid())
-  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId              String
   botId               String
   chatId              String
@@ -109,22 +101,22 @@ model CustomerChats {
   deletedAt           DateTime?
   totalTokens         Int?
   CustomerChatDetails CustomerChatDetails[]
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   GeoLocation         GeoLocation[]
 }
 
 model CustomerChatDetails {
   id           String        @id @default(cuid())
-  chat         CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
   chatId       String
   message      String
   sender       String
   tokenDetails Json?
   createdAt    DateTime      @default(now())
+  chat         CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
 }
 
 model GeoLocation {
   id                String        @id @default(cuid())
-  chat              CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
   chatId            String
   ip                String
   country           String
@@ -138,5 +130,24 @@ model GeoLocation {
   longitude         Float
   accuracy          Int
   createdAt         DateTime      @default(now())
+  chat              CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
 }
 
+model fastapi_ingestiontask {
+  task_id       String   @id @db.VarChar
+  customer_cuid String   @db.VarChar
+  bot_cuid      String   @db.VarChar
+  status        String   @db.VarChar
+  error_message String?  @db.VarChar
+  created_at    DateTime @db.Timestamp(6)
+  updated_at    DateTime @db.Timestamp(6)
+
+  @@index([bot_cuid], map: "ix_fastapi_ingestiontask_bot_cuid")
+  @@index([customer_cuid], map: "ix_fastapi_ingestiontask_customer_cuid")
+}
+
+enum QuotaType {
+  BOT
+  FILE
+  TOKEN
+}

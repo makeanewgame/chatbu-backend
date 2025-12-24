@@ -35,7 +35,6 @@ export class EventsGateway {
 
   @SubscribeMessage('ping')
   async handlePing(@ConnectedSocket() client: Socket) {
-    console.log('ping', client.handshake.query.userId);
     client.emit('message', { msg: 'pong' });
   }
 
