@@ -285,7 +285,7 @@ export class AuthenticationService {
         updatedAt: new Date().toISOString(),
       };
 
-      findUser = await this.prisma.user.create({
+      const createdUser = await this.prisma.user.create({
         data: tempUser,
         select: { Team: true, email: true, id: true, name: true, password: true },
       });
@@ -293,9 +293,16 @@ export class AuthenticationService {
       // Create a default team for the new user
       const defaultTeam = await this.prisma.team.create({
         data: {
-          name: `${findUser.name}'s Team`,
-          ownerId: findUser.id,
+          name: `${createdUser.name}'s Team`,
+          ownerId: createdUser.id,
         },
+      });
+
+      findUser = await this.prisma.user.findFirst({
+        where: {
+          email: email,
+        },
+        select: { Team: true, email: true, id: true, name: true, password: true },
       });
 
       await this.quoteService.createDefaultQuotas(defaultTeam.id);
