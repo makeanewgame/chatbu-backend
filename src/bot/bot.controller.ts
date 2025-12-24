@@ -248,12 +248,12 @@ export class BotController {
       type: 'object',
       properties: {
         botId: { type: 'string' },
-        userId: { type: 'string' },
+        teamId: { type: 'string' },
         message: { type: 'string' },
         context: { type: 'string' },
         history: { type: 'array', items: { type: 'object' } },
       },
-      required: ['botId', 'userId', 'message'],
+      required: ['botId', 'teamId', 'message'],
     },
   })
   @Post('getAppearance')

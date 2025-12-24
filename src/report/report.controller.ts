@@ -31,7 +31,7 @@ export class ReportController {
     @UseGuards(AccessTokenGuard)
     async getChatHistory(@Req() req: Request) {
         const user = req.user as IUser;
-        return this.reportService.getChatHistory(user.sub);
+        return this.reportService.getChatHistory(user.teamId);
     }
     //#endregion
 
@@ -61,7 +61,7 @@ export class ReportController {
     @UseGuards(AccessTokenGuard)
     async getChatHistoryDetail(@Req() req: Request, @Param('chatId') chatId: string) {
         const user = req.user as IUser;
-        return this.reportService.getChatHistoryDetail(user.sub, chatId);
+        return this.reportService.getChatHistoryDetail(user.teamId, chatId);
     }
     //#endregion
 
@@ -79,7 +79,7 @@ export class ReportController {
     @UseGuards(AccessTokenGuard)
     async getUserUsage(@Req() req: Request) {
         const user = req.user as IUser;
-        return this.reportService.getUserUsage(user.sub);
+        return this.reportService.getUserUsage(user.teamId);
     }
     //#endregion
 

@@ -5,12 +5,12 @@ import { PrismaService } from 'src/prisma/prisma.service';
 export class ReportService {
     constructor(private prisma: PrismaService) { }
 
-    async getChatHistory(user: string) {
+    async getChatHistory(teamId: string) {
 
 
         const chatHistoryList = await this.prisma.customerChats.findMany({
             where: {
-                teamId: user,
+                teamId: teamId,
             },
             select: {
                 id: true,
@@ -51,11 +51,11 @@ export class ReportService {
         return chatHistoryList;
     }
 
-    async getChatHistoryDetail(user: string, chatId: string) {
+    async getChatHistoryDetail(teamId: string, chatId: string) {
 
         const chatHistoryList = await this.prisma.customerChats.findFirst({
             where: {
-                teamId: user,
+                teamId: teamId,
                 id: chatId,
             },
             select: {
@@ -84,10 +84,10 @@ export class ReportService {
         return chatHistoryList;
     }
 
-    async getUserUsage(user: string) {
+    async getUserUsage(teamId: string) {
         const userUsage = await this.prisma.quota.findMany({
             where: {
-                teamId: user,
+                teamId: teamId,
             },
             select: {
                 id: true,
@@ -142,10 +142,10 @@ export class ReportService {
         return "ok";
     }
 
-    async getGeoLocations(user: string) {
+    async getGeoLocations(teamId: string) {
         const geoLocation = await this.prisma.customerChats.findMany({
             where: {
-                teamId: user,
+                teamId: teamId,
             },
             select: {
                 id: true,

@@ -15,7 +15,7 @@ export class ChatRequest {
 
   @IsString()
   @IsNotEmpty()
-  userId: string;
+  teamId: string;
 
   @IsString()
   @IsNotEmpty()

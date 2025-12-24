@@ -165,10 +165,10 @@ export class BotService {
     };
   }
 
-  async listBots(user: string) {
+  async listBots(teamId: string) {
     const findUser = await this.prisma.team.findUnique({
       where: {
-        id: user,
+        id: teamId,
       },
     });
 
@@ -178,7 +178,7 @@ export class BotService {
 
     const bots = await this.prisma.customerBots.findMany({
       where: {
-        teamId: user,
+        teamId: teamId,
         isDeleted: false,
       },
       orderBy: {
@@ -263,6 +263,8 @@ export class BotService {
 
   async chat(body: ChatRequest, ip: string) {
 
+    console.log("chat body", body);
+
     try {
 
       const botUser = await this.prisma.customerBots.findFirst({
@@ -278,7 +280,7 @@ export class BotService {
       let activeChat = await this.prisma.customerChats.findFirst({
         where: {
           botId: body.botId,
-          teamId: body.userId,
+          teamId: body.teamId,
           chatId: body.chatId,
           isDeleted: false
         }
@@ -304,7 +306,7 @@ export class BotService {
         activeChat = await this.prisma.customerChats.create({
           data: {
             botId: body.botId,
-            teamId: body.userId,
+            teamId: body.teamId,
             chatId: body.chatId,
             isDeleted: false,
             createdAt: new Date(),
@@ -359,7 +361,7 @@ export class BotService {
       //TODO: check user TOKEN quota
       const userQuota = await this.prisma.quota.findFirst({
         where: {
-          teamId: body.userId,
+          teamId: body.teamId,
           quotaType: "TOKEN"
         }
       });
@@ -439,14 +441,14 @@ export class BotService {
 
   }
 
-  async getBotAppearance(botId: string, userId: string) {
+  async getBotAppearance(botId: string, teamId: string) {
 
     console.log("getBotAppearance botId", botId);
-    console.log("getBotAppearance userId", userId);
+    console.log("getBotAppearance teamId", teamId);
     const bot = await this.prisma.customerBots.findFirst({
       where: {
         id: botId,
-        teamId: userId,
+        teamId: teamId,
         isDeleted: false
       },
       select: {

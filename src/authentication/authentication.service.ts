@@ -301,6 +301,8 @@ export class AuthenticationService {
       await this.quoteService.createDefaultQuotas(defaultTeam.id);
     }
 
+    console.log('Google login for user:', findUser); // --- IGNORE ---
+
     const { password, ...data } = findUser;
     const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id);
 

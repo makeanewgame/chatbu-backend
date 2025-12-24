@@ -17,19 +17,19 @@ export class EventsGateway {
   ) { }
 
   async handleConnection(client: Socket) {
-    const userId = client.handshake.query.userId as string;
-    if (userId) {
-      await this.cacheManager.set(`user_socket:${userId}`, client.id, 0); // TTL: sonsuz
+    const teamId = client.handshake.query.teamId as string;
+    if (teamId) {
+      await this.cacheManager.set(`user_socket:${teamId}`, client.id, 0); // TTL: sonsuz
       client.emit('message', { msg: 'connecting chatbu...' });
       // console.log(`User ${userId} connected with socket ${client.id}`);
     }
   }
 
   async handleDisconnect(client: Socket) {
-    const userId = client.handshake.query.userId as string;
+    const teamId = client.handshake.query.teamId as string;
     // console.log(`User ${userId} disconnected from socket ${client.id}`);
-    if (userId) {
-      await this.cacheManager.del(`user_socket:${userId}`);
+    if (teamId) {
+      await this.cacheManager.del(`user_socket:${teamId}`);
     }
   }
 
@@ -39,8 +39,8 @@ export class EventsGateway {
   }
 
   // Storage listener tarafından çağrılır
-  async notifyUser(userId: string, payload: any) {
-    const socketId = await this.cacheManager.get<string>(`user_socket:${userId}`);
+  async notifyUser(teamId: string, payload: any) {
+    const socketId = await this.cacheManager.get<string>(`user_socket:${teamId}`);
     if (socketId) {
       this.server.to(socketId).emit('message', payload);
     }
