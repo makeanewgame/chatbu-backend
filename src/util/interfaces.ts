@@ -3,7 +3,8 @@ interface IUser {
     email: string,
     iat: number,
     exp: number
-    teamId: string
+    teamId: string,
+    role: string
 }
 
 

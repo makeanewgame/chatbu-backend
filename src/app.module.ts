@@ -16,6 +16,7 @@ import { QuotaModule } from './quota/quota.module';
 import { ReportModule } from './report/report.module';
 import { EventsModule } from './events/events.module';
 import { ContentModule } from './content/content.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { ContentModule } from './content/content.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule],
   controllers: [AppController],
   providers: [AppService],
 })

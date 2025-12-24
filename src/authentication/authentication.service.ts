@@ -113,10 +113,10 @@ export class AuthenticationService {
         where: {
           email: email,
         },
-        select: { Team: true, email: true, id: true, name: true },
+        select: { Team: true, email: true, id: true, name: true, role: true },
       });
 
-      const tokens = this.getTokens(user.id, user.email, user.Team[0].id);
+      const tokens = this.getTokens(user.id, user.email, user.Team[0].id, user.role);
 
       //TODO: Send welcome email
 
@@ -129,6 +129,8 @@ export class AuthenticationService {
         userEmail: user.email,
         userId: user.id,
         userName: user.name,
+        role: user.role,
+        teamId: user.Team[0].id,
       };
     }
     return { success: false };
@@ -231,7 +233,7 @@ export class AuthenticationService {
       where: {
         email: email,
       },
-      select: { Team: true, email: true, id: true, name: true, password: true },
+      select: { Team: true, email: true, id: true, name: true, password: true, role: true },
     });
 
     if (!findUser) return null;
@@ -239,7 +241,7 @@ export class AuthenticationService {
     return await bcrypt.compare(password, findUser.password).then((result) => {
       if (result) {
         const { password, ...data } = findUser;
-        const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id);
+        const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id, findUser.role);
 
         this.prisma.user.update({
           where: {
@@ -257,6 +259,8 @@ export class AuthenticationService {
           userEmail: data.email,
           userId: data.id,
           userName: data.name,
+          teamId: findUser.Team[0].id,
+          role: findUser.role,
         };
       }
 
@@ -269,7 +273,7 @@ export class AuthenticationService {
       where: {
         email: email,
       },
-      select: { Team: true, email: true, id: true, name: true, password: true },
+      select: { Team: true, email: true, id: true, name: true, password: true, role: true },
     });
 
     if (!findUser) {
@@ -302,7 +306,7 @@ export class AuthenticationService {
         where: {
           email: email,
         },
-        select: { Team: true, email: true, id: true, name: true, password: true },
+        select: { Team: true, email: true, id: true, name: true, password: true, role: true },
       });
 
       await this.quoteService.createDefaultQuotas(defaultTeam.id);
@@ -311,7 +315,7 @@ export class AuthenticationService {
     console.log('Google login for user:', findUser); // --- IGNORE ---
 
     const { password, ...data } = findUser;
-    const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id);
+    const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id, findUser.role);
 
     await this.prisma.user.update({
       where: {
@@ -330,6 +334,7 @@ export class AuthenticationService {
       userId: data.id,
       userName: data.name,
       teamId: findUser.Team[0].id,
+      role: findUser.role,
     };
   }
 
@@ -352,13 +357,13 @@ export class AuthenticationService {
     });
   }
 
-  getTokens(userId: string, email: string, teamId: string) {
+  getTokens(userId: string, email: string, teamId: string, role: string) {
     const accessToken = this.jwtService.sign(
-      { sub: userId, email, type: 'auth', teamId },
+      { sub: userId, email, type: 'auth', teamId, role },
       { expiresIn: '1d', secret: this.configService.get('JWT_SECRET') },
     );
     const refreshToken = this.jwtService.sign(
-      { sub: userId, email, type: 'refresh', teamId },
+      { sub: userId, email, type: 'refresh', teamId, role },
       {
         expiresIn: '10d',
         secret: this.configService.get('JWT_REFRESH_SECRET'),
@@ -418,12 +423,14 @@ export class AuthenticationService {
     const refreshTokenUserID = decodedToken.sub;
     const refreshTokenUserEmail = decodedToken.email;
     const refreshTokenTeamId = decodedToken.teamId;
+    const refreshTokenUserRole = decodedToken.role;
 
     // Get new access token from the database
     const tokens = await this.getTokens(
       refreshTokenUserID,
       refreshTokenUserEmail,
-      refreshTokenTeamId
+      refreshTokenTeamId,
+      refreshTokenUserRole
     );
 
     await this.prisma.user.update({
@@ -483,7 +490,7 @@ export class AuthenticationService {
       where: {
         email: email,
       },
-      select: { Team: true, email: true, id: true, name: true, password: true },
+      select: { Team: true, email: true, id: true, name: true, password: true, role: true },
     });
 
     if (!findUser) return null;
@@ -491,7 +498,7 @@ export class AuthenticationService {
     await bcrypt.compare(password, findUser.password).then(async (result) => {
       if (result) {
         const { password, ...data } = findUser;
-        const tokens = this.getTokens(data.id, data.email, data.Team[0].id);
+        const tokens = this.getTokens(data.id, data.email, data.Team[0].id, data.role);
 
         await this.prisma.user.update({
           where: {
