@@ -443,8 +443,6 @@ export class BotService {
 
   async getBotAppearance(botId: string, teamId: string) {
 
-    console.log("getBotAppearance botId", botId);
-    console.log("getBotAppearance teamId", teamId);
     const bot = await this.prisma.customerBots.findFirst({
       where: {
         id: botId,
@@ -486,7 +484,6 @@ export class BotService {
   }
 
   async checkIntegration(botId: string) {
-    console.log("checkIntegration botId", botId);
     const bot = await this.prisma.customerBots.findUnique({
       where: {
         id: botId,
@@ -496,9 +493,6 @@ export class BotService {
         id: true,
       }
     });
-
-    console.log("bot", bot);
-
     if (!bot) {
       throw new Error('Error acuring bot');
     }
