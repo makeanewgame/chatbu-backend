@@ -145,7 +145,7 @@ export class BotController {
   @UseGuards(AccessTokenGuard)
   async listBots(@Req() req: Request) {
     const user = req.user as IUser;
-    return this.botService.listBots(user.sub);
+    return this.botService.listBots(user.teamId);
   }
   //#endregion
 
@@ -260,7 +260,7 @@ export class BotController {
   @UseGuards(AccessTokenGuard)
   async getBotAppearance(@Body() body: any, @Req() req: Request) {
     const user = req.user as IUser;
-    return this.botService.getBotAppearance(body.botId, user.sub);
+    return this.botService.getBotAppearance(body.botId, user.teamId);
   }
   //#endregion
 

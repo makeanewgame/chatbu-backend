@@ -18,7 +18,7 @@ export class ContentService {
     ) { }
 
     async createContent(body: any, user: IUser) {
-        const findUser = await this.prisma.user.findFirst({
+        const findUser = await this.prisma.team.findFirst({
             where: {
                 id: user.sub,
                 CustomerBots: {
@@ -37,7 +37,7 @@ export class ContentService {
 
         await this.prisma.content.create({
             data: {
-                userId: user.sub,
+                teamId: user.sub,
                 botId: body.botId,
                 type: body.type,
                 content: body.content,
@@ -76,7 +76,7 @@ export class ContentService {
         const content = await this.prisma.content.findMany({
             where: {
                 botId: botId,
-                userId: user.sub,
+                teamId: user.sub,
                 type: type,
             }
         })
@@ -85,7 +85,7 @@ export class ContentService {
 
     async deleteContent(user: IUser, contentId: string) {
 
-        const findUser = await this.prisma.user.findFirst({
+        const findUser = await this.prisma.team.findFirst({
             where: {
                 id: user.sub,
                 Content: {

@@ -24,7 +24,7 @@ export class AuthenticationController {
   constructor(
     private authService: AuthenticationService,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   @Get('google/register')
   @UseGuards(GoogleGuard)
@@ -47,7 +47,7 @@ export class AuthenticationController {
     );
     res.redirect(
       this.configService.get('FRONTEND_GOOGLE_REDIRECT_URI') +
-        `?user=${JSON.stringify(data)}`,
+      `?user=${JSON.stringify(data)}`,
     );
   }
 

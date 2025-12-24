@@ -23,6 +23,19 @@ model User {
   resetCode     String?
   isDeleted     Boolean         @default(false)
   deletedAt     DateTime?
+  role          String          @default("USER")
+  Team          Team[]
+  User         TeamMember[]
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String?
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members   TeamMember[]
   Content       Content[]
   CustomerBots  CustomerBots[]
   CustomerChats CustomerChats[]
@@ -30,20 +43,31 @@ model User {
   Storage       Storage[]
 }
 
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  userId    String
+  role      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([teamId, userId])
+}
+
 model Quota {
   id        String     @id @default(cuid())
-  userId    String
+  teamId    String
   quotaType QuotaType?
   limit     Int        @default(0)
   used      Int        @default(0)
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, quotaType])
+  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  @@unique([teamId, quotaType])
 }
 
 model Storage {
   id            String    @id @default(cuid())
-  userId        String
+  teamId        String
   botId         String
   fileName      String
   fileUrl       String
@@ -56,12 +80,12 @@ model Storage {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
   isDeleted     Boolean   @default(false)
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team          Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
 model Content {
   id            String    @id @default(cuid())
-  userId        String
+  teamId        String
   botId         String
   content       Json?
   type          String
@@ -72,12 +96,12 @@ model Content {
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
   isDeleted     Boolean   @default(false)
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team          Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
 model CustomerBots {
   id           String    @id @default(cuid())
-  userId       String
+  teamId       String
   botName      String
   botAvatar    String
   systemPrompt String    @default("")
@@ -87,12 +111,12 @@ model CustomerBots {
   updatedAt    DateTime  @updatedAt
   isDeleted    Boolean   @default(false)
   deletedAt    DateTime?
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team         Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
 model CustomerChats {
   id                  String                @id @default(cuid())
-  userId              String
+  teamId              String
   botId               String
   chatId              String
   createdAt           DateTime              @default(now())
@@ -101,7 +125,7 @@ model CustomerChats {
   deletedAt           DateTime?
   totalTokens         Int?
   CustomerChatDetails CustomerChatDetails[]
-  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team                Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
   GeoLocation         GeoLocation[]
 }
 

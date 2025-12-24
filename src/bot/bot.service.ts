@@ -22,7 +22,7 @@ export class BotService {
   ) { }
 
   async createBot(body: CreateBotRequest) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.prisma.team.findUnique({
       where: {
         id: body.user,
       },
@@ -36,7 +36,7 @@ export class BotService {
 
     const bots = await this.prisma.customerBots.findMany({
       where: {
-        userId: body.user,
+        teamId: body.user,
         isDeleted: false,
       },
     });
@@ -45,7 +45,7 @@ export class BotService {
 
     const botQuota = await this.prisma.quota.findFirst({
       where: {
-        userId: body.user,
+        teamId: body.user,
         quotaType: 'BOT',
       },
     });
@@ -66,7 +66,7 @@ export class BotService {
             botAvatar: body.botAvatar.toString(),
             systemPrompt: body.systemPrompt,
             settings: body.settings,
-            user: {
+            team: {
               connect: {
                 id: body.user,
               },
@@ -93,9 +93,9 @@ export class BotService {
   }
 
   async deleteBot(body: DeleteBotRequest) {
-    const findUser = await this.prisma.user.findUnique({
+    const findUser = await this.prisma.team.findUnique({
       where: {
-        id: body.userId,
+        id: body.teamId,
       },
     });
 
@@ -105,7 +105,7 @@ export class BotService {
 
     const bot = await this.prisma.customerBots.update({
       where: {
-        userId: body.userId,
+        teamId: body.teamId,
         id: body.botId,
       },
       data: {
@@ -117,7 +117,7 @@ export class BotService {
     if (bot) {
       const botQuota = await this.prisma.quota.findFirst({
         where: {
-          userId: body.userId,
+          teamId: body.teamId,
           quotaType: 'BOT',
         },
       });
@@ -166,7 +166,7 @@ export class BotService {
   }
 
   async listBots(user: string) {
-    const findUser = await this.prisma.user.findUnique({
+    const findUser = await this.prisma.team.findUnique({
       where: {
         id: user,
       },
@@ -178,7 +178,7 @@ export class BotService {
 
     const bots = await this.prisma.customerBots.findMany({
       where: {
-        userId: user,
+        teamId: user,
         isDeleted: false,
       },
       orderBy: {
@@ -207,9 +207,9 @@ export class BotService {
   }
 
   async renameBot(body: RenameBotRequest) {
-    const findUser = await this.prisma.user.findUnique({
+    const findUser = await this.prisma.team.findUnique({
       where: {
-        id: body.userId,
+        id: body.teamId,
       },
     });
 
@@ -219,7 +219,7 @@ export class BotService {
 
     const bot = await this.prisma.customerBots.update({
       where: {
-        userId: body.userId,
+        teamId: body.teamId,
         id: body.botId,
       },
       data: {
@@ -235,9 +235,9 @@ export class BotService {
   }
 
   async changeStatus(body: ChageStatusBotRequest) {
-    const findUser = await this.prisma.user.findUnique({
+    const findUser = await this.prisma.team.findUnique({
       where: {
-        id: body.userId,
+        id: body.teamId,
       },
     });
 
@@ -247,7 +247,7 @@ export class BotService {
 
     const bot = await this.prisma.customerBots.update({
       where: {
-        userId: body.userId,
+        teamId: body.teamId,
         id: body.botId,
       },
       data: {
@@ -278,7 +278,7 @@ export class BotService {
       let activeChat = await this.prisma.customerChats.findFirst({
         where: {
           botId: body.botId,
-          userId: body.userId,
+          teamId: body.userId,
           chatId: body.chatId,
           isDeleted: false
         }
@@ -304,7 +304,7 @@ export class BotService {
         activeChat = await this.prisma.customerChats.create({
           data: {
             botId: body.botId,
-            userId: body.userId,
+            teamId: body.userId,
             chatId: body.chatId,
             isDeleted: false,
             createdAt: new Date(),
@@ -359,7 +359,7 @@ export class BotService {
       //TODO: check user TOKEN quota
       const userQuota = await this.prisma.quota.findFirst({
         where: {
-          userId: body.userId,
+          teamId: body.userId,
           quotaType: "TOKEN"
         }
       });
@@ -373,7 +373,7 @@ export class BotService {
         const response = await firstValueFrom(
           this.httpService.post(`${ingestUrl}/chat`, {
             bot_cuid: botUser.id,
-            customer_cuid: botUser.userId,
+            customer_cuid: botUser.teamId,
             messages: [body.message],
             system_prompt: botUser.systemPrompt,
           })
@@ -441,10 +441,12 @@ export class BotService {
 
   async getBotAppearance(botId: string, userId: string) {
 
+    console.log("getBotAppearance botId", botId);
+    console.log("getBotAppearance userId", userId);
     const bot = await this.prisma.customerBots.findFirst({
       where: {
         id: botId,
-        userId: userId,
+        teamId: userId,
         isDeleted: false
       },
       select: {

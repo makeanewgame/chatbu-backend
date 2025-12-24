@@ -4,7 +4,7 @@ export class DeleteBotRequest {
 
     @IsString()
     @IsNotEmpty()
-    userId: string;
+    teamId: string;
 
     @IsString()
     @IsNotEmpty()

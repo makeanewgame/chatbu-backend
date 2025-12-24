@@ -13,7 +13,7 @@ export class ChageStatusBotRequest {
     })
     @IsString()
     @IsNotEmpty()
-    userId: string;
+    teamId: string;
 
     @ApiProperty({
         description: 'Bot ID uuid',

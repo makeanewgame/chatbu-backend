@@ -55,7 +55,15 @@ export class AuthenticationService {
         },
       });
 
-      await this.quoteService.createDefaultQuotas(createdUser.id);
+      // Create a default team for the new user
+      const defaultTeam = await this.prisma.team.create({
+        data: {
+          name: `${user.name}'s Team`,
+          ownerId: createdUser.id,
+        },
+      });
+
+      await this.quoteService.createDefaultQuotas(defaultTeam.id);
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -105,9 +113,10 @@ export class AuthenticationService {
         where: {
           email: email,
         },
+        select: { Team: true, email: true, id: true, name: true },
       });
 
-      const tokens = this.getTokens(user.id, user.email);
+      const tokens = this.getTokens(user.id, user.email, user.Team[0].id);
 
       //TODO: Send welcome email
 
@@ -189,7 +198,15 @@ export class AuthenticationService {
         },
       });
 
-      await this.quoteService.createDefaultQuotas(createdUser.id);
+      // Create a default team for the new user
+      const defaultTeam = await this.prisma.team.create({
+        data: {
+          name: `${user.name}'s Team`,
+          ownerId: createdUser.id,
+        },
+      });
+
+      await this.quoteService.createDefaultQuotas(defaultTeam.id);
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -214,6 +231,7 @@ export class AuthenticationService {
       where: {
         email: email,
       },
+      select: { Team: true, email: true, id: true, name: true, password: true },
     });
 
     if (!findUser) return null;
@@ -221,7 +239,7 @@ export class AuthenticationService {
     return await bcrypt.compare(password, findUser.password).then((result) => {
       if (result) {
         const { password, ...data } = findUser;
-        const tokens = this.getTokens(data.id, data.email);
+        const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id);
 
         this.prisma.user.update({
           where: {
@@ -251,6 +269,7 @@ export class AuthenticationService {
       where: {
         email: email,
       },
+      select: { Team: true, email: true, id: true, name: true, password: true },
     });
 
     if (!findUser) {
@@ -268,13 +287,22 @@ export class AuthenticationService {
 
       findUser = await this.prisma.user.create({
         data: tempUser,
+        select: { Team: true, email: true, id: true, name: true, password: true },
       });
 
-      await this.quoteService.createDefaultQuotas(findUser.id);
+      // Create a default team for the new user
+      const defaultTeam = await this.prisma.team.create({
+        data: {
+          name: `${findUser.name}'s Team`,
+          ownerId: findUser.id,
+        },
+      });
+
+      await this.quoteService.createDefaultQuotas(defaultTeam.id);
     }
 
     const { password, ...data } = findUser;
-    const tokens = this.getTokens(data.id, data.email);
+    const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id);
 
     await this.prisma.user.update({
       where: {
@@ -292,6 +320,7 @@ export class AuthenticationService {
       userEmail: data.email,
       userId: data.id,
       userName: data.name,
+      teamId: findUser.Team[0].id,
     };
   }
 
@@ -314,13 +343,13 @@ export class AuthenticationService {
     });
   }
 
-  getTokens(userId: string, email: string) {
+  getTokens(userId: string, email: string, teamId: string) {
     const accessToken = this.jwtService.sign(
-      { sub: userId, email, type: 'auth' },
+      { sub: userId, email, type: 'auth', teamId },
       { expiresIn: '1d', secret: this.configService.get('JWT_SECRET') },
     );
     const refreshToken = this.jwtService.sign(
-      { sub: userId, email, type: 'refresh' },
+      { sub: userId, email, type: 'refresh', teamId },
       {
         expiresIn: '10d',
         secret: this.configService.get('JWT_REFRESH_SECRET'),
@@ -349,6 +378,7 @@ export class AuthenticationService {
       where: {
         id: userId,
       },
+      select: { Team: true, refreshToken: true },
     });
 
     if (!findUser) {
@@ -378,11 +408,13 @@ export class AuthenticationService {
 
     const refreshTokenUserID = decodedToken.sub;
     const refreshTokenUserEmail = decodedToken.email;
+    const refreshTokenTeamId = decodedToken.teamId;
 
     // Get new access token from the database
     const tokens = await this.getTokens(
       refreshTokenUserID,
       refreshTokenUserEmail,
+      refreshTokenTeamId
     );
 
     await this.prisma.user.update({
@@ -442,6 +474,7 @@ export class AuthenticationService {
       where: {
         email: email,
       },
+      select: { Team: true, email: true, id: true, name: true, password: true },
     });
 
     if (!findUser) return null;
@@ -449,7 +482,7 @@ export class AuthenticationService {
     await bcrypt.compare(password, findUser.password).then(async (result) => {
       if (result) {
         const { password, ...data } = findUser;
-        const tokens = this.getTokens(data.id, data.email);
+        const tokens = this.getTokens(data.id, data.email, data.Team[0].id);
 
         await this.prisma.user.update({
           where: {

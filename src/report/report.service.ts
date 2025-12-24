@@ -10,11 +10,11 @@ export class ReportService {
 
         const chatHistoryList = await this.prisma.customerChats.findMany({
             where: {
-                userId: user,
+                teamId: user,
             },
             select: {
                 id: true,
-                userId: true,
+                teamId: true,
                 createdAt: true,
                 updatedAt: true,
                 totalTokens: true,
@@ -55,7 +55,7 @@ export class ReportService {
 
         const chatHistoryList = await this.prisma.customerChats.findFirst({
             where: {
-                userId: user,
+                teamId: user,
                 id: chatId,
             },
             select: {
@@ -87,7 +87,7 @@ export class ReportService {
     async getUserUsage(user: string) {
         const userUsage = await this.prisma.quota.findMany({
             where: {
-                userId: user,
+                teamId: user,
             },
             select: {
                 id: true,
@@ -145,7 +145,7 @@ export class ReportService {
     async getGeoLocations(user: string) {
         const geoLocation = await this.prisma.customerChats.findMany({
             where: {
-                userId: user,
+                teamId: user,
             },
             select: {
                 id: true,

@@ -26,7 +26,7 @@ export class FileService {
 
     async uploadSingle(files: Array<Express.Multer.File>, user: IUser, body: UploadSingleFileRequest) {
 
-        const lockKey = `quota-lock:${user.sub}`;
+        const lockKey = `quota-lock:${user.teamId}`;
         const existingLock = await this.cacheManager.get(lockKey);
         if (existingLock) {
             throw new ConflictException('Quota check is already in progress. Please try again later.');
@@ -37,9 +37,9 @@ export class FileService {
         try {
             const returnObject = [];
 
-            const existingQuota = await this.prisma.user.findFirst({
+            const existingQuota = await this.prisma.team.findFirst({
                 where: {
-                    id: user.sub,
+                    id: user.teamId,
                     Quota: {
                         some: {
                             quotaType: 'FILE',
@@ -72,11 +72,11 @@ export class FileService {
             console.log("filesLength", files.length, " used..:", existingQuota.Quota[0].used)
             //async function to upload files
             for (const file of files) {
-                const uploaded_file = await this.minioClientService.upload(file, this.configService.get('S3_BUCKET_NAME'), user.sub, body.botId)
+                const uploaded_file = await this.minioClientService.upload(file, this.configService.get('S3_BUCKET_NAME'), user.teamId, body.botId)
 
                 await this.prisma.storage.create({
                     data: {
-                        userId: user.sub,
+                        teamId: user.teamId,
                         botId: body.botId,
                         fileUrl: uploaded_file.url,
                         type: file.mimetype,
@@ -96,9 +96,9 @@ export class FileService {
                 })
             }
 
-            await this.prisma.user.update({
+            await this.prisma.team.update({
                 where: {
-                    id: user.sub,
+                    id: user.teamId,
                     Quota: {
                         some: {
                             quotaType: 'FILE',
@@ -109,8 +109,8 @@ export class FileService {
                     Quota: {
                         update: {
                             where: {
-                                userId_quotaType: {
-                                    userId: user.sub,
+                                teamId_quotaType: {
+                                    teamId: user.teamId,
                                     quotaType: 'FILE'
                                 }
                             },
@@ -132,7 +132,7 @@ export class FileService {
     async delete(fileId: string, user: IUser) {
 
 
-        const findUser = await this.prisma.user.findFirst({
+        const findUser = await this.prisma.team.findFirst({
             where: {
                 id: user.sub,
                 Storage: {
@@ -151,7 +151,7 @@ export class FileService {
 
         const file = await this.prisma.storage.findFirst({
             where: {
-                userId: user.sub,
+                teamId: user.sub,
                 id: fileId
             }
         });
@@ -180,7 +180,7 @@ export class FileService {
                         }
                     })
 
-                    const existingQuota = await this.prisma.user.findFirst({
+                    const existingQuota = await this.prisma.team.findFirst({
                         where: {
                             id: user.sub,
                             Quota: {
@@ -200,7 +200,7 @@ export class FileService {
 
                     console.log("existingQuota", existingQuota);
 
-                    const decreaseQuota = await this.prisma.user.update({
+                    const decreaseQuota = await this.prisma.team.update({
                         where: {
                             id: user.sub,
                             Quota: {
@@ -213,8 +213,8 @@ export class FileService {
                             Quota: {
                                 update: {
                                     where: {
-                                        userId_quotaType: {
-                                            userId: user.sub,
+                                        teamId_quotaType: {
+                                            teamId: user.sub,
                                             quotaType: 'FILE'
                                         }
                                     },
@@ -273,9 +273,10 @@ export class FileService {
 
     async getFiles(user: IUser, botId: string) {
 
+        console.log("getFiles user.teamId", user.teamId);
         const fileList = await this.prisma.storage.findMany({
             where: {
-                userId: user.sub ? user.sub : '',
+                teamId: user.teamId ? user.teamId : '',
                 botId: botId ? botId : ''
             }
         })
@@ -288,9 +289,9 @@ export class FileService {
         //     message: "Ingest service is not available"
         // }
 
-        const findUser = await this.prisma.user.findFirst({
+        const findUser = await this.prisma.team.findFirst({
             where: {
-                id: user.sub,
+                id: user.teamId,
                 CustomerBots: {
                     some: {
                         id: body.botId
@@ -312,7 +313,7 @@ export class FileService {
         const { data } = await firstValueFrom(
             this.httpService.post(`${ingestUrl}/ingest-documents`, {
                 "bot_cuid": body.botId,
-                "customer_cuid": user.sub,
+                "customer_cuid": user.teamId,
                 "file_extension": FileStorageType[body.type],
             }
             )
@@ -351,7 +352,7 @@ export class FileService {
             this.httpService.get(`${ingestUrl}/collection-count`, {
                 params: {
                     bot_cuid: botId,
-                    customer_cuid: user.sub
+                    customer_cuid: user.teamId
                 }
             })
                 .pipe(
@@ -372,14 +373,11 @@ export class FileService {
 
         const userStorage = await this.prisma.storage.count({
             where: {
-                userId: user.sub,
+                teamId: user.teamId,
                 type: 'UPLOADED',
             }
         })
-
-
         console.log("ingest gelen", data);
-
         return { ...data, pending_count: userStorage };
 
     }

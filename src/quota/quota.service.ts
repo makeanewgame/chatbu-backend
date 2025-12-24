@@ -6,11 +6,11 @@ import { QuotaType } from 'src/util/enums';
 export class QuotaService {
     constructor(private prisma: PrismaService) { }
 
-    async list(user: string) {
+    async list(team: string) {
 
         const quotas = await this.prisma.quota.findMany({
             where: {
-                userId: user
+                teamId: team
             }
         });
 
@@ -22,13 +22,13 @@ export class QuotaService {
 
     }
 
-    async createDefaultQuotas(userId: string) {
+    async createDefaultQuotas(teamId: string) {
 
         await this.prisma.quota.create({
             data: {
-                user: {
+                team: {
                     connect: {
-                        id: userId
+                        id: teamId
                     }
                 },
                 quotaType: 'BOT',
@@ -39,9 +39,9 @@ export class QuotaService {
 
         await this.prisma.quota.create({
             data: {
-                user: {
+                team: {
                     connect: {
-                        id: userId
+                        id: teamId
                     }
                 },
                 quotaType: 'FILE',
@@ -52,9 +52,9 @@ export class QuotaService {
 
         await this.prisma.quota.create({
             data: {
-                user: {
+                team: {
                     connect: {
-                        id: userId
+                        id: teamId
                     }
                 },
                 quotaType: 'TOKEN',
@@ -70,7 +70,7 @@ export class QuotaService {
 
         const quota = await this.prisma.quota.findFirst({
             where: {
-                userId: userId,
+                teamId: userId,
                 quotaType: QuotaType[quotaType]
             }
         });

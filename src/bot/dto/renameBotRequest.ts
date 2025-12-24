@@ -4,7 +4,7 @@ export class RenameBotRequest {
 
     @IsString()
     @IsNotEmpty()
-    userId: string;
+    teamId: string;
 
     @IsString()
     @IsNotEmpty()
