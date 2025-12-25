@@ -1261,5 +1261,132 @@ export class AuthenticationService {
       };
     }
   }
+
+  async getGoogleAccountStatus(userId: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          googleId: true,
+          googleEmail: true,
+        },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          isConnected: !!user.googleId,
+          googleEmail: user.googleEmail,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error getting Google account status:', error);
+      return {
+        success: false,
+        message: 'Error getting Google account status',
+      };
+    }
+  }
+
+  async connectGoogleAccount(
+    userId: string,
+    googleId: string,
+    googleEmail: string,
+  ) {
+    try {
+      // Check if this Google account is already connected to another user
+      const existingUser = await this.prisma.user.findFirst({
+        where: {
+          googleId: googleId,
+          id: { not: userId },
+        },
+      });
+
+      if (existingUser) {
+        return {
+          success: false,
+          message: 'This Google account is already connected to another user',
+        };
+      }
+
+      // Update user with Google account info
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          googleId: googleId,
+          googleEmail: googleEmail,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      this.logger.info(`Google account connected for user ${userId}`);
+
+      return {
+        success: true,
+        message: 'Google account connected successfully',
+      };
+    } catch (error) {
+      this.logger.error('Error connecting Google account:', error);
+      return {
+        success: false,
+        message: 'Error connecting Google account',
+      };
+    }
+  }
+
+  async disconnectGoogleAccount(userId: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          googleId: true,
+        },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      if (!user.googleId) {
+        return {
+          success: false,
+          message: 'No Google account connected',
+        };
+      }
+
+      // Disconnect Google account
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          googleId: null,
+          googleEmail: null,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      this.logger.info(`Google account disconnected for user ${userId}`);
+
+      return {
+        success: true,
+        message: 'Google account disconnected successfully',
+      };
+    } catch (error) {
+      this.logger.error('Error disconnecting Google account:', error);
+      return {
+        success: false,
+        message: 'Error disconnecting Google account',
+      };
+    }
+  }
 }
 

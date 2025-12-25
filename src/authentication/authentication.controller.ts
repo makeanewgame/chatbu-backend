@@ -202,4 +202,26 @@ export class AuthenticationController {
       body.confirmPassword,
     );
   }
+
+  @UseGuards(AccessTokenGuard)
+  @Get('google/status')
+  async getGoogleStatus(@Req() req) {
+    return await this.authService.getGoogleAccountStatus(req.user.sub);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Post('google/connect')
+  async connectGoogle(@Req() req, @Body() body: { googleId: string; googleEmail: string }) {
+    return await this.authService.connectGoogleAccount(
+      req.user.sub,
+      body.googleId,
+      body.googleEmail,
+    );
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Post('google/disconnect')
+  async disconnectGoogle(@Req() req) {
+    return await this.authService.disconnectGoogleAccount(req.user.sub);
+  }
 }

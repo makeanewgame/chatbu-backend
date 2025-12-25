@@ -25,6 +25,8 @@ model User {
   deletedAt             DateTime?
   deletionScheduledFor  DateTime?
   role                  String          @default("USER")
+  googleId              String?         @unique
+  googleEmail           String?
   Team                  Team[]
   User                  TeamMember[]
 }

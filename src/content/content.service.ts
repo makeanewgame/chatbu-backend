@@ -20,7 +20,7 @@ export class ContentService {
     async createContent(body: any, user: IUser) {
         const findUser = await this.prisma.team.findFirst({
             where: {
-                id: user.sub,
+                id: user.teamId,
                 CustomerBots: {
                     some: {
                         id: body.botId
@@ -37,7 +37,7 @@ export class ContentService {
 
         await this.prisma.content.create({
             data: {
-                teamId: user.sub,
+                teamId: user.teamId,
                 botId: body.botId,
                 type: body.type,
                 content: body.content,
@@ -76,7 +76,7 @@ export class ContentService {
         const content = await this.prisma.content.findMany({
             where: {
                 botId: botId,
-                teamId: user.sub,
+                teamId: user.teamId,
                 type: type,
             }
         })
@@ -87,7 +87,7 @@ export class ContentService {
 
         const findUser = await this.prisma.team.findFirst({
             where: {
-                id: user.sub,
+                id: user.teamId,
                 Content: {
                     some: {
                         id: contentId
@@ -121,7 +121,7 @@ export class ContentService {
         const { data } = await firstValueFrom(
             this.httpService.post(`${ingestUrl}/ingest-webpages`, {
                 "bot_cuid": body.botId,
-                "customer_cuid": user.sub,
+                "customer_cuid": user.teamId,
                 "page_list": [url],
             })
                 .pipe(
