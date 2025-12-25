@@ -36,6 +36,7 @@ import { join } from 'path';
     })
   ],
   controllers: [MailController],
-  providers: [MailService]
+  providers: [MailService],
+  exports: [MailService]
 })
 export class MailModule { }

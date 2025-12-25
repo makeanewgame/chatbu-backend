@@ -11,7 +11,7 @@ export class MailService {
   constructor(
     private readonly mailerService: MailerService,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
-  ) {}
+  ) { }
 
   async sendRegisterMail(
     email: string,
@@ -128,6 +128,50 @@ export class MailService {
       this.logger.info(`Password reset mail sent to ${email}`);
     } catch (error) {
       console.error(error);
+    }
+  }
+
+  async sendTeamInvitationMail(
+    email: string,
+    teamName: string,
+    ownerName: string,
+    invitationUrl: string,
+    lang: string,
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'team-invitation.html' : 'team-invitation_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const html = template({
+      teamName: teamName,
+      ownerName: ownerName,
+      invitationUrl: invitationUrl,
+      company: process.env.COMPANY_NAME,
+      company_address: process.env.COMPANY_ADDRESS,
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+      end_subscription: process.env.FRONTEND_END_SUBSCRIPTION,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: email,
+      subject: lang === 'en' ? 'Team Invitation' : 'Takım Daveti',
+      html: html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Team invitation mail sent to ${email}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
     }
   }
 }

@@ -22,6 +22,43 @@ export class AuthenticationService {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) { }
 
+  /**
+   * Get the primary team ID for a user.
+   * For team owners, returns their own team.
+   * For members, returns the first team they belong to.
+   */
+  private async getUserPrimaryTeamId(userId: string): Promise<string | null> {
+    // First check if user owns a team
+    const ownedTeam = await this.prisma.team.findFirst({
+      where: {
+        ownerId: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (ownedTeam) {
+      return ownedTeam.id;
+    }
+
+    // If not an owner, get the first team they are a member of
+    const teamMember = await this.prisma.teamMember.findFirst({
+      where: {
+        userId: userId,
+        status: 'active',
+      },
+      select: {
+        teamId: true,
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+    });
+
+    return teamMember?.teamId || null;
+  }
+
   async register(user: any, lang: string) {
     user.refreshToken = '';
     user.updatedAt = new Date().toISOString();
@@ -42,6 +79,36 @@ export class AuthenticationService {
       //disabled for cache bug
       //await this.cacheManager.set(user.email, code, 60 * 60 * 24);
 
+      // Check if this is a team invitation registration
+      let pendingTeamMember = null;
+
+      // First, check if invitation token is provided
+      if (user.invitationToken && user.teamId) {
+        pendingTeamMember = await this.prisma.teamMember.findFirst({
+          where: {
+            invitationToken: user.invitationToken,
+            teamId: user.teamId,
+            email: user.email,
+            status: 'pending',
+          },
+        });
+
+        if (!pendingTeamMember) {
+          throw new UnauthorizedException('Invalid invitation token');
+        }
+      } else {
+        // If no invitation token, check if there's a pending invitation by email
+        pendingTeamMember = await this.prisma.teamMember.findFirst({
+          where: {
+            email: user.email,
+            status: 'pending',
+            userId: null,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        });
+      }
 
       const createdUser = await this.prisma.user.create({
         data: {
@@ -55,15 +122,48 @@ export class AuthenticationService {
         },
       });
 
-      // Create a default team for the new user
-      const defaultTeam = await this.prisma.team.create({
-        data: {
-          name: `${user.name}'s Team`,
-          ownerId: createdUser.id,
-        },
-      });
+      // Handle team invitation
+      if (pendingTeamMember) {
+        // Update the existing TeamMember record
+        await this.prisma.teamMember.update({
+          where: {
+            id: pendingTeamMember.id,
+          },
+          data: {
+            userId: createdUser.id,
+            status: 'active',
+            invitationToken: null,
+          },
+        });
 
-      await this.quoteService.createDefaultQuotas(defaultTeam.id);
+        this.logger.info(
+          `User ${createdUser.id} accepted team invitation for team ${pendingTeamMember.teamId}`,
+        );
+      } else {
+        // Create a default team for the new user
+        const defaultTeam = await this.prisma.team.create({
+          data: {
+            name: `${user.name}'s Team`,
+            ownerId: createdUser.id,
+          },
+        });
+
+        console.log('Created team:', defaultTeam.id, 'for user:', createdUser.id); // DEBUG
+
+        // Create team member record for the owner
+        const teamMember = await this.prisma.teamMember.create({
+          data: {
+            teamId: defaultTeam.id,
+            userId: createdUser.id,
+            role: 'TEAM_OWNER',
+            status: 'active',
+          },
+        });
+
+        console.log('Created TeamMember:', teamMember.id); // DEBUG
+
+        await this.quoteService.createDefaultQuotas(defaultTeam.id);
+      }
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -113,10 +213,16 @@ export class AuthenticationService {
         where: {
           email: email,
         },
-        select: { Team: true, email: true, id: true, name: true, role: true },
+        select: { email: true, id: true, name: true, role: true },
       });
 
-      const tokens = this.getTokens(user.id, user.email, user.Team[0].id, user.role);
+      const teamId = await this.getUserPrimaryTeamId(user.id);
+
+      if (!teamId) {
+        throw new UnauthorizedException('User has no team assigned');
+      }
+
+      const tokens = this.getTokens(user.id, user.email, teamId, user.role);
 
       //TODO: Send welcome email
 
@@ -130,7 +236,7 @@ export class AuthenticationService {
         userId: user.id,
         userName: user.name,
         role: user.role,
-        teamId: user.Team[0].id,
+        teamId: teamId,
       };
     }
     return { success: false };
@@ -233,15 +339,22 @@ export class AuthenticationService {
       where: {
         email: email,
       },
-      select: { Team: true, email: true, id: true, name: true, password: true, role: true },
+      select: { email: true, id: true, name: true, password: true, role: true },
     });
 
     if (!findUser) return null;
 
-    return await bcrypt.compare(password, findUser.password).then((result) => {
+    return await bcrypt.compare(password, findUser.password).then(async (result) => {
       if (result) {
         const { password, ...data } = findUser;
-        const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id, findUser.role);
+
+        const teamId = await this.getUserPrimaryTeamId(data.id);
+
+        if (!teamId) {
+          throw new UnauthorizedException('User has no team assigned');
+        }
+
+        const tokens = this.getTokens(data.id, data.email, teamId, findUser.role);
 
         this.prisma.user.update({
           where: {
@@ -259,7 +372,7 @@ export class AuthenticationService {
           userEmail: data.email,
           userId: data.id,
           userName: data.name,
-          teamId: findUser.Team[0].id,
+          teamId: teamId,
           role: findUser.role,
         };
       }
@@ -273,10 +386,18 @@ export class AuthenticationService {
       where: {
         email: email,
       },
-      select: { Team: true, email: true, id: true, name: true, password: true, role: true },
+      select: { email: true, id: true, name: true, password: true, role: true },
     });
 
     if (!findUser) {
+      // Check if this user has a pending team invitation
+      const pendingTeamMember = await this.prisma.teamMember.findFirst({
+        where: {
+          email: email,
+          status: 'pending',
+        },
+      });
+
       const tempUser = {
         email: email,
         name: user.displayName,
@@ -291,31 +412,73 @@ export class AuthenticationService {
 
       const createdUser = await this.prisma.user.create({
         data: tempUser,
-        select: { Team: true, email: true, id: true, name: true, password: true },
+        select: { email: true, id: true, name: true, password: true },
       });
 
-      // Create a default team for the new user
-      const defaultTeam = await this.prisma.team.create({
-        data: {
-          name: `${createdUser.name}'s Team`,
-          ownerId: createdUser.id,
-        },
-      });
+      console.log('Created Google user:', createdUser.id); // DEBUG
+
+      // Handle team invitation if exists
+      if (pendingTeamMember) {
+        // Update the existing TeamMember record
+        await this.prisma.teamMember.update({
+          where: {
+            id: pendingTeamMember.id,
+          },
+          data: {
+            userId: createdUser.id,
+            status: 'active',
+            invitationToken: null,
+          },
+        });
+
+        this.logger.info(
+          `Google user ${createdUser.id} accepted team invitation for team ${pendingTeamMember.teamId}`,
+        );
+      } else {
+        // Create a default team for the new user
+        const defaultTeam = await this.prisma.team.create({
+          data: {
+            name: `${createdUser.name}'s Team`,
+            ownerId: createdUser.id,
+          },
+        });
+
+        console.log('Created team for Google user:', defaultTeam.id); // DEBUG
+
+        // Create team member record for the owner
+        const teamMember = await this.prisma.teamMember.create({
+          data: {
+            teamId: defaultTeam.id,
+            userId: createdUser.id,
+            role: 'TEAM_OWNER',
+            status: 'active',
+          },
+        });
+
+        console.log('Created TeamMember for Google user:', teamMember.id); // DEBUG
+
+        await this.quoteService.createDefaultQuotas(defaultTeam.id);
+      }
 
       findUser = await this.prisma.user.findFirst({
         where: {
           email: email,
         },
-        select: { Team: true, email: true, id: true, name: true, password: true, role: true },
+        select: { email: true, id: true, name: true, password: true, role: true },
       });
-
-      await this.quoteService.createDefaultQuotas(defaultTeam.id);
     }
 
     console.log('Google login for user:', findUser); // --- IGNORE ---
 
     const { password, ...data } = findUser;
-    const tokens = this.getTokens(data.id, data.email, findUser.Team[0].id, findUser.role);
+
+    const teamId = await this.getUserPrimaryTeamId(data.id);
+
+    if (!teamId) {
+      throw new UnauthorizedException('User has no team assigned');
+    }
+
+    const tokens = this.getTokens(data.id, data.email, teamId, findUser.role);
 
     await this.prisma.user.update({
       where: {
@@ -333,7 +496,7 @@ export class AuthenticationService {
       userEmail: data.email,
       userId: data.id,
       userName: data.name,
-      teamId: findUser.Team[0].id,
+      teamId: teamId,
       role: findUser.role,
     };
   }
@@ -392,7 +555,7 @@ export class AuthenticationService {
       where: {
         id: userId,
       },
-      select: { Team: true, refreshToken: true },
+      select: { id: true, email: true, role: true, refreshToken: true },
     });
 
     if (!findUser) {
@@ -403,6 +566,15 @@ export class AuthenticationService {
       return {
         message: 'Refresh token not found',
         code: 'REFRESH_TOKEN_NOT_FOUND',
+      };
+    }
+
+    const teamId = await this.getUserPrimaryTeamId(findUser.id);
+
+    if (!teamId) {
+      return {
+        message: 'User has no team assigned',
+        code: 'NO_TEAM_ASSIGNED',
       };
     }
 
@@ -422,14 +594,13 @@ export class AuthenticationService {
 
     const refreshTokenUserID = decodedToken.sub;
     const refreshTokenUserEmail = decodedToken.email;
-    const refreshTokenTeamId = decodedToken.teamId;
     const refreshTokenUserRole = decodedToken.role;
 
     // Get new access token from the database
     const tokens = await this.getTokens(
       refreshTokenUserID,
       refreshTokenUserEmail,
-      refreshTokenTeamId,
+      teamId,
       refreshTokenUserRole
     );
 
@@ -490,7 +661,7 @@ export class AuthenticationService {
       where: {
         email: email,
       },
-      select: { Team: true, email: true, id: true, name: true, password: true, role: true },
+      select: { email: true, id: true, name: true, password: true, role: true },
     });
 
     if (!findUser) return null;
@@ -498,7 +669,14 @@ export class AuthenticationService {
     await bcrypt.compare(password, findUser.password).then(async (result) => {
       if (result) {
         const { password, ...data } = findUser;
-        const tokens = this.getTokens(data.id, data.email, data.Team[0].id, data.role);
+
+        const teamId = await this.getUserPrimaryTeamId(data.id);
+
+        if (!teamId) {
+          throw new UnauthorizedException('User has no team assigned');
+        }
+
+        const tokens = this.getTokens(data.id, data.email, teamId, data.role);
 
         await this.prisma.user.update({
           where: {
