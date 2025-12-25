@@ -19,6 +19,7 @@ import { ActivateRegistrationRequest } from './dto/activateregister.request';
 import { LoginRequest } from './dto/login.request';
 import { Language } from 'src/lang';
 import { PasswordRequestChange } from './dto/passwordChangeRequest';
+import { ChangePasswordRequest } from './dto/change-password.request';
 
 @Controller('auth')
 export class AuthenticationController {
@@ -191,8 +192,14 @@ export class AuthenticationController {
     return await this.authService.cancelAccountDeletion(req.user.sub);
   }
 
+  @UseGuards(AccessTokenGuard)
   @Post('change-password')
-  async changePassword() {
-    return 'Change Password';
+  async changePassword(@Req() req, @Body() body: ChangePasswordRequest) {
+    return await this.authService.changePassword(
+      req.user.sub,
+      body.oldPassword,
+      body.newPassword,
+      body.confirmPassword,
+    );
   }
 }

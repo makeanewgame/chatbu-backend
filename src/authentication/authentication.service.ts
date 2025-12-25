@@ -1185,5 +1185,81 @@ export class AuthenticationService {
       };
     }
   }
+
+  async changePassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+    confirmPassword: string,
+  ) {
+    try {
+      // Find user
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      // Verify old password
+      const bcrypt = require('bcrypt');
+      const isValidPassword = await bcrypt.compare(oldPassword, user.password);
+
+      if (!isValidPassword) {
+        return {
+          success: false,
+          message: 'Current password is incorrect',
+        };
+      }
+
+      // Check if new password and confirm password match
+      if (newPassword !== confirmPassword) {
+        return {
+          success: false,
+          message: 'New password and confirm password do not match',
+        };
+      }
+
+      // Check if new password is same as old password
+      if (oldPassword === newPassword) {
+        return {
+          success: false,
+          message: 'New password must be different from current password',
+        };
+      }
+
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+      // Update password
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          password: hashedPassword,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      // Send confirmation email
+      await this.mail.sendPasswordChangedMail(user.email, '', 'en');
+
+      this.logger.info(`Password changed successfully for user ${userId}`);
+
+      return {
+        success: true,
+        message: 'Password changed successfully',
+      };
+    } catch (error) {
+      this.logger.error('Error changing password:', error);
+      return {
+        success: false,
+        message: 'Error changing password',
+      };
+    }
+  }
 }
 
