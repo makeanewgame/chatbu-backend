@@ -3,7 +3,7 @@ import { FileService } from './file.service';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { Request } from 'express';
-import { CustomMaxFileSizeValidator } from './customFileValidator';
+import { CustomMaxFileSizeValidator, CustomFileTypeValidator } from './customFileValidator';
 import { IngestRequest } from './dto/ingestRequest';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { UploadSingleFileRequest } from './dto/uploadfile.request';
@@ -52,10 +52,8 @@ export class FileController {
     async uploadSingle(@Req() req: Request, @Body() body: UploadSingleFileRequest, @UploadedFiles(
         new ParseFilePipe({
             validators: [
-                new CustomMaxFileSizeValidator({ maxSize: 10000000 }),
-                new FileTypeValidator({
-                    fileType: /^(application\/pdf|application\/msword|application\/json|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|text\/csv|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|text\/plain|text\/markdown)$/,
-                })
+                new CustomMaxFileSizeValidator({ maxSize: 20000000 }),
+                new CustomFileTypeValidator()
             ]
         })
     ) files: Array<Express.Multer.File>) {
