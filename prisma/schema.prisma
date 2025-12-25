@@ -8,24 +8,25 @@ datasource db {
 }
 
 model User {
-  id            String          @id @default(cuid())
-  name          String
-  email         String          @unique
-  phonenumber   String?         @unique
-  password      String
-  refreshToken  String?
-  emailVerified Boolean         @default(false)
-  phoneVerified Boolean         @default(false)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  activationCode String?
-  verifiedAt    DateTime?
-  resetCode     String?
-  isDeleted     Boolean         @default(false)
-  deletedAt     DateTime?
-  role          String          @default("USER")
-  Team          Team[]
-  User         TeamMember[]
+  id                    String          @id @default(cuid())
+  name                  String
+  email                 String          @unique
+  phoneNumber           String?         @unique @map("phonenumber")
+  password              String
+  refreshToken          String?
+  emailVerified         Boolean         @default(false)
+  phoneVerified         Boolean         @default(false)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  activationCode        String?
+  verifiedAt            DateTime?
+  resetCode             String?
+  isDeleted             Boolean         @default(false)
+  deletedAt             DateTime?
+  deletionScheduledFor  DateTime?
+  role                  String          @default("USER")
+  Team                  Team[]
+  User                  TeamMember[]
 }
 
 model Team {

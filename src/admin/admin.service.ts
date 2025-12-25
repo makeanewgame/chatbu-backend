@@ -120,7 +120,7 @@ export class AdminService {
                     id: true,
                     name: true,
                     email: true,
-                    phonenumber: true,
+                    phoneNumber: true,
                     emailVerified: true,
                     phoneVerified: true,
                     role: true,
@@ -153,7 +153,7 @@ export class AdminService {
                 id: true,
                 name: true,
                 email: true,
-                phonenumber: true,
+                phoneNumber: true,
                 emailVerified: true,
                 phoneVerified: true,
                 role: true,
@@ -198,9 +198,9 @@ export class AdminService {
         }
 
         // Check if phone is being changed and if it's already in use
-        if (dto.phonenumber && dto.phonenumber !== user.phonenumber) {
+        if (dto.phoneNumber && dto.phoneNumber !== user.phoneNumber) {
             const existingUser = await this.prisma.user.findUnique({
-                where: { phonenumber: dto.phonenumber },
+                where: { phoneNumber: dto.phoneNumber },
             });
 
             if (existingUser) {
@@ -215,7 +215,7 @@ export class AdminService {
                 id: true,
                 name: true,
                 email: true,
-                phonenumber: true,
+                phoneNumber: true,
                 emailVerified: true,
                 phoneVerified: true,
                 role: true,

@@ -115,7 +115,7 @@ export class AuthenticationService {
           name: user.name,
           email: user.email,
           password: user.password,
-          phonenumber: user.phonenumber,
+          phoneNumber: user.phoneNumber,
           emailVerified: false,
           phoneVerified: false,
           activationCode: code,
@@ -300,7 +300,7 @@ export class AuthenticationService {
           name: user.name,
           email: user.email,
           password: user.password,
-          phonenumber: user.phonenumber,
+          phoneNumber: user.phoneNumber,
           emailVerified: true,
           phoneVerified: false,
         },
@@ -339,14 +339,48 @@ export class AuthenticationService {
       where: {
         email: email,
       },
-      select: { email: true, id: true, name: true, password: true, role: true },
+      select: {
+        email: true,
+        id: true,
+        name: true,
+        password: true,
+        role: true,
+        isDeleted: true,
+        deletionScheduledFor: true,
+      },
     });
 
     if (!findUser) return null;
 
     return await bcrypt.compare(password, findUser.password).then(async (result) => {
       if (result) {
-        const { password, ...data } = findUser;
+        const { password, isDeleted, deletionScheduledFor, ...data } = findUser;
+
+        // Check if account is scheduled for deletion
+        if (isDeleted && deletionScheduledFor) {
+          const now = new Date();
+
+          // If deletion hasn't been executed yet, allow reactivation
+          if (deletionScheduledFor > now) {
+            // Restore the account
+            await this.prisma.user.update({
+              where: { id: data.id },
+              data: {
+                isDeleted: false,
+                deletedAt: null,
+                deletionScheduledFor: null,
+              },
+            });
+
+            this.logger.info(`Account ${data.email} restored after deletion request`);
+          } else {
+            // Grace period has passed, account should have been deleted
+            throw new UnauthorizedException('Account has been deleted');
+          }
+        } else if (isDeleted) {
+          // Permanently deleted or in deletion process
+          throw new UnauthorizedException('Account has been deleted');
+        }
 
         const teamId = await this.getUserPrimaryTeamId(data.id);
 
@@ -694,4 +728,462 @@ export class AuthenticationService {
       return null;
     });
   }
+
+  async getUserProfile(userId: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phoneNumber: true,
+          role: true,
+          emailVerified: true,
+          createdAt: true,
+        },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      const teamId = await this.getUserPrimaryTeamId(userId);
+
+      return {
+        success: true,
+        data: {
+          userId: user.id,
+          name: user.name,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          role: user.role,
+          teamId: teamId,
+          isEmailVerified: user.emailVerified,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error getting user profile:', error);
+      return {
+        success: false,
+        message: 'Error retrieving profile',
+      };
+    }
+  }
+
+  async updateUserProfile(userId: string, data: any) {
+    try {
+      const { name, email, phoneNumber } = data;
+
+      if (!name || !email) {
+        return {
+          success: false,
+          message: 'Name and email are required',
+        };
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      let emailChanged = false;
+
+      // Email değişikliği kontrolü
+      if (email !== user.email) {
+        // Yeni email daha önce kullanılmış mı kontrol et
+        const existingUser = await this.prisma.user.findUnique({
+          where: { email: email },
+        });
+
+        if (existingUser) {
+          return {
+            success: false,
+            message: 'Email already exists',
+          };
+        }
+
+        emailChanged = true;
+
+        // Email doğrulama kodu oluştur
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Kullanıcıyı güncelle
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            name: name,
+            email: email,
+            phoneNumber: phoneNumber || null,
+            emailVerified: false,
+            activationCode: verificationCode,
+          },
+        });
+
+        // Doğrulama maili gönder
+        try {
+          await this.mail.sendEmailVerificationMail(email, verificationCode, 'en', name);
+        } catch (mailError) {
+          this.logger.error('Error sending verification email:', mailError);
+        }
+      } else {
+        // Email değişmemişse sadece diğer alanları güncelle
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            name: name,
+            phoneNumber: phoneNumber || null,
+          },
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Profile updated successfully',
+        data: {
+          userId: userId,
+          name: name,
+          email: email,
+          phoneNumber: phoneNumber,
+          emailChanged: emailChanged,
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error updating user profile:', error);
+      return {
+        success: false,
+        message: 'Error updating profile',
+      };
+    }
+  }
+
+  async resendEmailVerification(userId: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      if (user.emailVerified) {
+        return {
+          success: false,
+          message: 'Email already verified',
+        };
+      }
+
+      // Yeni doğrulama kodu oluştur
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          activationCode: verificationCode,
+        },
+      });
+
+      // Doğrulama maili gönder
+      try {
+        await this.mail.sendEmailVerificationMail(user.email, verificationCode, 'en', user.name);
+      } catch (mailError) {
+        this.logger.error('Error sending verification email:', mailError);
+        return {
+          success: false,
+          message: 'Error sending verification email',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Verification email sent successfully',
+      };
+    } catch (error) {
+      this.logger.error('Error resending verification email:', error);
+      return {
+        success: false,
+        message: 'Error sending verification email',
+      };
+    }
+  }
+
+  /**
+   * Check if user is eligible for account deletion
+   * Returns any blockers that prevent deletion
+   */
+  async checkDeletionEligibility(userId: string) {
+    const blockers = [];
+
+    // Check if user owns teams with other members
+    const ownedTeams = await this.prisma.team.findMany({
+      where: {
+        ownerId: userId,
+      },
+      include: {
+        members: {
+          where: {
+            status: 'active',
+          },
+        },
+      },
+    });
+
+    for (const team of ownedTeams) {
+      // If team has more than 1 member (owner + others)
+      if (team.members.length > 1) {
+        blockers.push({
+          type: 'TEAM_OWNERSHIP',
+          message: `You must transfer ownership or remove members from team "${team.name || 'Unnamed Team'}" before deleting your account`,
+          teamId: team.id,
+          teamName: team.name,
+          memberCount: team.members.length - 1, // excluding owner
+        });
+      }
+    }
+
+    // Check for pending team invitations sent by this user
+    const pendingInvitations = await this.prisma.teamMember.count({
+      where: {
+        team: {
+          ownerId: userId,
+        },
+        status: 'pending',
+      },
+    });
+
+    if (pendingInvitations > 0) {
+      blockers.push({
+        type: 'PENDING_INVITATIONS',
+        message: `You have ${pendingInvitations} pending team invitation(s). Please cancel them before deleting your account`,
+        count: pendingInvitations,
+      });
+    }
+
+    return {
+      eligible: blockers.length === 0,
+      blockers,
+    };
+  }
+
+  /**
+   * Request account deletion (soft delete with 30-day grace period)
+   * GDPR compliant - allows user to recover within 30 days
+   */
+  async requestAccountDeletion(userId: string) {
+    try {
+      // Check eligibility
+      const eligibility = await this.checkDeletionEligibility(userId);
+
+      if (!eligibility.eligible) {
+        return {
+          success: false,
+          message: 'Account deletion blocked',
+          blockers: eligibility.blockers,
+        };
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      if (user.isDeleted) {
+        return {
+          success: false,
+          message: 'Account is already scheduled for deletion',
+          scheduledFor: user.deletionScheduledFor,
+        };
+      }
+
+      // Calculate deletion date (30 days from now)
+      const deletionDate = new Date();
+      deletionDate.setDate(deletionDate.getDate() + 30);
+
+      // Soft delete - mark as deleted but keep data for 30 days
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletionScheduledFor: deletionDate,
+          refreshToken: null, // Invalidate all sessions
+        },
+      });
+
+      // Send deletion confirmation email
+      try {
+        // TODO: Create a specific email template for account deletion
+        this.logger.info(`Account deletion requested for user ${userId}. Scheduled for ${deletionDate.toISOString()}`);
+
+        // In the future, send email with:
+        // - Confirmation of deletion request
+        // - Date when account will be permanently deleted
+        // - Link to cancel deletion if they change their mind
+      } catch (mailError) {
+        this.logger.error('Error sending deletion confirmation email:', mailError);
+        // Don't block the deletion if email fails
+      }
+
+      return {
+        success: true,
+        message: 'Account deletion scheduled successfully',
+        deletionScheduledFor: deletionDate,
+        daysUntilDeletion: 30,
+      };
+    } catch (error) {
+      this.logger.error('Error requesting account deletion:', error);
+      return {
+        success: false,
+        message: 'Error processing account deletion request',
+      };
+    }
+  }
+
+  /**
+   * Cancel account deletion request (restore soft-deleted account)
+   */
+  async cancelAccountDeletion(userId: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      if (!user.isDeleted) {
+        return {
+          success: false,
+          message: 'Account is not scheduled for deletion',
+        };
+      }
+
+      // Restore account
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          isDeleted: false,
+          deletedAt: null,
+          deletionScheduledFor: null,
+        },
+      });
+
+      this.logger.info(`Account deletion cancelled for user ${userId}`);
+
+      return {
+        success: true,
+        message: 'Account deletion cancelled successfully',
+      };
+    } catch (error) {
+      this.logger.error('Error cancelling account deletion:', error);
+      return {
+        success: false,
+        message: 'Error cancelling account deletion',
+      };
+    }
+  }
+
+  /**
+   * Permanently delete user account and all associated data
+   * This should only be called by a cron job after the grace period
+   * or manually by an admin
+   */
+  async permanentlyDeleteAccount(userId: string) {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      // Safety check: only delete if marked as deleted
+      if (!user.isDeleted) {
+        return {
+          success: false,
+          message: 'Account must be soft-deleted first',
+        };
+      }
+
+      // Get owned teams to clean up
+      const ownedTeams = await this.prisma.team.findMany({
+        where: {
+          ownerId: userId,
+        },
+        include: {
+          members: true,
+        },
+      });
+
+      // Delete owned teams (cascade will handle related data)
+      for (const team of ownedTeams) {
+        // Verify team has no other active members
+        const otherMembers = team.members.filter(
+          m => m.userId !== userId && m.status === 'active'
+        );
+
+        if (otherMembers.length > 0) {
+          this.logger.error(`Cannot delete team ${team.id} - has active members`);
+          continue;
+        }
+
+        await this.prisma.team.delete({
+          where: { id: team.id },
+        });
+      }
+
+      // Remove user from team memberships
+      await this.prisma.teamMember.deleteMany({
+        where: {
+          userId: userId,
+        },
+      });
+
+      // Finally, delete the user
+      await this.prisma.user.delete({
+        where: { id: userId },
+      });
+
+      this.logger.info(`User ${userId} permanently deleted`);
+
+      return {
+        success: true,
+        message: 'Account permanently deleted',
+      };
+    } catch (error) {
+      this.logger.error('Error permanently deleting account:', error);
+      return {
+        success: false,
+        message: 'Error deleting account',
+      };
+    }
+  }
 }
+

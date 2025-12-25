@@ -174,4 +174,47 @@ export class MailService {
       throw error;
     }
   }
+
+  async sendEmailVerificationMail(
+    email: string,
+    code: string,
+    lang: string,
+    fullname: string,
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'register.html' : 'register_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const html = template({
+      fullname: fullname,
+      code: code,
+      company: 'Chatbu',
+      company_address: '',
+      redirect_url: process.env.FRONTEND_URL + '/activate-registration?email=' + email,
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+      end_subscription: process.env.FRONTEND_END_SUBSCRIPTION,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: email,
+      subject: lang === 'en' ? 'Verify Your Email Address' : 'E-posta Adresinizi Doğrulayın',
+      html: html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Email verification mail sent to ${email}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
 }

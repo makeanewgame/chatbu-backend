@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Req,
   Res,
   UseGuards,
@@ -154,9 +155,40 @@ export class AuthenticationController {
     return 'Refresh Token';
   }
 
+  @UseGuards(AccessTokenGuard)
   @Get('profile')
-  async profile() {
-    return 'Profile';
+  async profile(@Req() req) {
+    return await this.authService.getUserProfile(req.user.sub);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Put('profile')
+  async updateProfile(@Req() req, @Body() body: any) {
+    return await this.authService.updateUserProfile(req.user.sub, body);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Post('resend-verification')
+  async resendVerification(@Req() req) {
+    return await this.authService.resendEmailVerification(req.user.sub);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Get('deletion-eligibility')
+  async checkDeletionEligibility(@Req() req) {
+    return await this.authService.checkDeletionEligibility(req.user.sub);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Post('request-deletion')
+  async requestAccountDeletion(@Req() req) {
+    return await this.authService.requestAccountDeletion(req.user.sub);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Post('cancel-deletion')
+  async cancelAccountDeletion(@Req() req) {
+    return await this.authService.cancelAccountDeletion(req.user.sub);
   }
 
   @Post('change-password')

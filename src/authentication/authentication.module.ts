@@ -12,6 +12,7 @@ import { GoogleStrategy } from './utils/google.strategy';
 import { MailService } from 'src/mail/mail.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { QuotaService } from 'src/quota/quota.service';
+import { AccountCleanupService } from './account-cleanup.service';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { QuotaService } from 'src/quota/quota.service';
     GoogleStrategy,
     QuotaService,
     MailService,
+    AccountCleanupService,
     {
       provide: 'AUTH_SERVICE',
       useClass: AuthenticationService,

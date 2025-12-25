@@ -18,9 +18,11 @@ import { EventsModule } from './events/events.module';
 import { ContentModule } from './content/content.module';
 import { AdminModule } from './admin/admin.module';
 import { TeamModule } from './team/team.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     CacheModule.register({ isGlobal: true }),
     WinstonModule.forRoot({
       format: winston.format.combine(
