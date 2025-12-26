@@ -202,7 +202,7 @@ export class FileService {
 
                     const decreaseQuota = await this.prisma.team.update({
                         where: {
-                            id: user.sub,
+                            id: user.teamId,
                             Quota: {
                                 some: {
                                     quotaType: 'FILE',
@@ -214,7 +214,7 @@ export class FileService {
                                 update: {
                                     where: {
                                         teamId_quotaType: {
-                                            teamId: user.sub,
+                                            teamId: user.teamId,
                                             quotaType: 'FILE'
                                         }
                                     },
@@ -234,14 +234,14 @@ export class FileService {
 
                     console.log("deletede Vectors data", {
                         "bot_cuid": file.botId,
-                        "customer_cuid": user.sub,
+                        "customer_cuid": user.teamId,
                         "source": file.fileUrl,
                     })
 
                     const { data } = await firstValueFrom(
                         this.httpService.post(`${ingestUrl}/delete-vectors`, {
                             "bot_cuid": file.botId,
-                            "customer_cuid": user.sub,
+                            "customer_cuid": user.teamId,
                             "source": file.fileUrl,
                         })
                             .pipe(
