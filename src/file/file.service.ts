@@ -182,7 +182,7 @@ export class FileService {
 
                     const existingQuota = await this.prisma.team.findFirst({
                         where: {
-                            id: user.sub,
+                            id: user.teamId,
                             Quota: {
                                 some: {
                                     quotaType: 'FILE',
@@ -232,7 +232,7 @@ export class FileService {
                     //deLete from vector db
                     const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
-                    console.log("deletede Vectors data", {
+                    console.log("deleted Vectors data", {
                         "bot_cuid": file.botId,
                         "customer_cuid": user.teamId,
                         "source": file.fileUrl,
@@ -259,6 +259,7 @@ export class FileService {
                         }
                     }
 
+                    console.log("deleted Vectors response", data);
                     return {
                         message: "File deleted successfully"
                     }
