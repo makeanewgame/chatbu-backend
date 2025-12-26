@@ -134,7 +134,7 @@ export class FileService {
 
         const findUser = await this.prisma.team.findFirst({
             where: {
-                id: user.sub,
+                id: user.teamId,
                 Storage: {
                     some: {
                         id: fileId
@@ -151,7 +151,7 @@ export class FileService {
 
         const file = await this.prisma.storage.findFirst({
             where: {
-                teamId: user.sub,
+                teamId: user.teamId,
                 id: fileId
             }
         });
