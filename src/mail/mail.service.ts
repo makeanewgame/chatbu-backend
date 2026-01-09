@@ -311,4 +311,65 @@ export class MailService {
       throw error;
     }
   }
+
+  async sendNewFeedbackNotification(
+    adminEmail: string,
+    adminName: string,
+    feedbackData: {
+      userName: string;
+      userEmail: string;
+      category: string;
+      message: string;
+      feedbackId: string;
+    },
+    lang: string = 'en',
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'feedback_notification.html' : 'feedback_notification_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+
+    // Format category for display
+    const categoryMap = {
+      'BUG_REPORT': lang === 'en' ? 'Bug Report' : 'Hata Bildirimi',
+      'FEATURE_REQUEST': lang === 'en' ? 'Feature Request' : 'Özellik İsteği',
+      'GENERAL_FEEDBACK': lang === 'en' ? 'General Feedback' : 'Genel Geri Bildirim',
+    };
+
+    const html = template({
+      adminName: adminName,
+      userName: feedbackData.userName,
+      userEmail: feedbackData.userEmail,
+      category: categoryMap[feedbackData.category] || feedbackData.category,
+      message: feedbackData.message,
+      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      adminPanelUrl: `${process.env.FRONTEND_URL}/admin/feedbacks`,
+      company: process.env.COMPANY_NAME,
+      privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      supportUrl: process.env.FRONTEND_SUPPORT_URL,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: adminEmail,
+      subject: lang === 'en'
+        ? `New Feedback Received - ${categoryMap[feedbackData.category]}`
+        : `Yeni Geri Bildirim - ${categoryMap[feedbackData.category]}`,
+      html: html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Feedback notification sent to ${adminEmail}`);
+    } catch (error) {
+      this.logger.error(`Error sending feedback notification to ${adminEmail}:`, error);
+      throw error;
+    }
+  }
 }
