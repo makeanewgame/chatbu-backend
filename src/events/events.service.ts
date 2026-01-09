@@ -29,7 +29,9 @@ export class EventsService implements OnModuleInit {
                 data: [payload],
             }
 
-            await this.eventGateWay.notifyUser(payload.userId, tempPayload);
+            console.log('Received notification on storage_updates:', payload);
+
+            await this.eventGateWay.notifyUser(payload.teamId, tempPayload);
 
         });
 

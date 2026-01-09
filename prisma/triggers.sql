@@ -1,4 +1,4 @@
-SET search_path TO backend;
+SET search_path TO public;
 
 CREATE OR REPLACE FUNCTION notify_storage_update()
 RETURNS trigger AS $$
