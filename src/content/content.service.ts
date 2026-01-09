@@ -147,6 +147,10 @@ export class ContentService {
                     {
                         "question": body.content.question,
                         "answer": body.content.answer,
+                        "metadata": {
+                            "category": body.content.meta.category,
+                            "source": body.content.meta.source
+                        },
                     }
                 ],
             })
