@@ -162,7 +162,7 @@ export class AuthenticationService {
 
         console.log('Created TeamMember:', teamMember.id); // DEBUG
 
-        await this.quoteService.createDefaultQuotas(defaultTeam.id);
+        await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
       }
 
       const activationUrl =
@@ -314,7 +314,7 @@ export class AuthenticationService {
         },
       });
 
-      await this.quoteService.createDefaultQuotas(defaultTeam.id);
+      await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -491,7 +491,7 @@ export class AuthenticationService {
 
         console.log('Created TeamMember for Google user:', teamMember.id); // DEBUG
 
-        await this.quoteService.createDefaultQuotas(defaultTeam.id);
+        await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
       }
 
       findUser = await this.prisma.user.findFirst({

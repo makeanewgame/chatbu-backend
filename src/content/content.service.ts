@@ -58,7 +58,7 @@ export class ContentService {
 
         if (body.type === 'Q&A') {
             console.log("Q&A content ingest started", body.type);
-            await this.ingestWebPage(body, user, body.content.url);
+            await this.ingestQA(body, user);
         }
 
         if (body.type === 'CONTENT') {
@@ -131,5 +131,32 @@ export class ContentService {
                     }),
                 ));
         console.log("ingest gelen", data);
+    }
+
+    async ingestQA(body: any, user: IUser) {
+
+        console.log("ingestQA body", body);
+
+        const ingestUrl = this.configService.get('INGEST_ENPOINT')
+
+        const { data } = await firstValueFrom(
+            this.httpService.post(`${ingestUrl}/store-qa-pairs-bulk`, {
+                "bot_cuid": body.botId,
+                "customer_cuid": user.teamId,
+                "qa_pairs": [
+                    {
+                        "question": body.content.question,
+                        "answer": body.content.answer,
+                    }
+                ],
+            })
+                .pipe(
+                    catchError((error: AxiosError) => {
+                        console.log("error", error);
+                        throw 'An error happened!';
+                    }),
+                ));
+
+        console.log("ingestQA gelen", data);
     }
 }

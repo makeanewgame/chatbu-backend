@@ -21,6 +21,10 @@ async function bootstrap() {
     .build();
 
   app.setGlobalPrefix('api');
+
+  // Stripe webhook needs raw body for signature verification
+  app.use('/api/subscription/webhook', bodyParser.raw({ type: 'application/json' }));
+
   app.use(bodyParser.json({ limit: '20mb' }));
   app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
   app.enableCors({

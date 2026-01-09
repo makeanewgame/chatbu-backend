@@ -11,6 +11,8 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError } from 'axios';
 import { JwtService } from '@nestjs/jwt';
+import { SubscriptionService } from '../subscription/subscription.service';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class BotService {
@@ -19,6 +21,8 @@ export class BotService {
     private httpService: HttpService,
     private configService: ConfigService,
     private jwtService: JwtService,
+    private subscriptionService: SubscriptionService,
+    private mailService: MailService,
   ) { }
 
   async createBot(body: CreateBotRequest) {
@@ -358,7 +362,32 @@ export class BotService {
       }
       const ingestUrl = this.configService.get('INGEST_ENPOINT');
 
-      //TODO: check user TOKEN quota
+      // Get team owner to check subscription
+      const team = await this.prisma.team.findUnique({
+        where: { id: body.teamId },
+        include: { owner: true },
+      });
+
+      if (!team) {
+        throw new Error('Team not found');
+      }
+
+      // Check subscription quota
+      const quotaCheck = await this.subscriptionService.checkTokenQuota(team.ownerId);
+      if (!quotaCheck.allowed) {
+        // Send email notification if user is free tier
+        const subscription = await this.prisma.subscription.findUnique({
+          where: { userId: team.ownerId },
+        });
+
+        if (subscription?.tier === 'FREE') {
+          await this.mailService.sendTokenLimitReachedEmail(team.owner.email, team.owner.name);
+        }
+
+        throw new ForbiddenException(quotaCheck.message || 'Token quota exceeded');
+      }
+
+      //TODO: check user TOKEN quota from old system (keep for backward compatibility)
       const userQuota = await this.prisma.quota.findFirst({
         where: {
           teamId: body.teamId,
@@ -366,7 +395,7 @@ export class BotService {
         }
       });
 
-      if (userQuota.used >= userQuota.limit) {
+      if (userQuota && userQuota.used >= userQuota.limit) {
         throw new ForbiddenException('Token quota exceeded');
       }
 
@@ -396,7 +425,14 @@ export class BotService {
       console.log("tokenArr", tokenArr.length);
       console.log("token count", tokenCount);
 
-      //update user quota
+      // Track token usage in subscription system
+      await this.subscriptionService.trackTokenUsage(
+        team.ownerId,
+        body.teamId,
+        tokenCount
+      );
+
+      //update user quota (keep for backward compatibility)
       if (userQuota) {
         await this.prisma.quota.update({
           where: {

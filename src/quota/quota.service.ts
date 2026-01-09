@@ -22,7 +22,18 @@ export class QuotaService {
 
     }
 
-    async createDefaultQuotas(teamId: string) {
+    async createDefaultQuotas(teamId: string, userId: string) {
+        // Get user's subscription to determine limits
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+        });
+
+        const isFree = !subscription || subscription.tier === 'FREE';
+
+        // Get limits from system settings
+        const freeBotLimit = await this.getSettingValue('FREE_BOT_LIMIT', '1');
+        const premiumBotLimit = await this.getSettingValue('PREMIUM_BOT_LIMIT', '10');
+        const botLimit = isFree ? parseInt(freeBotLimit) : parseInt(premiumBotLimit);
 
         await this.prisma.quota.create({
             data: {
@@ -32,7 +43,7 @@ export class QuotaService {
                     }
                 },
                 quotaType: 'BOT',
-                limit: 3,
+                limit: botLimit,
                 used: 0
             }
         });
@@ -50,6 +61,8 @@ export class QuotaService {
             }
         });
 
+        // For TOKEN quota, we use subscription limits, but keep a quota record for compatibility
+        const tokenLimit = isFree ? 100000 : 2000000;
         await this.prisma.quota.create({
             data: {
                 team: {
@@ -58,7 +71,7 @@ export class QuotaService {
                     }
                 },
                 quotaType: 'TOKEN',
-                limit: 20000,
+                limit: tokenLimit,
                 used: 0
             }
         });
@@ -91,4 +104,44 @@ export class QuotaService {
         throw new Error('No quotas found');
 
     }
+
+    async updateBotQuotaLimits(userId: string) {
+        // Update bot quota limits when user upgrades/downgrades
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+        });
+
+        const teams = await this.prisma.team.findMany({
+            where: { ownerId: userId },
+        });
+
+        const isFree = !subscription || subscription.tier === 'FREE';
+        const freeBotLimit = await this.getSettingValue('FREE_BOT_LIMIT', '1');
+        const premiumBotLimit = await this.getSettingValue('PREMIUM_BOT_LIMIT', '10');
+        const botLimit = isFree ? parseInt(freeBotLimit) : parseInt(premiumBotLimit);
+
+        for (const team of teams) {
+            const quota = await this.prisma.quota.findFirst({
+                where: {
+                    teamId: team.id,
+                    quotaType: 'BOT',
+                },
+            });
+
+            if (quota) {
+                await this.prisma.quota.update({
+                    where: { id: quota.id },
+                    data: { limit: botLimit },
+                });
+            }
+        }
+    }
+
+    private async getSettingValue(key: string, defaultValue: string): Promise<string> {
+        const setting = await this.prisma.systemSettings.findUnique({
+            where: { key },
+        });
+        return setting ? setting.value : defaultValue;
+    }
 }
+

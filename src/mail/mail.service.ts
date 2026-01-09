@@ -130,7 +130,6 @@ export class MailService {
       console.error(error);
     }
   }
-
   async sendTeamInvitationMail(
     email: string,
     teamName: string,
@@ -212,6 +211,101 @@ export class MailService {
     try {
       await this.mailerService.sendMail(mailOptions);
       this.logger.info(`Email verification mail sent to ${email}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
+
+  async sendTokenLimitReachedEmail(email: string, name: string) {
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: email,
+      subject: 'Token Limit Reached - Upgrade to Premium',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Token Limit Reached</h2>
+          <p>Dear ${name},</p>
+          <p>Your token usage has reached its limit. To continue using our services, please upgrade to a Premium membership.</p>
+          <p>Premium benefits include:</p>
+          <ul>
+            <li>Monthly token allocation</li>
+            <li>Ability to purchase additional tokens</li>
+            <li>Unlimited bots</li>
+            <li>Priority support</li>
+          </ul>
+          <p><a href="${process.env.FRONTEND_URL}/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Upgrade Now</a></p>
+          <p>Best regards,<br>Your Team</p>
+        </div>
+      `,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Token limit email sent to ${email}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
+
+  async sendPaymentFailedEmail(email: string, name: string) {
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: email,
+      subject: 'Payment Failed - Action Required',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Payment Failed</h2>
+          <p>Dear ${name},</p>
+          <p>We were unable to process your payment for your Premium subscription. Your account has been temporarily blocked.</p>
+          <p>To restore access:</p>
+          <ol>
+            <li>Update your payment method</li>
+            <li>Retry the payment</li>
+          </ol>
+          <p><a href="${process.env.FRONTEND_URL}/subscription" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Update Payment Method</a></p>
+          <p>If you have any questions, please contact our support team.</p>
+          <p>Best regards,<br>Your Team</p>
+        </div>
+      `,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Payment failed email sent to ${email}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
+
+  async sendPaymentReminderEmail(email: string, name: string, dueDate: Date) {
+    const formattedDate = dueDate.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: email,
+      subject: 'Upcoming Payment Reminder',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Payment Reminder</h2>
+          <p>Dear ${name},</p>
+          <p>This is a friendly reminder that your next payment is due on <strong>${formattedDate}</strong> (5 days from now).</p>
+          <p>Please ensure your payment method is up to date to avoid any service interruption.</p>
+          <p><a href="${process.env.FRONTEND_URL}/subscription" style="background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Manage Subscription</a></p>
+          <p>Best regards,<br>Your Team</p>
+        </div>
+      `,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Payment reminder email sent to ${email}`);
     } catch (error) {
       console.error(error);
       throw error;
