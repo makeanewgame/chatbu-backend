@@ -131,4 +131,11 @@ export class SubscriptionController {
             where: { userId },
         });
     }
+
+    @Get('invoices')
+    @UseGuards(JwtGuard)
+    async getInvoices(@Req() req) {
+        const userId = req.user?.sub || req.user?.id;
+        return this.billingService.getUserInvoices(userId);
+    }
 }

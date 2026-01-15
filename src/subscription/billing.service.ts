@@ -322,4 +322,61 @@ export class BillingService {
         });
         return setting ? parseInt(setting.value) : 100000;
     }
+
+    async getUserInvoices(userId: string) {
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+        });
+
+        if (!subscription || !subscription.stripeCustomerId) {
+            return [];
+        }
+
+        try {
+            // Get invoices from Stripe
+            const stripeInvoices = await this.stripe.invoices.list({
+                customer: subscription.stripeCustomerId,
+                limit: 100,
+            });
+
+            // Get invoices from database
+            const dbInvoices = await this.prisma.invoice.findMany({
+                where: { subscriptionId: subscription.id },
+                orderBy: { createdAt: 'desc' },
+            });
+
+            // Merge and format invoices
+            const invoices = stripeInvoices.data.map((stripeInvoice) => {
+                const dbInvoice = dbInvoices.find(
+                    (inv) => inv.stripeInvoiceId === stripeInvoice.id,
+                );
+
+                return {
+                    id: stripeInvoice.id,
+                    number: stripeInvoice.number,
+                    amount: stripeInvoice.amount_paid / 100, // Convert from cents
+                    currency: stripeInvoice.currency.toUpperCase(),
+                    status: stripeInvoice.status?.toUpperCase() || 'DRAFT',
+                    created: new Date(stripeInvoice.created * 1000),
+                    dueDate: stripeInvoice.due_date
+                        ? new Date(stripeInvoice.due_date * 1000)
+                        : null,
+                    paidAt: stripeInvoice.status_transitions?.paid_at
+                        ? new Date(stripeInvoice.status_transitions.paid_at * 1000)
+                        : null,
+                    invoicePdf: stripeInvoice.invoice_pdf,
+                    hostedInvoiceUrl: stripeInvoice.hosted_invoice_url,
+                    periodStart: new Date(stripeInvoice.period_start * 1000),
+                    periodEnd: new Date(stripeInvoice.period_end * 1000),
+                    tokensCharged: dbInvoice?.tokensCharged || 0,
+                    description: stripeInvoice.description || '',
+                };
+            });
+
+            return invoices;
+        } catch (error) {
+            this.logger.error(`Error fetching invoices for user ${userId}`, error);
+            throw error;
+        }
+    }
 }
