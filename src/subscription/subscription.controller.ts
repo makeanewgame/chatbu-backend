@@ -46,6 +46,20 @@ export class SubscriptionController {
         return this.subscriptionService.createCheckoutSession(userId, body.billingInfo, body.planDetails);
     }
 
+    @Post('create-payment-intent')
+    @UseGuards(JwtGuard)
+    async createPaymentIntent(@Req() req, @Body() body: { billingInfo: any; planDetails: any }) {
+        const userId = req.user?.sub || req.user?.id;
+        return this.subscriptionService.createPaymentIntent(userId, body.billingInfo, body.planDetails);
+    }
+
+    @Post('confirm-payment')
+    @UseGuards(JwtGuard)
+    async confirmPayment(@Req() req, @Body() body: { paymentIntentId: string }) {
+        const userId = req.user?.sub || req.user?.id;
+        return this.subscriptionService.confirmPayment(userId, body.paymentIntentId);
+    }
+
     @Post('checkout-success')
     @UseGuards(JwtGuard)
     async handleCheckoutSuccess(@Req() req, @Body() body: { sessionId: string }) {
@@ -92,6 +106,13 @@ export class SubscriptionController {
     async checkQuota(@Req() req) {
         const userId = req.user?.sub || req.user?.id;
         return this.subscriptionService.checkTokenQuota(userId);
+    }
+
+    @Post('track-usage')
+    @UseGuards(JwtGuard)
+    async trackUsage(@Req() req, @Body() body: { tokensUsed: number; teamId?: string; botId?: string; chatId?: string }) {
+        const userId = req.user?.sub || req.user?.id;
+        return this.subscriptionService.trackTokenUsage(userId, body.tokensUsed, body.teamId, body.botId, body.chatId);
     }
 
     @Post('webhook')

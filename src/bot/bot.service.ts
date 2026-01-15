@@ -428,8 +428,8 @@ export class BotService {
       // Track token usage in subscription system
       await this.subscriptionService.trackTokenUsage(
         team.ownerId,
-        body.teamId,
-        tokenCount
+        tokenCount,
+        body.teamId
       );
 
       //update user quota (keep for backward compatibility)

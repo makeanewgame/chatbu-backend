@@ -22,8 +22,17 @@ export class SubscriptionService {
             throw new BadRequestException('User ID is required');
         }
 
-        let subscription = await this.prisma.subscription.findUnique({
+        // Use upsert to avoid race conditions
+        const subscription = await this.prisma.subscription.upsert({
             where: { userId },
+            create: {
+                userId,
+                tier: 'FREE',
+                status: 'ACTIVE',
+                monthlyTokenAllocation: await this.getFreeTokenLimit(),
+                tokensUsedThisMonth: 0,
+            },
+            update: {},
             include: {
                 user: true,
                 invoices: {
@@ -32,23 +41,6 @@ export class SubscriptionService {
                 },
             },
         });
-
-        if (!subscription) {
-            // Create default FREE subscription
-            subscription = await this.prisma.subscription.create({
-                data: {
-                    userId,
-                    tier: 'FREE',
-                    status: 'ACTIVE',
-                    monthlyTokenAllocation: await this.getFreeTokenLimit(),
-                    tokensUsedThisMonth: 0,
-                },
-                include: {
-                    user: true,
-                    invoices: true,
-                },
-            });
-        }
 
         // Fetch payment method details from Stripe if available
         let paymentMethod = null;
@@ -78,6 +70,98 @@ export class SubscriptionService {
         return {
             ...subscription,
             paymentMethod,
+        };
+    }
+
+    async createPaymentIntent(userId: string, billingInfo: any, planDetails: any) {
+        const subscription = await this.getOrCreateSubscription(userId);
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        if (subscription.tier === 'PREMIUM') {
+            throw new BadRequestException('Already a premium member');
+        }
+
+        // Create or get Stripe customer
+        let stripeCustomerId = subscription.stripeCustomerId;
+        if (!stripeCustomerId) {
+            const customer = await this.stripe.customers.create({
+                email: billingInfo.email || user.email,
+                name: `${billingInfo.firstName} ${billingInfo.lastName}`,
+                metadata: {
+                    userId: user.id,
+                },
+                address: {
+                    line1: billingInfo.billingAddress,
+                    city: billingInfo.city,
+                    state: billingInfo.stateRegion,
+                    postal_code: billingInfo.zipCode,
+                    country: billingInfo.country,
+                },
+            });
+            stripeCustomerId = customer.id;
+
+            // Update subscription with Stripe customer ID
+            await this.prisma.subscription.update({
+                where: { userId },
+                data: { stripeCustomerId },
+            });
+        }
+
+        // Save billing info
+        await this.prisma.billingInfo.upsert({
+            where: { userId },
+            create: {
+                userId,
+                firstName: billingInfo.firstName,
+                lastName: billingInfo.lastName || '',
+                email: billingInfo.email,
+                address: billingInfo.billingAddress,
+                city: billingInfo.city || '',
+                stateRegion: billingInfo.stateRegion,
+                zipPostalCode: billingInfo.zipCode,
+                country: billingInfo.country,
+                isCompany: billingInfo.isCompany || false,
+                vatIdentificationNumber: billingInfo.vatId || null,
+            },
+            update: {
+                firstName: billingInfo.firstName,
+                lastName: billingInfo.lastName || '',
+                email: billingInfo.email,
+                address: billingInfo.billingAddress,
+                city: billingInfo.city || '',
+                stateRegion: billingInfo.stateRegion,
+                zipPostalCode: billingInfo.zipCode,
+                country: billingInfo.country,
+                isCompany: billingInfo.isCompany || false,
+                vatIdentificationNumber: billingInfo.vatId || null,
+            },
+        });
+
+        // Determine currency and price
+        const currency = planDetails.currency?.toLowerCase() || 'try';
+        const totalPrice = planDetails.totalPrice || 899;
+        const isAnnual = planDetails.isAnnual || false;
+
+        // Create Payment Intent for subscription
+        const paymentIntent = await this.stripe.paymentIntents.create({
+            amount: Math.round(totalPrice * 100), // Convert to cents
+            currency: currency,
+            customer: stripeCustomerId,
+            setup_future_usage: 'off_session',
+            metadata: {
+                userId: user.id,
+                isAnnual: isAnnual.toString(),
+                subscriptionType: 'premium',
+            },
+        });
+
+        return {
+            clientSecret: paymentIntent.client_secret,
+            customerId: stripeCustomerId,
         };
     }
 
@@ -156,7 +240,7 @@ export class SubscriptionService {
         const price = await this.stripe.prices.create({
             unit_amount: Math.round(totalPrice * 100), // Convert to cents
             currency: currency,
-            recurring: { 
+            recurring: {
                 interval: isAnnual ? 'year' : 'month'
             },
             product_data: {
@@ -217,21 +301,21 @@ export class SubscriptionService {
         } else {
             stripeSubscription = session.subscription as Stripe.Subscription;
         }
-        
+
         // Debug: Log subscription object
         console.log('Stripe Subscription Object:', JSON.stringify(stripeSubscription, null, 2));
-        
+
         // Get period from subscription items (Stripe stores it there)
         const subscriptionItem = (stripeSubscription as any).items?.data?.[0];
         const periodStart = subscriptionItem?.current_period_start;
         const periodEnd = subscriptionItem?.current_period_end;
-        
+
         console.log('Period Start:', periodStart, 'Period End:', periodEnd);
-        
+
         if (!periodStart || !periodEnd) {
             throw new BadRequestException('Invalid subscription period data');
         }
-        
+
         const currentPeriodStart = new Date(periodStart * 1000);
         const currentPeriodEnd = new Date(periodEnd * 1000);
 
@@ -252,6 +336,95 @@ export class SubscriptionService {
         return {
             success: true,
             message: 'Subscription upgraded to Premium successfully',
+        };
+    }
+
+    async confirmPayment(userId: string, paymentIntentId: string) {
+        // Retrieve payment intent
+        const paymentIntent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (!paymentIntent || paymentIntent.status !== 'succeeded') {
+            throw new BadRequestException('Payment not successful');
+        }
+
+        if (paymentIntent.metadata?.userId !== userId) {
+            throw new BadRequestException('Invalid payment metadata');
+        }
+
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+        });
+
+        if (!subscription) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        // Get customer's default payment method
+        const paymentMethodId = paymentIntent.payment_method as string;
+
+        // Set as default payment method
+        await this.stripe.customers.update(paymentIntent.customer as string, {
+            invoice_settings: {
+                default_payment_method: paymentMethodId,
+            },
+        });
+
+        // Determine currency and price
+        const isAnnual = paymentIntent.metadata?.isAnnual === 'true';
+        const currency = paymentIntent.currency;
+
+        // Create Stripe Product and Price for subscription
+        const product = await this.stripe.products.create({
+            name: isAnnual ? 'Premium Subscription (Annual)' : 'Premium Subscription (Monthly)',
+        });
+
+        const price = await this.stripe.prices.create({
+            product: product.id,
+            unit_amount: paymentIntent.amount,
+            currency: currency,
+            recurring: {
+                interval: isAnnual ? 'year' : 'month',
+            },
+        });
+
+        // Create Stripe Subscription
+        const stripeSubscription = await this.stripe.subscriptions.create({
+            customer: paymentIntent.customer as string,
+            items: [{ price: price.id }],
+            default_payment_method: paymentMethodId,
+            metadata: {
+                userId: userId,
+                isAnnual: isAnnual.toString(),
+            },
+        });
+
+        const currentPeriodStart = new Date((stripeSubscription as any).current_period_start * 1000);
+        const currentPeriodEnd = new Date((stripeSubscription as any).current_period_end * 1000);
+
+        // Update subscription to PREMIUM
+        await this.prisma.subscription.update({
+            where: { userId },
+            data: {
+                tier: 'PREMIUM',
+                status: 'ACTIVE',
+                stripeSubscriptionId: stripeSubscription.id,
+                stripePriceId: price.id,
+                currentPeriodStart,
+                currentPeriodEnd,
+                monthlyTokenAllocation: await this.getPremiumTokenLimit(),
+                tokensUsedThisMonth: 0,
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Subscription activated successfully',
+            subscription: {
+                tier: 'PREMIUM',
+                status: 'ACTIVE',
+                currentPeriodStart,
+                currentPeriodEnd,
+            },
         };
     }
 
@@ -482,33 +655,7 @@ export class SubscriptionService {
         return { message: 'Payment method updated successfully' };
     }
 
-    async trackTokenUsage(userId: string, teamId: string, tokensUsed: number) {
-        const subscription = await this.getOrCreateSubscription(userId);
-        const tokenPrice = await this.getTokenPrice();
-        const cost = (tokensUsed / 1000) * tokenPrice;
-
-        // Update subscription usage
-        await this.prisma.subscription.update({
-            where: { userId },
-            data: {
-                tokensUsedThisMonth: subscription.tokensUsedThisMonth + tokensUsed,
-            },
-        });
-
-        // Log usage
-        await this.prisma.tokenUsageLog.create({
-            data: {
-                subscriptionId: subscription.id,
-                teamId,
-                tokensUsed,
-                cost,
-            },
-        });
-
-        return { tokensUsed, cost };
-    }
-
-    async checkTokenQuota(userId: string): Promise<{ allowed: boolean; message?: string }> {
+    async checkTokenQuota(userId: string): Promise<{ allowed: boolean; message?: string; tokensRemaining?: number; spendingLimit?: number; tier?: string }> {
         const subscription = await this.getOrCreateSubscription(userId);
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -528,6 +675,8 @@ export class SubscriptionService {
                 return {
                     allowed: false,
                     message: 'You have reached your token limit. Please upgrade to Premium to continue.',
+                    tokensRemaining: 0,
+                    tier: subscription.tier,
                 };
             } else {
                 // Premium user - check spending limit
@@ -537,16 +686,144 @@ export class SubscriptionService {
                         return {
                             allowed: false,
                             message: 'You have reached your spending limit. Please increase your limit or wait for the next billing cycle.',
+                            tokensRemaining: 0,
+                            spendingLimit: subscription.spendingLimit,
+                            tier: subscription.tier,
                         };
                     }
                 }
                 // Allow if no spending limit or not reached
-                return { allowed: true };
+                return {
+                    allowed: true,
+                    tokensRemaining: remaining,
+                    spendingLimit: subscription.spendingLimit,
+                    tier: subscription.tier,
+                };
             }
         }
 
-        return { allowed: true };
+        return {
+            allowed: true,
+            tokensRemaining: remaining,
+            spendingLimit: subscription.spendingLimit,
+            tier: subscription.tier,
+        };
     }
+
+    async trackTokenUsage(userId: string, tokensUsed: number, teamId?: string, botId?: string, chatId?: string) {
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+        });
+
+        if (!subscription) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        // Update tokens used
+        await this.prisma.subscription.update({
+            where: { userId },
+            data: {
+                tokensUsedThisMonth: subscription.tokensUsedThisMonth + tokensUsed,
+            },
+        });
+
+        // Calculate cost for overage (if PREMIUM and exceeded base allocation)
+        let cost = 0;
+        const baseAllocation = subscription.monthlyTokenAllocation;
+
+        if (subscription.tier === 'PREMIUM' && subscription.tokensUsedThisMonth >= baseAllocation) {
+            // Only charge for tokens beyond the base allocation
+            const overageTokens = Math.min(tokensUsed, subscription.tokensUsedThisMonth + tokensUsed - baseAllocation);
+            if (overageTokens > 0) {
+                const tokenPrice = await this.getTokenPrice();
+                cost = (overageTokens / 1000) * tokenPrice;
+
+                // Check spending limit
+                if (subscription.spendingLimit) {
+                    const currentMonthCost = await this.getCurrentMonthCost(userId);
+                    if (currentMonthCost + cost > subscription.spendingLimit) {
+                        throw new BadRequestException('Spending limit exceeded. Please increase your limit or wait for the next billing cycle.');
+                    }
+                }
+
+                // Report usage to Stripe if there's overage and spending limit is set
+                if (subscription.spendingLimit && subscription.stripeSubscriptionId) {
+                    await this.reportUsageToStripe(subscription.stripeSubscriptionId, overageTokens, cost);
+                }
+            }
+        }
+
+        // Log token usage
+        await this.prisma.tokenUsageLog.create({
+            data: {
+                subscriptionId: subscription.id,
+                teamId,
+                botId,
+                chatId,
+                tokensUsed,
+                cost,
+            },
+        });
+
+        return {
+            success: true,
+            tokensUsed,
+            cost,
+            tokensRemaining: subscription.monthlyTokenAllocation + subscription.additionalTokensPurchased - (subscription.tokensUsedThisMonth + tokensUsed),
+        };
+    }
+
+    private async reportUsageToStripe(subscriptionId: string, tokensUsed: number, cost: number) {
+        try {
+            // Get subscription items to find the usage-based price
+            const stripeSubscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+
+            // Find or create usage-based price item
+            let usageItem = stripeSubscription.items.data.find(item =>
+                item.price.recurring?.usage_type === 'metered'
+            );
+
+            if (!usageItem) {
+                // Create metered price if it doesn't exist
+                const product = await this.stripe.products.create({
+                    name: 'Additional Token Usage',
+                });
+
+                const meteredPrice = await this.stripe.prices.create({
+                    product: product.id,
+                    currency: stripeSubscription.currency || 'try',
+                    recurring: {
+                        interval: 'month',
+                        usage_type: 'metered',
+                    },
+                    billing_scheme: 'per_unit',
+                    unit_amount: Math.round(await this.getTokenPrice() * 100 / 1000), // Price per 1000 tokens in cents
+                });
+
+                // Add metered price to subscription
+                usageItem = await this.stripe.subscriptionItems.create({
+                    subscription: subscriptionId,
+                    price: meteredPrice.id,
+                });
+            }
+
+            // Report usage (in units of 1000 tokens)
+            await (this.stripe.subscriptionItems as any).createUsageRecord(
+                usageItem.id,
+                {
+                    quantity: Math.ceil(tokensUsed / 1000),
+                    timestamp: Math.floor(Date.now() / 1000),
+                    action: 'increment',
+                }
+            );
+
+            console.log(`Reported ${tokensUsed} tokens (${Math.ceil(tokensUsed / 1000)} units) to Stripe for subscription ${subscriptionId}`);
+        } catch (error) {
+            console.error('Error reporting usage to Stripe:', error);
+            // Don't throw - log usage locally even if Stripe fails
+        }
+    }
+
 
     async resetMonthlyUsage(userId: string) {
         await this.prisma.subscription.update({

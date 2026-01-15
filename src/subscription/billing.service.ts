@@ -23,9 +23,6 @@ export class BillingService {
 
     async handleWebhook(event: Stripe.Event) {
         switch (event.type) {
-            case 'checkout.session.completed':
-                await this.handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
-                break;
             case 'invoice.payment_succeeded':
                 await this.handlePaymentSucceeded(event.data.object as Stripe.Invoice);
                 break;
@@ -39,57 +36,6 @@ export class BillingService {
                 await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
                 break;
         }
-    }
-
-    private async handleCheckoutCompleted(session: Stripe.Checkout.Session) {
-        if (!session.metadata?.userId) {
-            this.logger.warn('Checkout session completed without userId metadata');
-            return;
-        }
-
-        const userId = session.metadata.userId;
-        const subscription = await this.prisma.subscription.findUnique({
-            where: { userId },
-        });
-
-        if (!subscription) {
-            this.logger.error(`Subscription not found for user ${userId}`);
-            return;
-        }
-
-        // Retrieve the subscription from Stripe
-        const stripeSubscription: Stripe.Subscription = await this.stripe.subscriptions.retrieve(
-            session.subscription as string
-        );
-
-        // Get period from subscription items (Stripe stores it there)
-        const subscriptionItem = (stripeSubscription as any).items?.data?.[0];
-        const periodStart = subscriptionItem?.current_period_start;
-        const periodEnd = subscriptionItem?.current_period_end;
-        
-        if (!periodStart || !periodEnd) {
-            this.logger.error('Invalid subscription period data');
-            return;
-        }
-        
-        const currentPeriodStart = new Date(periodStart * 1000);
-        const currentPeriodEnd = new Date(periodEnd * 1000);
-
-        // Update to PREMIUM
-        await this.prisma.subscription.update({
-            where: { userId },
-            data: {
-                tier: 'PREMIUM',
-                status: 'ACTIVE',
-                stripeSubscriptionId: stripeSubscription.id,
-                stripePriceId: stripeSubscription.items.data[0].price.id,
-                currentPeriodStart,
-                currentPeriodEnd,
-                tokensUsedThisMonth: 0,
-            },
-        });
-
-        this.logger.log(`User ${userId} upgraded to PREMIUM via checkout`);
     }
 
     private async handlePaymentSucceeded(invoice: Stripe.Invoice) {
@@ -380,57 +326,13 @@ export class BillingService {
     async getUserInvoices(userId: string) {
         const subscription = await this.prisma.subscription.findUnique({
             where: { userId },
+            include: {
+                invoices: {
+                    orderBy: { createdAt: 'desc' },
+                },
+            },
         });
 
-        if (!subscription || !subscription.stripeCustomerId) {
-            return [];
-        }
-
-        try {
-            // Get invoices from Stripe
-            const stripeInvoices = await this.stripe.invoices.list({
-                customer: subscription.stripeCustomerId,
-                limit: 100,
-            });
-
-            // Get invoices from database
-            const dbInvoices = await this.prisma.invoice.findMany({
-                where: { subscriptionId: subscription.id },
-                orderBy: { createdAt: 'desc' },
-            });
-
-            // Merge and format invoices
-            const invoices = stripeInvoices.data.map((stripeInvoice) => {
-                const dbInvoice = dbInvoices.find(
-                    (inv) => inv.stripeInvoiceId === stripeInvoice.id,
-                );
-
-                return {
-                    id: stripeInvoice.id,
-                    number: stripeInvoice.number,
-                    amount: stripeInvoice.amount_paid / 100, // Convert from cents
-                    currency: stripeInvoice.currency.toUpperCase(),
-                    status: stripeInvoice.status?.toUpperCase() || 'DRAFT',
-                    created: new Date(stripeInvoice.created * 1000),
-                    dueDate: stripeInvoice.due_date
-                        ? new Date(stripeInvoice.due_date * 1000)
-                        : null,
-                    paidAt: stripeInvoice.status_transitions?.paid_at
-                        ? new Date(stripeInvoice.status_transitions.paid_at * 1000)
-                        : null,
-                    invoicePdf: stripeInvoice.invoice_pdf,
-                    hostedInvoiceUrl: stripeInvoice.hosted_invoice_url,
-                    periodStart: new Date(stripeInvoice.period_start * 1000),
-                    periodEnd: new Date(stripeInvoice.period_end * 1000),
-                    tokensCharged: dbInvoice?.tokensCharged || 0,
-                    description: stripeInvoice.description || '',
-                };
-            });
-
-            return invoices;
-        } catch (error) {
-            this.logger.error(`Error fetching invoices for user ${userId}`, error);
-            throw error;
-        }
+        return subscription?.invoices || [];
     }
 }
