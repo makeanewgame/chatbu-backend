@@ -39,6 +39,19 @@ export class SubscriptionController {
         return this.subscriptionService.upgradeToPremium(userId, billingInfo);
     }
 
+    @Post('create-checkout-session')
+    @UseGuards(JwtGuard)
+    async createCheckoutSession(@Req() req, @Body() body: { billingInfo: any; planDetails: any }) {
+        const userId = req.user?.sub || req.user?.id;
+        return this.subscriptionService.createCheckoutSession(userId, body.billingInfo, body.planDetails);
+    }
+
+    @Post('checkout-success')
+    @UseGuards(JwtGuard)
+    async handleCheckoutSuccess(@Req() req, @Body() body: { sessionId: string }) {
+        return this.subscriptionService.handleCheckoutSuccess(body.sessionId);
+    }
+
     @Post('cancel')
     @UseGuards(JwtGuard)
     async cancel(@Req() req) {

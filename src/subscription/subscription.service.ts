@@ -81,6 +81,180 @@ export class SubscriptionService {
         };
     }
 
+    async createCheckoutSession(userId: string, billingInfo: any, planDetails: any) {
+        const subscription = await this.getOrCreateSubscription(userId);
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        if (subscription.tier === 'PREMIUM') {
+            throw new BadRequestException('Already a premium member');
+        }
+
+        // Create or get Stripe customer
+        let stripeCustomerId = subscription.stripeCustomerId;
+        if (!stripeCustomerId) {
+            const customer = await this.stripe.customers.create({
+                email: billingInfo.email || user.email,
+                name: `${billingInfo.firstName} ${billingInfo.lastName}`,
+                metadata: {
+                    userId: user.id,
+                },
+                address: {
+                    line1: billingInfo.billingAddress,
+                    state: billingInfo.stateRegion,
+                    postal_code: billingInfo.zipCode,
+                    country: billingInfo.country,
+                },
+            });
+            stripeCustomerId = customer.id;
+
+            // Update subscription with Stripe customer ID
+            await this.prisma.subscription.update({
+                where: { userId },
+                data: { stripeCustomerId },
+            });
+        }
+
+        // Save billing info
+        await this.prisma.billingInfo.upsert({
+            where: { userId },
+            create: {
+                userId,
+                firstName: billingInfo.firstName,
+                lastName: billingInfo.lastName || '',
+                email: billingInfo.email,
+                address: billingInfo.billingAddress,
+                city: '',
+                stateRegion: billingInfo.stateRegion,
+                zipPostalCode: billingInfo.zipCode,
+                country: billingInfo.country,
+                isCompany: billingInfo.isCompany || false,
+                vatIdentificationNumber: billingInfo.vatId || null,
+            },
+            update: {
+                firstName: billingInfo.firstName,
+                lastName: billingInfo.lastName || '',
+                email: billingInfo.email,
+                address: billingInfo.billingAddress,
+                stateRegion: billingInfo.stateRegion,
+                zipPostalCode: billingInfo.zipCode,
+                country: billingInfo.country,
+                isCompany: billingInfo.isCompany || false,
+                vatIdentificationNumber: billingInfo.vatId || null,
+            },
+        });
+
+        // Determine currency and price
+        const currency = planDetails.currency?.toLowerCase() || 'try';
+        const totalPrice = planDetails.totalPrice || 899;
+        const isAnnual = planDetails.isAnnual || false;
+
+        // Create or get Stripe price for the plan
+        const price = await this.stripe.prices.create({
+            unit_amount: Math.round(totalPrice * 100), // Convert to cents
+            currency: currency,
+            recurring: { 
+                interval: isAnnual ? 'year' : 'month'
+            },
+            product_data: {
+                name: isAnnual ? 'Premium Subscription (Annual)' : 'Premium Subscription (Monthly)',
+            },
+        });
+
+        // Create Stripe Checkout Session
+        const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:5173';
+        const session = await this.stripe.checkout.sessions.create({
+            customer: stripeCustomerId,
+            payment_method_types: ['card'],
+            line_items: [
+                {
+                    price: price.id,
+                    quantity: 1,
+                },
+            ],
+            mode: 'subscription',
+            success_url: `${frontendUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${frontendUrl}/pricing?canceled=true`,
+            metadata: {
+                userId: user.id,
+                isAnnual: isAnnual.toString(),
+            },
+        });
+
+        return {
+            sessionId: session.id,
+            sessionUrl: session.url,
+        };
+    }
+
+    async handleCheckoutSuccess(sessionId: string) {
+        // Retrieve the checkout session
+        const session = await this.stripe.checkout.sessions.retrieve(sessionId, {
+            expand: ['subscription', 'customer'],
+        });
+
+        if (!session.metadata?.userId) {
+            throw new BadRequestException('Invalid session metadata');
+        }
+
+        const userId = session.metadata.userId;
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+        });
+
+        if (!subscription) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        // Update subscription to PREMIUM
+        // Get subscription from expanded session or retrieve it
+        let stripeSubscription: Stripe.Subscription;
+        if (typeof session.subscription === 'string') {
+            stripeSubscription = await this.stripe.subscriptions.retrieve(session.subscription);
+        } else {
+            stripeSubscription = session.subscription as Stripe.Subscription;
+        }
+        
+        // Debug: Log subscription object
+        console.log('Stripe Subscription Object:', JSON.stringify(stripeSubscription, null, 2));
+        
+        // Get period from subscription items (Stripe stores it there)
+        const subscriptionItem = (stripeSubscription as any).items?.data?.[0];
+        const periodStart = subscriptionItem?.current_period_start;
+        const periodEnd = subscriptionItem?.current_period_end;
+        
+        console.log('Period Start:', periodStart, 'Period End:', periodEnd);
+        
+        if (!periodStart || !periodEnd) {
+            throw new BadRequestException('Invalid subscription period data');
+        }
+        
+        const currentPeriodStart = new Date(periodStart * 1000);
+        const currentPeriodEnd = new Date(periodEnd * 1000);
+
+        await this.prisma.subscription.update({
+            where: { userId },
+            data: {
+                tier: 'PREMIUM',
+                status: 'ACTIVE',
+                stripeSubscriptionId: stripeSubscription.id,
+                stripePriceId: stripeSubscription.items.data[0].price.id,
+                currentPeriodStart,
+                currentPeriodEnd,
+                monthlyTokenAllocation: await this.getPremiumTokenLimit(),
+                tokensUsedThisMonth: 0,
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Subscription upgraded to Premium successfully',
+        };
+    }
+
     async upgradeToPremium(userId: string, billingInfo: any) {
         const subscription = await this.getOrCreateSubscription(userId);
         const user = await this.prisma.user.findUnique({ where: { id: userId } });

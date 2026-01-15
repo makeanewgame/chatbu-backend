@@ -23,6 +23,9 @@ export class BillingService {
 
     async handleWebhook(event: Stripe.Event) {
         switch (event.type) {
+            case 'checkout.session.completed':
+                await this.handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+                break;
             case 'invoice.payment_succeeded':
                 await this.handlePaymentSucceeded(event.data.object as Stripe.Invoice);
                 break;
@@ -36,6 +39,57 @@ export class BillingService {
                 await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
                 break;
         }
+    }
+
+    private async handleCheckoutCompleted(session: Stripe.Checkout.Session) {
+        if (!session.metadata?.userId) {
+            this.logger.warn('Checkout session completed without userId metadata');
+            return;
+        }
+
+        const userId = session.metadata.userId;
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+        });
+
+        if (!subscription) {
+            this.logger.error(`Subscription not found for user ${userId}`);
+            return;
+        }
+
+        // Retrieve the subscription from Stripe
+        const stripeSubscription: Stripe.Subscription = await this.stripe.subscriptions.retrieve(
+            session.subscription as string
+        );
+
+        // Get period from subscription items (Stripe stores it there)
+        const subscriptionItem = (stripeSubscription as any).items?.data?.[0];
+        const periodStart = subscriptionItem?.current_period_start;
+        const periodEnd = subscriptionItem?.current_period_end;
+        
+        if (!periodStart || !periodEnd) {
+            this.logger.error('Invalid subscription period data');
+            return;
+        }
+        
+        const currentPeriodStart = new Date(periodStart * 1000);
+        const currentPeriodEnd = new Date(periodEnd * 1000);
+
+        // Update to PREMIUM
+        await this.prisma.subscription.update({
+            where: { userId },
+            data: {
+                tier: 'PREMIUM',
+                status: 'ACTIVE',
+                stripeSubscriptionId: stripeSubscription.id,
+                stripePriceId: stripeSubscription.items.data[0].price.id,
+                currentPeriodStart,
+                currentPeriodEnd,
+                tokensUsedThisMonth: 0,
+            },
+        });
+
+        this.logger.log(`User ${userId} upgraded to PREMIUM via checkout`);
     }
 
     private async handlePaymentSucceeded(invoice: Stripe.Invoice) {
