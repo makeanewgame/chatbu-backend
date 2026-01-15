@@ -63,13 +63,23 @@ export class AuthenticationService {
     user.refreshToken = '';
     user.updatedAt = new Date().toISOString();
 
+    // Check if user exists by email or phone number
     const findUser = await this.prisma.user.findFirst({
       where: {
-        email: user.email,
+        OR: [
+          { email: user.email },
+          ...(user.phoneNumber ? [{ phoneNumber: user.phoneNumber }] : []),
+        ],
       },
     });
 
     if (findUser) {
+      if (findUser.email === user.email) {
+        return new UnauthorizedException('User with this email already exists');
+      }
+      if (findUser.phoneNumber === user.phoneNumber) {
+        return new UnauthorizedException('User with this phone number already exists');
+      }
       return new UnauthorizedException('User already exists');
     } else {
       const bcrypt = require('bcrypt');
