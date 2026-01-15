@@ -89,15 +89,16 @@ export class ContentController {
                 botId: { type: 'string' },
                 type: { type: 'string' },
                 contentId: { type: 'string' },
+                sourceId: { type: 'string' },
             },
-            required: ['botId', 'type', 'contentId'],
+            required: ['botId', 'type', 'contentId', 'sourceId'],
         },
     })
     @Post('delete')
     @UseGuards(AccessTokenGuard)
     async deleteContent(@Body() body: any, @Req() req: any) {
         const user = req.user as IUser;
-        return this.contentService.deleteContent(user, body.contentId);
+        return this.contentService.deleteContent(user, body.contentId, body.botId, body.sourceId);
     }
     //#endregion
 

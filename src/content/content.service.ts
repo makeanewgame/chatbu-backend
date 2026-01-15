@@ -83,35 +83,66 @@ export class ContentService {
         return content;
     }
 
-    async deleteContent(user: IUser, contentId: string) {
+    async deleteContent(user: IUser, contentId: string, botId: string, sourceId: string) {
 
-        const findUser = await this.prisma.team.findFirst({
-            where: {
-                id: user.teamId,
-                Content: {
-                    some: {
-                        id: contentId
+        try {
+            const findUser = await this.prisma.team.findFirst({
+                where: {
+                    id: user.teamId,
+                    Content: {
+                        some: {
+                            id: contentId
+                        }
                     }
                 }
-            }
-        })
+            })
 
-        if (user.sub && !findUser) {
+            if (user.sub && !findUser) {
+                return {
+                    message: "User or Bot not found"
+                }
+            }
+
+            await this.prisma.content.delete({
+                where: {
+                    id: contentId
+                }
+            })
+
+            //Vector DB den de silinecek
+            const ingestUrl = this.configService.get('INGEST_ENPOINT')
+
+            const { data } = await firstValueFrom(
+                this.httpService.post(`${ingestUrl}/delete-vectors`, {
+                    "bot_cuid": botId,
+                    "customer_cuid": user.teamId,
+                    "source": sourceId,
+                })
+                    .pipe(
+                        catchError((error: AxiosError) => {
+                            console.log("error", error);
+                            throw 'An error happened!';
+                        }),
+                    ));
+            if (data?.status?.code === 500) {
+                console.log("ingest service not available");
+                return {
+                    message: "Ingest service is not available"
+                }
+            }
+
+            console.log("deleted Vectors response", data);
             return {
-                message: "User or Bot not found"
+                message: "Content deleted successfully"
             }
-        }
 
-        await this.prisma.content.delete({
-            where: {
-                id: contentId
+        } catch (err) {
+            console.log("deleteContent error", err);
+            return {
+                message: "Error deleting content"
             }
-        })
 
-        return {
-            message: "Content deleted successfully"
         }
-
     }
 
     async ingestWebPage(body: any, user: IUser, url: string) {
