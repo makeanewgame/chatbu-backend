@@ -387,18 +387,6 @@ export class BotService {
         throw new ForbiddenException(quotaCheck.message || 'Token quota exceeded');
       }
 
-      //TODO: check user TOKEN quota from old system (keep for backward compatibility)
-      const userQuota = await this.prisma.quota.findFirst({
-        where: {
-          teamId: body.teamId,
-          quotaType: "TOKEN"
-        }
-      });
-
-      if (userQuota && userQuota.used >= userQuota.limit) {
-        throw new ForbiddenException('Token quota exceeded');
-      }
-
       let data;
       try {
         const response = await firstValueFrom(
@@ -431,18 +419,6 @@ export class BotService {
         tokenCount,
         body.teamId
       );
-
-      //update user quota (keep for backward compatibility)
-      if (userQuota) {
-        await this.prisma.quota.update({
-          where: {
-            id: userQuota.id
-          },
-          data: {
-            used: (userQuota.used + tokenCount)
-          }
-        });
-      }
 
       await this.prisma.customerChats.update({
         where: {

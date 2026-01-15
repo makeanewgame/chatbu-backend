@@ -61,21 +61,6 @@ export class QuotaService {
             }
         });
 
-        // For TOKEN quota, we use subscription limits, but keep a quota record for compatibility
-        const tokenLimit = isFree ? 100000 : 2000000;
-        await this.prisma.quota.create({
-            data: {
-                team: {
-                    connect: {
-                        id: teamId
-                    }
-                },
-                quotaType: 'TOKEN',
-                limit: tokenLimit,
-                used: 0
-            }
-        });
-
         return { message: 'This action adds a new quota' };
     }
 

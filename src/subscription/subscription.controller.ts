@@ -172,4 +172,9 @@ export class SubscriptionController {
         const userId = req.user?.sub || req.user?.id;
         return this.billingService.getUserInvoices(userId);
     }
+
+    @Get('pricing')
+    async getPricing() {
+        return this.subscriptionService.getPricingInfo();
+    }
 }

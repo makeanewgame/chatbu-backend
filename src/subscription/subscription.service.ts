@@ -149,6 +149,7 @@ export class SubscriptionService {
         const currency = planDetails.currency?.toLowerCase() || 'try';
         const totalPrice = planDetails.totalPrice || 899;
         const isAnnual = planDetails.isAnnual || false;
+        const billingInterval = planDetails.billingInterval || (isAnnual ? 'yearly' : 'monthly');
 
         // Create Payment Intent for subscription
         const paymentIntent = await this.stripe.paymentIntents.create({
@@ -159,6 +160,7 @@ export class SubscriptionService {
             metadata: {
                 userId: user.id,
                 isAnnual: isAnnual.toString(),
+                billingInterval: billingInterval,
                 subscriptionType: 'premium',
             },
         });
@@ -235,13 +237,10 @@ export class SubscriptionService {
             },
         });
 
-        // Get predefined price IDs from environment
-        const basePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID');
-        const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
-
-        if (!basePriceId || !meteredPriceId) {
-            throw new Error('Stripe price IDs not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID and STRIPE_PREMIUM_METERED_PRICE_ID in .env');
-        }
+        // Get predefined price IDs based on billing interval
+        const billingInterval = planDetails?.billingInterval || 'monthly';
+        const basePriceId = this.getBasePriceId(billingInterval);
+        const meteredPriceId = this.getMeteredPriceId(billingInterval);
 
         // Create Stripe Checkout Session with both base and metered prices
         const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:5173';
@@ -366,13 +365,10 @@ export class SubscriptionService {
             },
         });
 
-        // Get predefined price IDs
-        const basePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID');
-        const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
-
-        if (!basePriceId || !meteredPriceId) {
-            throw new Error('Stripe price IDs not configured');
-        }
+        // Get predefined price IDs - default to monthly
+        const billingInterval = paymentIntent.metadata?.billingInterval as 'monthly' | 'yearly' || 'monthly';
+        const basePriceId = this.getBasePriceId(billingInterval);
+        const meteredPriceId = this.getMeteredPriceId(billingInterval);
 
         // Create Stripe Subscription with both base and metered prices
         const stripeSubscription = await this.stripe.subscriptions.create({
@@ -453,13 +449,10 @@ export class SubscriptionService {
             stripeCustomerId = customer.id;
         }
 
-        // Get predefined price IDs
-        const basePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID');
-        const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
-
-        if (!basePriceId || !meteredPriceId) {
-            throw new Error('Stripe price IDs not configured');
-        }
+        // Get predefined price IDs based on billing interval
+        const billingInterval = billingInfo.billingInterval || 'monthly';
+        const basePriceId = this.getBasePriceId(billingInterval);
+        const meteredPriceId = this.getMeteredPriceId(billingInterval);
 
         // Create Stripe subscription with both base and metered prices
         const stripeSubscription = await this.stripe.subscriptions.create({
@@ -778,9 +771,13 @@ export class SubscriptionService {
             });
 
             // Find the metered price item (should already exist from subscription creation)
-            const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
+            // Check both monthly and yearly metered price IDs
+            const monthlyMeteredPriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY_METERED');
+            const yearlyMeteredPriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY_METERED');
             const usageItem = stripeSubscription.items.data.find(item =>
-                item.price.id === meteredPriceId || item.price.recurring?.usage_type === 'metered'
+                item.price.id === monthlyMeteredPriceId || 
+                item.price.id === yearlyMeteredPriceId || 
+                item.price.recurring?.usage_type === 'metered'
             );
 
             if (!usageItem) {
@@ -859,5 +856,64 @@ export class SubscriptionService {
         });
 
         return subscriptionWithLogs.tokenUsageLogs.reduce((sum, log) => sum + log.cost, 0);
+    }
+
+    private getBasePriceId(billingInterval: 'monthly' | 'yearly'): string {
+        const priceId = billingInterval === 'yearly'
+            ? this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY')
+            : this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY');
+        
+        if (!priceId) {
+            throw new Error(`Stripe ${billingInterval} base price ID not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID_${billingInterval.toUpperCase()} in .env`);
+        }
+        
+        return priceId;
+    }
+
+    private getMeteredPriceId(billingInterval: 'monthly' | 'yearly'): string {
+        const priceId = billingInterval === 'yearly'
+            ? this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY_METERED')
+            : this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY_METERED');
+        
+        if (!priceId) {
+            throw new Error(`Stripe ${billingInterval} metered price ID not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID_${billingInterval.toUpperCase()}_METERED in .env`);
+        }
+        
+        return priceId;
+    }
+
+    async getPricingInfo() {
+        try {
+            const monthlyBasePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY');
+            const yearlyBasePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY');
+
+            if (!monthlyBasePriceId || !yearlyBasePriceId) {
+                throw new Error('Stripe price IDs not configured');
+            }
+
+            // Fetch price details from Stripe
+            const [monthlyPrice, yearlyPrice] = await Promise.all([
+                this.stripe.prices.retrieve(monthlyBasePriceId, { expand: ['currency_options'] }),
+                this.stripe.prices.retrieve(yearlyBasePriceId, { expand: ['currency_options'] }),
+            ]);
+
+            return {
+                monthly: {
+                    priceId: monthlyPrice.id,
+                    amount: monthlyPrice.unit_amount,
+                    currency: monthlyPrice.currency,
+                    currencyOptions: monthlyPrice.currency_options || {},
+                },
+                yearly: {
+                    priceId: yearlyPrice.id,
+                    amount: yearlyPrice.unit_amount,
+                    currency: yearlyPrice.currency,
+                    currencyOptions: yearlyPrice.currency_options || {},
+                },
+            };
+        } catch (error) {
+            console.error('Error fetching pricing info from Stripe:', error);
+            throw new Error('Failed to fetch pricing information');
+        }
     }
 }

@@ -186,7 +186,6 @@ model fastapi_ingestiontask {
 enum QuotaType {
   BOT
   FILE
-  TOKEN
 }
 
 enum SubscriptionTier {
