@@ -46,15 +46,6 @@ export class BillingService {
 
         if (!subscription) return;
 
-        // Update invoice status
-        await this.prisma.invoice.updateMany({
-            where: { stripeInvoiceId: invoice.id },
-            data: {
-                status: 'PAID',
-                paidAt: new Date(),
-            },
-        });
-
         // Unblock account if blocked
         if (subscription.user.accountBlocked) {
             await this.prisma.user.update({
@@ -97,16 +88,6 @@ export class BillingService {
         });
 
         if (!subscription) return;
-
-        // Update invoice status
-        await this.prisma.invoice.updateMany({
-            where: { stripeInvoiceId: invoice.id },
-            data: {
-                status: 'UNCOLLECTIBLE',
-                attemptedAt: new Date(),
-                failureReason: invoice.last_finalization_error?.message,
-            },
-        });
 
         // Block account
         await this.prisma.user.update({
@@ -179,92 +160,35 @@ export class BillingService {
         this.logger.log(`Subscription deleted for user ${subscription.userId}. Downgraded to FREE.`);
     }
 
-    async createMonthlyInvoice(subscriptionId: string) {
-        const subscription = await this.prisma.subscription.findUnique({
-            where: { id: subscriptionId },
-        });
-
-        if (!subscription) return;
-
-        const subscriptionWithLogs = await this.prisma.subscription.findUnique({
-            where: { id: subscriptionId },
-            include: {
-                tokenUsageLogs: {
-                    where: {
-                        createdAt: {
-                            gte: subscription.currentPeriodStart,
-                            lt: subscription.currentPeriodEnd,
-                        },
-                    },
-                },
-            },
-        });
-
-        const totalCost = subscriptionWithLogs.tokenUsageLogs.reduce((sum, log) => sum + log.cost, 0);
-        const tokensCharged = subscriptionWithLogs.tokenUsageLogs.reduce((sum, log) => sum + log.tokensUsed, 0);
-
-        const invoice = await this.prisma.invoice.create({
-            data: {
-                subscriptionId: subscription.id,
-                amount: totalCost,
-                tokensCharged,
-                billingPeriodStart: subscription.currentPeriodStart,
-                billingPeriodEnd: subscription.currentPeriodEnd,
-                dueDate: subscription.currentPeriodEnd,
-                status: 'OPEN',
-            },
-        });
-
-        return invoice;
-    }
-
     // Cron job to check for upcoming billing and send reminders
     @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
     async sendPaymentReminders() {
-        const fiveDaysFromNow = new Date();
-        fiveDaysFromNow.setDate(fiveDaysFromNow.getDate() + 5);
+        const threeDaysFromNow = new Date();
+        threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
 
         const subscriptions = await this.prisma.subscription.findMany({
             where: {
                 tier: 'PREMIUM',
                 status: 'ACTIVE',
                 currentPeriodEnd: {
-                    lte: fiveDaysFromNow,
+                    lte: threeDaysFromNow,
                     gte: new Date(),
                 },
             },
             include: {
                 user: true,
-                invoices: {
-                    where: {
-                        status: 'OPEN',
-                        reminderSentAt: null,
-                    },
-                },
             },
         });
 
         for (const subscription of subscriptions) {
-            if (subscription.invoices.length > 0) {
-                await this.mailService.sendPaymentReminderEmail(
-                    subscription.user.email,
-                    subscription.user.name,
-                    subscription.currentPeriodEnd,
-                );
+            // Send reminder email 3 days before renewal
+            await this.mailService.sendPaymentReminderEmail(
+                subscription.user.email,
+                subscription.user.name,
+                subscription.currentPeriodEnd,
+            );
 
-                // Mark reminder as sent
-                await this.prisma.invoice.updateMany({
-                    where: {
-                        subscriptionId: subscription.id,
-                        status: 'OPEN',
-                    },
-                    data: {
-                        reminderSentAt: new Date(),
-                    },
-                });
-
-                this.logger.log(`Payment reminder sent to user ${subscription.userId}`);
-            }
+            this.logger.log(`Payment reminder sent to user ${subscription.userId}`);
         }
     }
 
@@ -326,13 +250,34 @@ export class BillingService {
     async getUserInvoices(userId: string) {
         const subscription = await this.prisma.subscription.findUnique({
             where: { userId },
-            include: {
-                invoices: {
-                    orderBy: { createdAt: 'desc' },
-                },
-            },
         });
 
-        return subscription?.invoices || [];
+        if (!subscription?.stripeCustomerId) {
+            return [];
+        }
+
+        try {
+            // Get invoices from Stripe
+            const invoices = await this.stripe.invoices.list({
+                customer: subscription.stripeCustomerId,
+                limit: 100,
+            });
+
+            return invoices.data.map(invoice => ({
+                id: invoice.id,
+                number: invoice.number,
+                amount: invoice.amount_paid / 100, // Convert from cents
+                currency: invoice.currency,
+                status: invoice.status?.toUpperCase(),
+                billingPeriodStart: invoice.period_start ? new Date(invoice.period_start * 1000) : null,
+                billingPeriodEnd: invoice.period_end ? new Date(invoice.period_end * 1000) : null,
+                paidAt: invoice.status_transitions?.paid_at ? new Date(invoice.status_transitions.paid_at * 1000) : null,
+                invoicePdf: invoice.invoice_pdf,
+                hostedInvoiceUrl: invoice.hosted_invoice_url,
+            }));
+        } catch (error) {
+            this.logger.error('Error fetching Stripe invoices:', error);
+            return [];
+        }
     }
 }

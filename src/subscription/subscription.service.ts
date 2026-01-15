@@ -22,25 +22,29 @@ export class SubscriptionService {
             throw new BadRequestException('User ID is required');
         }
 
-        // Use upsert to avoid race conditions
-        const subscription = await this.prisma.subscription.upsert({
+        // Check if subscription exists first
+        let subscription = await this.prisma.subscription.findUnique({
             where: { userId },
-            create: {
-                userId,
-                tier: 'FREE',
-                status: 'ACTIVE',
-                monthlyTokenAllocation: await this.getFreeTokenLimit(),
-                tokensUsedThisMonth: 0,
-            },
-            update: {},
             include: {
                 user: true,
-                invoices: {
-                    orderBy: { createdAt: 'desc' },
-                    take: 10,
-                },
             },
         });
+
+        // Create if doesn't exist
+        if (!subscription) {
+            subscription = await this.prisma.subscription.create({
+                data: {
+                    userId,
+                    tier: 'FREE',
+                    status: 'ACTIVE',
+                    monthlyTokenAllocation: await this.getFreeTokenLimit(),
+                    tokensUsedThisMonth: 0,
+                },
+                include: {
+                    user: true,
+                },
+            });
+        }
 
         // Fetch payment method details from Stripe if available
         let paymentMethod = null;
@@ -231,32 +235,26 @@ export class SubscriptionService {
             },
         });
 
-        // Determine currency and price
-        const currency = planDetails.currency?.toLowerCase() || 'try';
-        const totalPrice = planDetails.totalPrice || 899;
-        const isAnnual = planDetails.isAnnual || false;
+        // Get predefined price IDs from environment
+        const basePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID');
+        const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
 
-        // Create or get Stripe price for the plan
-        const price = await this.stripe.prices.create({
-            unit_amount: Math.round(totalPrice * 100), // Convert to cents
-            currency: currency,
-            recurring: {
-                interval: isAnnual ? 'year' : 'month'
-            },
-            product_data: {
-                name: isAnnual ? 'Premium Subscription (Annual)' : 'Premium Subscription (Monthly)',
-            },
-        });
+        if (!basePriceId || !meteredPriceId) {
+            throw new Error('Stripe price IDs not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID and STRIPE_PREMIUM_METERED_PRICE_ID in .env');
+        }
 
-        // Create Stripe Checkout Session
+        // Create Stripe Checkout Session with both base and metered prices
         const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:5173';
         const session = await this.stripe.checkout.sessions.create({
             customer: stripeCustomerId,
             payment_method_types: ['card'],
             line_items: [
                 {
-                    price: price.id,
+                    price: basePriceId,  // Base recurring fee
                     quantity: 1,
+                },
+                {
+                    price: meteredPriceId,  // Metered usage price
                 },
             ],
             mode: 'subscription',
@@ -264,7 +262,6 @@ export class SubscriptionService {
             cancel_url: `${frontendUrl}/pricing?canceled=true`,
             metadata: {
                 userId: user.id,
-                isAnnual: isAnnual.toString(),
             },
         });
 
@@ -369,32 +366,24 @@ export class SubscriptionService {
             },
         });
 
-        // Determine currency and price
-        const isAnnual = paymentIntent.metadata?.isAnnual === 'true';
-        const currency = paymentIntent.currency;
+        // Get predefined price IDs
+        const basePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID');
+        const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
 
-        // Create Stripe Product and Price for subscription
-        const product = await this.stripe.products.create({
-            name: isAnnual ? 'Premium Subscription (Annual)' : 'Premium Subscription (Monthly)',
-        });
+        if (!basePriceId || !meteredPriceId) {
+            throw new Error('Stripe price IDs not configured');
+        }
 
-        const price = await this.stripe.prices.create({
-            product: product.id,
-            unit_amount: paymentIntent.amount,
-            currency: currency,
-            recurring: {
-                interval: isAnnual ? 'year' : 'month',
-            },
-        });
-
-        // Create Stripe Subscription
+        // Create Stripe Subscription with both base and metered prices
         const stripeSubscription = await this.stripe.subscriptions.create({
             customer: paymentIntent.customer as string,
-            items: [{ price: price.id }],
+            items: [
+                { price: basePriceId },      // Base fee
+                { price: meteredPriceId },   // Usage-based
+            ],
             default_payment_method: paymentMethodId,
             metadata: {
                 userId: userId,
-                isAnnual: isAnnual.toString(),
             },
         });
 
@@ -412,7 +401,7 @@ export class SubscriptionService {
                 tier: 'PREMIUM',
                 status: 'ACTIVE',
                 stripeSubscriptionId: stripeSubscription.id,
-                stripePriceId: price.id,
+                stripePriceId: basePriceId,
                 currentPeriodStart,
                 currentPeriodEnd,
                 monthlyTokenAllocation: await this.getPremiumTokenLimit(),
@@ -464,16 +453,21 @@ export class SubscriptionService {
             stripeCustomerId = customer.id;
         }
 
-        // Get premium price from settings
-        const premiumPrice = await this.getPremiumMonthlyPrice();
+        // Get predefined price IDs
+        const basePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID');
+        const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
 
-        // Create Stripe price if not exists
-        let stripePriceId = await this.getOrCreateStripePriceId(premiumPrice);
+        if (!basePriceId || !meteredPriceId) {
+            throw new Error('Stripe price IDs not configured');
+        }
 
-        // Create Stripe subscription
+        // Create Stripe subscription with both base and metered prices
         const stripeSubscription = await this.stripe.subscriptions.create({
             customer: stripeCustomerId,
-            items: [{ price: stripePriceId }],
+            items: [
+                { price: basePriceId },      // Base fee
+                { price: meteredPriceId },   // Usage-based
+            ],
             metadata: {
                 userId: user.id,
             },
@@ -506,7 +500,7 @@ export class SubscriptionService {
                 status: 'ACTIVE',
                 stripeCustomerId,
                 stripeSubscriptionId: stripeSubscription.id,
-                stripePriceId,
+                stripePriceId: basePriceId,
                 currentPeriodStart,
                 currentPeriodEnd,
                 monthlyTokenAllocation: await this.getPremiumTokenLimit(),
@@ -779,39 +773,23 @@ export class SubscriptionService {
 
     private async reportUsageToStripe(subscriptionId: string, tokensUsed: number, cost: number) {
         try {
-            // Get subscription items to find the usage-based price
-            const stripeSubscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+            const stripeSubscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
+                expand: ['items.data.price']
+            });
 
-            // Find or create usage-based price item
-            let usageItem = stripeSubscription.items.data.find(item =>
-                item.price.recurring?.usage_type === 'metered'
+            // Find the metered price item (should already exist from subscription creation)
+            const meteredPriceId = this.config.get('STRIPE_PREMIUM_METERED_PRICE_ID');
+            const usageItem = stripeSubscription.items.data.find(item =>
+                item.price.id === meteredPriceId || item.price.recurring?.usage_type === 'metered'
             );
 
             if (!usageItem) {
-                // Create metered price if it doesn't exist
-                const product = await this.stripe.products.create({
-                    name: 'Additional Token Usage',
-                });
-
-                const meteredPrice = await this.stripe.prices.create({
-                    product: product.id,
-                    currency: stripeSubscription.currency || 'try',
-                    recurring: {
-                        interval: 'month',
-                        usage_type: 'metered',
-                    },
-                    billing_scheme: 'per_unit',
-                    unit_amount: Math.round(await this.getTokenPrice() * 100 / 1000), // Price per 1000 tokens in cents
-                });
-
-                // Add metered price to subscription
-                usageItem = await this.stripe.subscriptionItems.create({
-                    subscription: subscriptionId,
-                    price: meteredPrice.id,
-                });
+                // This shouldn't happen if subscription was created correctly
+                console.error('Metered price item not found in subscription. Skipping usage report.');
+                return;
             }
 
-            // Report usage (in units of 1000 tokens)
+            // Report usage (in units of 1000 tokens as defined in Stripe price)
             await (this.stripe.subscriptionItems as any).createUsageRecord(
                 usageItem.id,
                 {
@@ -821,10 +799,10 @@ export class SubscriptionService {
                 }
             );
 
-            console.log(`Reported ${tokensUsed} tokens (${Math.ceil(tokensUsed / 1000)} units) to Stripe for subscription ${subscriptionId}`);
+            console.log(`✓ Reported ${tokensUsed} tokens (${Math.ceil(tokensUsed / 1000)} units) to Stripe for subscription ${subscriptionId}`);
         } catch (error) {
-            console.error('Error reporting usage to Stripe:', error);
-            // Don't throw - log usage locally even if Stripe fails
+            console.error('✗ Error reporting usage to Stripe:', error);
+            // Don't throw - token usage is still logged locally in TokenUsageLog
         }
     }
 
@@ -857,28 +835,7 @@ export class SubscriptionService {
         const setting = await this.prisma.systemSettings.findUnique({
             where: { key: 'TOKEN_PRICE_PER_1K' },
         });
-        return setting ? parseFloat(setting.value) : 0.002;
-    }
-
-    private async getPremiumMonthlyPrice(): Promise<number> {
-        const setting = await this.prisma.systemSettings.findUnique({
-            where: { key: 'PREMIUM_MONTHLY_PRICE' },
-        });
-        return setting ? parseFloat(setting.value) : 29.99;
-    }
-
-    private async getOrCreateStripePriceId(amount: number): Promise<string> {
-        // In production, you should store this in database
-        // For now, create a new price each time (or store in SystemSettings)
-        const price = await this.stripe.prices.create({
-            unit_amount: Math.round(amount * 100), // Convert to cents
-            currency: 'usd',
-            recurring: { interval: 'month' },
-            product_data: {
-                name: 'Premium Subscription',
-            },
-        });
-        return price.id;
+        return setting ? parseFloat(setting.value) : 0.01; // Default to config value
     }
 
     private async getCurrentMonthCost(userId: string): Promise<number> {

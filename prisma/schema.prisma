@@ -202,14 +202,6 @@ enum SubscriptionStatus {
   TRIALING
 }
 
-enum InvoiceStatus {
-  DRAFT
-  OPEN
-  PAID
-  VOID
-  UNCOLLECTIBLE
-}
-
 enum FeedbackCategory {
   BUG_REPORT
   FEATURE_REQUEST
@@ -240,7 +232,6 @@ model Subscription {
   createdAt                 DateTime           @default(now())
   updatedAt                 DateTime           @updatedAt
   user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  invoices                  Invoice[]
   tokenUsageLogs            TokenUsageLog[]
 }
 
@@ -260,26 +251,6 @@ model BillingInfo {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Invoice {
-  id                   String        @id @default(cuid())
-  subscriptionId       String
-  stripeInvoiceId      String?       @unique
-  amount               Float
-  currency             String        @default("usd")
-  status               InvoiceStatus @default(DRAFT)
-  tokensCharged        Int           @default(0)
-  billingPeriodStart   DateTime
-  billingPeriodEnd     DateTime
-  dueDate              DateTime?
-  paidAt               DateTime?
-  attemptedAt          DateTime?
-  failureReason        String?
-  reminderSentAt       DateTime?
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
-  subscription         Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 }
 
 model TokenUsageLog {
