@@ -398,11 +398,11 @@ export class SubscriptionService {
             },
         });
 
-        const currentPeriodStart = (stripeSubscription as any).current_period_start 
-            ? new Date((stripeSubscription as any).current_period_start * 1000) 
+        const currentPeriodStart = (stripeSubscription as any).current_period_start
+            ? new Date((stripeSubscription as any).current_period_start * 1000)
             : new Date();
-        const currentPeriodEnd = (stripeSubscription as any).current_period_end 
-            ? new Date((stripeSubscription as any).current_period_end * 1000) 
+        const currentPeriodEnd = (stripeSubscription as any).current_period_end
+            ? new Date((stripeSubscription as any).current_period_end * 1000)
             : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
         // Update subscription to PREMIUM
