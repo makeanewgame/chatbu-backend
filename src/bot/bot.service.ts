@@ -270,7 +270,6 @@ export class BotService {
     console.log("chat body", body);
 
     try {
-
       const botUser = await this.prisma.customerBots.findFirst({
         where: {
           id: body.botId
@@ -395,6 +394,7 @@ export class BotService {
             customer_cuid: botUser.teamId,
             messages: [body.message],
             system_prompt: botUser.systemPrompt,
+            session_id: body.chatId,
           })
         );
         data = response.data;
