@@ -128,5 +128,62 @@ export class QuotaService {
         });
         return setting ? setting.value : defaultValue;
     }
+
+    async incrementQuota(teamId: string, quotaType: QuotaType, amount: number = 1) {
+        const quota = await this.prisma.quota.findFirst({
+            where: {
+                teamId: teamId,
+                quotaType: QuotaType[quotaType]
+            }
+        });
+
+        if (quota) {
+            await this.prisma.quota.update({
+                where: {
+                    id: quota.id
+                },
+                data: {
+                    used: quota.used + amount
+                }
+            });
+
+            return {
+                message: 'Quota incremented successfully',
+                used: quota.used + amount,
+                remaining: quota.limit - (quota.used + amount)
+            };
+        }
+
+        throw new Error('No quota found');
+    }
+
+    async decrementQuota(teamId: string, quotaType: QuotaType, amount: number = 1) {
+        const quota = await this.prisma.quota.findFirst({
+            where: {
+                teamId: teamId,
+                quotaType: QuotaType[quotaType]
+            }
+        });
+
+        if (quota) {
+            const newUsed = Math.max(0, quota.used - amount);
+            await this.prisma.quota.update({
+                where: {
+                    id: quota.id
+                },
+                data: {
+                    used: newUsed
+                }
+            });
+
+            return {
+                message: 'Quota decremented successfully',
+                used: newUsed,
+                remaining: quota.limit - newUsed
+            };
+        }
+
+        throw new Error('No quota found');
+    }
 }
 

@@ -17,22 +17,28 @@ export class EventsService implements OnModuleInit {
         console.log('EventsService initializing...');
         await this.client.connect();
         await this.client.query('LISTEN storage_updates');
+        await this.client.query('LISTEN content_updates');
 
         await this.client.on('notification', async (msg) => {
             const payload = JSON.parse(msg.payload);
-            // Mesajı websocket üzerinden frontend'e ilet
-            // Burada socket.io ile frontend'e bildirim gönderebilirsiniz
-            // Örnek: this.eventsGateway.notifyUser(payload.userId, payload)
 
-            const tempPayload = {
-                type: 'file',
-                data: [payload],
+            if (msg.channel === 'storage_updates') {
+                const tempPayload = {
+                    type: 'file',
+                    data: [payload],
+                }
+                console.log('Received notification on storage_updates:', payload);
+                await this.eventGateWay.notifyUser(payload.teamId, tempPayload);
             }
 
-            console.log('Received notification on storage_updates:', payload);
-
-            await this.eventGateWay.notifyUser(payload.teamId, tempPayload);
-
+            if (msg.channel === 'content_updates') {
+                const tempPayload = {
+                    type: 'content',
+                    data: [payload],
+                }
+                console.log('Received notification on content_updates:', payload);
+                await this.eventGateWay.notifyUser(payload.teamId, tempPayload);
+            }
         });
 
         console.log('EventsService initialized');

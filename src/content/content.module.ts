@@ -3,10 +3,11 @@ import { ContentService } from './content.service';
 import { ContentController } from './content.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { HttpModule } from '@nestjs/axios';
+import { QuotaService } from 'src/quota/quota.service';
 
 @Module({
   imports: [PrismaModule, HttpModule],
-  providers: [ContentService],
+  providers: [ContentService, QuotaService],
   controllers: [ContentController]
 })
 export class ContentModule { }

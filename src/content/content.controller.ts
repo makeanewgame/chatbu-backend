@@ -102,37 +102,77 @@ export class ContentController {
     }
     //#endregion
 
-    // //region ingestWebPage
-    // @ApiOperation({ summary: 'Ingest web page content' })
-    // @ApiResponse({
-    //     status: 200,
-    //     description: 'Web page content ingested successfully',
-    // })
-    // @ApiBadRequestResponse({
-    //     description: 'Bad request in payload',
-    // })
-    // @ApiBearerAuth()
-    // @ApiBody({
-    //     schema: {
-    //         type: 'object',
-    //         properties: {
-    //             botId: { type: 'string' },
-    //             url: { type: 'string' },
-    //             type: { type: 'string' },
-    //             content: { type: 'object' },
-    //             status: { type: 'string' },
-    //             taskId: { type: 'string' },
-    //             ingestInfo: { type: 'string' },
-    //         },
-    //         required: ['botId', 'url', 'type'],
-    //     },
-    // })
-    // @Post('ingestWebPage')
-    // @UseGuards(AccessTokenGuard)
-    // async ingestWebPage(@Body() body: any, @Req() req: any) {
-    //     const user = req.user as IUser;
-    //     return this.contentService.ingestWebPage(body, user);
-    // }
-    // //#endregion
+    //#region fetchSitemap
+    @ApiOperation({ summary: 'Fetch sitemap URLs from a domain' })
+    @ApiResponse({
+        status: 200,
+        description: 'Sitemap URLs fetched successfully',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                domain: { type: 'string' },
+            },
+            required: ['domain'],
+        },
+    })
+    @Post('fetchSitemap')
+    @UseGuards(AccessTokenGuard)
+    async fetchSitemap(@Body() body: any, @Req() req: any) {
+        const user = req.user as IUser;
+        return this.contentService.fetchSitemap(body.domain);
+    }
+    //#endregion
+
+    //#region ingestWebPages
+    @ApiOperation({ summary: 'Ingest multiple web pages' })
+    @ApiResponse({
+        status: 200,
+        description: 'Web pages ingestion started',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                botId: { type: 'string' },
+                urls: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['botId', 'urls'],
+        },
+    })
+    @Post('ingestWebPages')
+    @UseGuards(AccessTokenGuard)
+    async ingestWebPages(@Body() body: any, @Req() req: any) {
+        const user = req.user as IUser;
+        return this.contentService.ingestWebPages(body, user);
+    }
+    //#endregion
+
+    //#region getQuota
+    @ApiOperation({ summary: 'Get user FILE quota information' })
+    @ApiResponse({
+        status: 200,
+        description: 'Quota information retrieved',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @Post('getQuota')
+    @UseGuards(AccessTokenGuard)
+    async getQuota(@Body() body: any, @Req() req: any) {
+        const user = req.user as IUser;
+        return this.contentService.getQuota(user.teamId);
+    }
+    //#endregion
 
 }
