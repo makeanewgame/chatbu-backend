@@ -795,8 +795,8 @@ export class SubscriptionService {
             const monthlyMeteredPriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY_METERED');
             const yearlyMeteredPriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY_METERED');
             const usageItem = stripeSubscription.items.data.find(item =>
-                item.price.id === monthlyMeteredPriceId || 
-                item.price.id === yearlyMeteredPriceId || 
+                item.price.id === monthlyMeteredPriceId ||
+                item.price.id === yearlyMeteredPriceId ||
                 item.price.recurring?.usage_type === 'metered'
             );
 
@@ -882,11 +882,11 @@ export class SubscriptionService {
         const priceId = billingInterval === 'yearly'
             ? this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY')
             : this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY');
-        
+
         if (!priceId) {
             throw new Error(`Stripe ${billingInterval} base price ID not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID_${billingInterval.toUpperCase()} in .env`);
         }
-        
+
         return priceId;
     }
 
@@ -894,11 +894,11 @@ export class SubscriptionService {
         const priceId = billingInterval === 'yearly'
             ? this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY_METERED')
             : this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY_METERED');
-        
+
         if (!priceId) {
             throw new Error(`Stripe ${billingInterval} metered price ID not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID_${billingInterval.toUpperCase()}_METERED in .env`);
         }
-        
+
         return priceId;
     }
 
