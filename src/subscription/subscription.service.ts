@@ -151,7 +151,7 @@ export class SubscriptionService {
         const isAnnual = planDetails.isAnnual || false;
         const billingInterval = planDetails.billingInterval || (isAnnual ? 'yearly' : 'monthly');
 
-        // Create Payment Intent for subscription
+        // Create Payment Intent for subscription (supports dynamic currency)
         const paymentIntent = await this.stripe.paymentIntents.create({
             amount: Math.round(totalPrice * 100), // Convert to cents
             currency: currency,
@@ -355,6 +355,21 @@ export class SubscriptionService {
             throw new NotFoundException('Subscription not found');
         }
 
+        // Check if already upgraded to prevent duplicate subscriptions
+        if (subscription.tier === 'PREMIUM' && subscription.stripeSubscriptionId) {
+            // Already upgraded, just return success
+            return {
+                success: true,
+                message: 'Subscription already activated',
+                subscription: {
+                    tier: 'PREMIUM',
+                    status: subscription.status,
+                    currentPeriodStart: subscription.currentPeriodStart,
+                    currentPeriodEnd: subscription.currentPeriodEnd,
+                },
+            };
+        }
+
         // Get customer's default payment method
         const paymentMethodId = paymentIntent.payment_method as string;
 
@@ -380,6 +395,7 @@ export class SubscriptionService {
             default_payment_method: paymentMethodId,
             metadata: {
                 userId: userId,
+                billingInterval: billingInterval,
             },
         });
 
@@ -463,8 +479,12 @@ export class SubscriptionService {
             ],
             metadata: {
                 userId: user.id,
+                billingInterval: billingInterval,
             },
             payment_behavior: 'default_incomplete',
+            payment_settings: {
+                save_default_payment_method: 'on_subscription',
+            },
             expand: ['latest_invoice.payment_intent'],
         });
 
