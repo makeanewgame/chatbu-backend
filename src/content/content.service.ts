@@ -237,48 +237,92 @@ export class ContentService {
         console.log("ingest Video not implemented yet");
     }
 
-    async fetchSitemap(domain: string) {
+    // Helper: URL normalization
+    private normalizeUrl(urlString: string, baseUrl: string): string | null {
         try {
-            // Ensure domain has protocol
+            const url = new URL(urlString, baseUrl);
+            // Remove fragment and normalize
+            url.hash = '';
+            // Remove trailing slash for consistency
+            let normalized = url.href;
+            if (normalized.endsWith('/') && url.pathname !== '/') {
+                normalized = normalized.slice(0, -1);
+            }
+            return normalized;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    // Helper: Check if URL should be crawled
+    private shouldCrawlUrl(url: string, baseDomain: string): boolean {
+        try {
+            const urlObj = new URL(url);
+            const baseObj = new URL(baseDomain);
+
+            // Same domain check
+            if (urlObj.hostname !== baseObj.hostname) {
+                return false;
+            }
+
+            // Skip common non-HTML resources
+            const skipExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.mp4', '.mp3', '.zip', '.rar'];
+            if (skipExtensions.some(ext => urlObj.pathname.toLowerCase().endsWith(ext))) {
+                return false;
+            }
+
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
+    // Fetch and parse robots.txt
+    private async fetchRobotsTxt(domain: string): Promise<string[]> {
+        try {
             const url = domain.startsWith('http') ? domain : `https://${domain}`;
+            const robotsUrl = `${url}/robots.txt`;
 
-            // Try common sitemap locations
-            const sitemapUrls = [
-                `${url}/sitemap.xml`,
-                `${url}/sitemap_index.xml`,
-                `${url}/sitemap1.xml`,
-            ];
+            const { data } = await firstValueFrom(
+                this.httpService.get(robotsUrl).pipe(
+                    catchError((error: AxiosError) => {
+                        throw error;
+                    }),
+                )
+            );
 
-            let sitemapData = null;
-            let sitemapUrl = null;
+            // Parse robots.txt for sitemap URLs
+            const sitemapUrls: string[] = [];
+            const lines = data.split('\n');
 
-            for (const testUrl of sitemapUrls) {
-                try {
-                    const { data } = await firstValueFrom(
-                        this.httpService.get(testUrl).pipe(
-                            catchError((error: AxiosError) => {
-                                throw error;
-                            }),
-                        )
-                    );
-                    sitemapData = data;
-                    sitemapUrl = testUrl;
-                    break;
-                } catch (err) {
-                    continue;
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed.toLowerCase().startsWith('sitemap:')) {
+                    const sitemapUrl = trimmed.substring(8).trim();
+                    if (sitemapUrl) {
+                        sitemapUrls.push(sitemapUrl);
+                    }
                 }
             }
 
-            if (!sitemapData) {
-                return {
-                    success: false,
-                    message: 'Sitemap not found',
-                    urls: []
-                };
-            }
+            return sitemapUrls;
+        } catch (err) {
+            return [];
+        }
+    }
 
-            // Parse sitemap XML
-            const $ = cheerio.load(sitemapData, { xmlMode: true });
+    // Parse sitemap XML
+    private async parseSitemap(sitemapUrl: string): Promise<string[]> {
+        try {
+            const { data } = await firstValueFrom(
+                this.httpService.get(sitemapUrl).pipe(
+                    catchError((error: AxiosError) => {
+                        throw error;
+                    }),
+                )
+            );
+
+            const $ = cheerio.load(data, { xmlMode: true });
             const urls: string[] = [];
 
             // Extract URLs from sitemap
@@ -289,16 +333,142 @@ export class ContentService {
                 }
             });
 
-            // If it's a sitemap index, recursively fetch sub-sitemaps
+            // Handle sitemap index (nested sitemaps)
+            const subSitemaps: string[] = [];
             $('sitemap loc').each((i, elem) => {
                 const subSitemapUrl = $(elem).text().trim();
-                // TODO: Recursively fetch sub-sitemaps if needed
+                if (subSitemapUrl) {
+                    subSitemaps.push(subSitemapUrl);
+                }
             });
 
+            // Recursively fetch sub-sitemaps
+            for (const subSitemapUrl of subSitemaps) {
+                const subUrls = await this.parseSitemap(subSitemapUrl);
+                urls.push(...subUrls);
+            }
+
+            return urls;
+        } catch (err) {
+            return [];
+        }
+    }
+
+    // Manual crawler - discovers URLs by crawling the website
+    private async crawlWebsite(seedUrl: string, maxPages: number = 50): Promise<string[]> {
+        const visited = new Set<string>();
+        const queue: string[] = [seedUrl];
+        const discoveredUrls: string[] = [];
+
+        while (queue.length > 0 && visited.size < maxPages) {
+            const currentUrl = queue.shift();
+            if (!currentUrl || visited.has(currentUrl)) {
+                continue;
+            }
+
+            visited.add(currentUrl);
+
+            try {
+                // Fetch the page
+                const { data } = await firstValueFrom(
+                    this.httpService.get(currentUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (compatible; ChatbuBot/1.0)'
+                        },
+                        timeout: 10000
+                    }).pipe(
+                        catchError((error: AxiosError) => {
+                            throw error;
+                        }),
+                    )
+                );
+
+                // Only process HTML responses
+                if (typeof data === 'string' && data.includes('<html')) {
+                    discoveredUrls.push(currentUrl);
+
+                    // Parse links from the page
+                    const $ = cheerio.load(data);
+                    $('a[href]').each((i, elem) => {
+                        const href = $(elem).attr('href');
+                        if (href) {
+                            const normalizedUrl = this.normalizeUrl(href, currentUrl);
+                            if (normalizedUrl &&
+                                !visited.has(normalizedUrl) &&
+                                this.shouldCrawlUrl(normalizedUrl, seedUrl)) {
+                                queue.push(normalizedUrl);
+                            }
+                        }
+                    });
+                }
+            } catch (err) {
+                console.log(`Failed to crawl ${currentUrl}:`, err.message);
+                // Continue with next URL
+            }
+
+            // Small delay to avoid overwhelming the server
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        return discoveredUrls;
+    }
+
+    async fetchSitemap(domain: string, maxCrawlPages: number = 50) {
+        try {
+            const url = domain.startsWith('http') ? domain : `https://${domain}`;
+            let urls: string[] = [];
+            let method = '';
+
+            // Step 1: Check robots.txt for sitemap
+            console.log('Checking robots.txt for sitemap...');
+            const robotsSitemaps = await this.fetchRobotsTxt(url);
+
+            if (robotsSitemaps.length > 0) {
+                console.log(`Found ${robotsSitemaps.length} sitemap(s) in robots.txt`);
+                for (const sitemapUrl of robotsSitemaps) {
+                    const sitemapUrls = await this.parseSitemap(sitemapUrl);
+                    urls.push(...sitemapUrls);
+                }
+                if (urls.length > 0) {
+                    method = 'robots.txt';
+                }
+            }
+
+            // Step 2: Try common sitemap locations if robots.txt didn't work
+            if (urls.length === 0) {
+                console.log('Trying common sitemap locations...');
+                const commonSitemapUrls = [
+                    `${url}/sitemap.xml`,
+                    `${url}/sitemap_index.xml`,
+                    `${url}/sitemap1.xml`,
+                ];
+
+                for (const sitemapUrl of commonSitemapUrls) {
+                    const sitemapUrls = await this.parseSitemap(sitemapUrl);
+                    if (sitemapUrls.length > 0) {
+                        urls.push(...sitemapUrls);
+                        method = 'common location';
+                        break;
+                    }
+                }
+            }
+
+            // Step 3: Manual crawling if no sitemap found
+            if (urls.length === 0) {
+                console.log('No sitemap found, starting manual crawl...');
+                urls = await this.crawlWebsite(url, maxCrawlPages);
+                method = 'manual crawl';
+            }
+
+            // Remove duplicates
+            urls = [...new Set(urls)];
+
             return {
-                success: true,
-                message: 'Sitemap fetched successfully',
-                sitemapUrl,
+                success: urls.length > 0,
+                message: urls.length > 0
+                    ? `Found ${urls.length} URLs using ${method}`
+                    : 'No URLs found',
+                method,
                 urls,
                 count: urls.length
             };
@@ -308,6 +478,7 @@ export class ContentService {
             return {
                 success: false,
                 message: 'Error fetching sitemap',
+                method: 'error',
                 urls: []
             };
         }
