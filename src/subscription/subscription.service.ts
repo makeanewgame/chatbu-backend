@@ -78,6 +78,7 @@ export class SubscriptionService {
     }
 
     async createPaymentIntent(userId: string, billingInfo: any, planDetails: any) {
+        console.log('createPaymentItent called');
         const subscription = await this.getOrCreateSubscription(userId);
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -92,21 +93,52 @@ export class SubscriptionService {
         // Create or get Stripe customer
         let stripeCustomerId = subscription.stripeCustomerId;
         if (!stripeCustomerId) {
-            const customer = await this.stripe.customers.create({
-                email: billingInfo.email || user.email,
-                name: `${billingInfo.firstName} ${billingInfo.lastName}`,
-                metadata: {
-                    userId: user.id,
-                },
-                address: {
-                    line1: billingInfo.billingAddress,
-                    city: billingInfo.city,
-                    state: billingInfo.stateRegion,
-                    postal_code: billingInfo.zipCode,
-                    country: billingInfo.country,
-                },
+            const customerEmail = billingInfo.email || user.email;
+
+            // Check if customer already exists in Stripe with this email
+            const existingCustomers = await this.stripe.customers.list({
+                email: customerEmail,
+                limit: 1,
             });
-            stripeCustomerId = customer.id;
+
+            if (existingCustomers.data.length > 0) {
+                // Use existing customer
+                stripeCustomerId = existingCustomers.data[0].id;
+                console.log('Using existing Stripe customer:', stripeCustomerId, 'for email:', customerEmail);
+
+                // Update customer info if needed
+                await this.stripe.customers.update(stripeCustomerId, {
+                    name: `${billingInfo.firstName} ${billingInfo.lastName}`,
+                    metadata: {
+                        userId: user.id,
+                    },
+                    address: {
+                        line1: billingInfo.billingAddress,
+                        city: billingInfo.city,
+                        state: billingInfo.stateRegion,
+                        postal_code: billingInfo.zipCode,
+                        country: billingInfo.country,
+                    },
+                });
+            } else {
+                // Create new customer
+                console.log('Creating new Stripe customer for email:', customerEmail);
+                const customer = await this.stripe.customers.create({
+                    email: customerEmail,
+                    name: `${billingInfo.firstName} ${billingInfo.lastName}`,
+                    metadata: {
+                        userId: user.id,
+                    },
+                    address: {
+                        line1: billingInfo.billingAddress,
+                        city: billingInfo.city,
+                        state: billingInfo.stateRegion,
+                        postal_code: billingInfo.zipCode,
+                        country: billingInfo.country,
+                    },
+                });
+                stripeCustomerId = customer.id;
+            }
 
             // Update subscription with Stripe customer ID
             await this.prisma.subscription.update({
@@ -170,170 +202,6 @@ export class SubscriptionService {
             customerId: stripeCustomerId,
         };
     }
-
-    // async createCheckoutSession(userId: string, billingInfo: any, planDetails: any) {
-    //     const subscription = await this.getOrCreateSubscription(userId);
-    //     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    //     if (!user) {
-    //         throw new NotFoundException('User not found');
-    //     }
-
-    //     if (subscription.tier === 'PREMIUM') {
-    //         throw new BadRequestException('Already a premium member');
-    //     }
-
-    //     // Create or get Stripe customer
-    //     let stripeCustomerId = subscription.stripeCustomerId;
-    //     if (!stripeCustomerId) {
-    //         const customer = await this.stripe.customers.create({
-    //             email: billingInfo.email || user.email,
-    //             name: `${billingInfo.firstName} ${billingInfo.lastName}`,
-    //             metadata: {
-    //                 userId: user.id,
-    //             },
-    //             address: {
-    //                 line1: billingInfo.billingAddress,
-    //                 state: billingInfo.stateRegion,
-    //                 postal_code: billingInfo.zipCode,
-    //                 country: billingInfo.country,
-    //             },
-    //         });
-    //         stripeCustomerId = customer.id;
-
-    //         // Update subscription with Stripe customer ID
-    //         await this.prisma.subscription.update({
-    //             where: { userId },
-    //             data: { stripeCustomerId },
-    //         });
-    //     }
-
-    //     // Save billing info
-    //     await this.prisma.billingInfo.upsert({
-    //         where: { userId },
-    //         create: {
-    //             userId,
-    //             firstName: billingInfo.firstName,
-    //             lastName: billingInfo.lastName || '',
-    //             email: billingInfo.email,
-    //             address: billingInfo.billingAddress,
-    //             city: '',
-    //             stateRegion: billingInfo.stateRegion,
-    //             zipPostalCode: billingInfo.zipCode,
-    //             country: billingInfo.country,
-    //             isCompany: billingInfo.isCompany || false,
-    //             vatIdentificationNumber: billingInfo.vatId || null,
-    //         },
-    //         update: {
-    //             firstName: billingInfo.firstName,
-    //             lastName: billingInfo.lastName || '',
-    //             email: billingInfo.email,
-    //             address: billingInfo.billingAddress,
-    //             stateRegion: billingInfo.stateRegion,
-    //             zipPostalCode: billingInfo.zipCode,
-    //             country: billingInfo.country,
-    //             isCompany: billingInfo.isCompany || false,
-    //             vatIdentificationNumber: billingInfo.vatId || null,
-    //         },
-    //     });
-
-    //     // Get predefined price IDs based on billing interval
-    //     const billingInterval = planDetails?.billingInterval || 'monthly';
-    //     const basePriceId = this.getBasePriceId(billingInterval);
-    //     const meteredPriceId = this.getMeteredPriceId(billingInterval);
-
-    //     // Create Stripe Checkout Session with both base and metered prices
-    //     const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:5173';
-    //     const session = await this.stripe.checkout.sessions.create({
-    //         customer: stripeCustomerId,
-    //         payment_method_types: ['card'],
-    //         line_items: [
-    //             {
-    //                 price: basePriceId,  // Base recurring fee
-    //                 quantity: 1,
-    //             },
-    //             {
-    //                 price: meteredPriceId,  // Metered usage price
-    //             },
-    //         ],
-    //         mode: 'subscription',
-    //         success_url: `${frontendUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-    //         cancel_url: `${frontendUrl}/pricing?canceled=true`,
-    //         metadata: {
-    //             userId: user.id,
-    //         },
-    //     });
-
-    //     return {
-    //         sessionId: session.id,
-    //         sessionUrl: session.url,
-    //     };
-    // }
-
-    // async handleCheckoutSuccess(sessionId: string) {
-    //     // Retrieve the checkout session
-    //     const session = await this.stripe.checkout.sessions.retrieve(sessionId, {
-    //         expand: ['subscription', 'customer'],
-    //     });
-
-    //     if (!session.metadata?.userId) {
-    //         throw new BadRequestException('Invalid session metadata');
-    //     }
-
-    //     const userId = session.metadata.userId;
-    //     const subscription = await this.prisma.subscription.findUnique({
-    //         where: { userId },
-    //     });
-
-    //     if (!subscription) {
-    //         throw new NotFoundException('Subscription not found');
-    //     }
-
-    //     // Update subscription to PREMIUM
-    //     // Get subscription from expanded session or retrieve it
-    //     let stripeSubscription: Stripe.Subscription;
-    //     if (typeof session.subscription === 'string') {
-    //         stripeSubscription = await this.stripe.subscriptions.retrieve(session.subscription);
-    //     } else {
-    //         stripeSubscription = session.subscription as Stripe.Subscription;
-    //     }
-
-    //     // Debug: Log subscription object
-    //     console.log('Stripe Subscription Object:', JSON.stringify(stripeSubscription, null, 2));
-
-    //     // Get period from subscription items (Stripe stores it there)
-    //     const subscriptionItem = (stripeSubscription as any).items?.data?.[0];
-    //     const periodStart = subscriptionItem?.current_period_start;
-    //     const periodEnd = subscriptionItem?.current_period_end;
-
-    //     console.log('Period Start:', periodStart, 'Period End:', periodEnd);
-
-    //     if (!periodStart || !periodEnd) {
-    //         throw new BadRequestException('Invalid subscription period data');
-    //     }
-
-    //     const currentPeriodStart = new Date(periodStart * 1000);
-    //     const currentPeriodEnd = new Date(periodEnd * 1000);
-
-    //     await this.prisma.subscription.update({
-    //         where: { userId },
-    //         data: {
-    //             tier: 'PREMIUM',
-    //             status: 'ACTIVE',
-    //             stripeSubscriptionId: stripeSubscription.id,
-    //             stripePriceId: stripeSubscription.items.data[0].price.id,
-    //             currentPeriodStart,
-    //             currentPeriodEnd,
-    //             monthlyTokenAllocation: await this.getPremiumTokenLimit(),
-    //             tokensUsedThisMonth: 0,
-    //         },
-    //     });
-
-    //     return {
-    //         success: true,
-    //         message: 'Subscription upgraded to Premium successfully',
-    //     };
-    // }
 
     async confirmPayment(userId: string, paymentIntentId: string) {
         // Retrieve payment intent
@@ -460,100 +328,6 @@ export class SubscriptionService {
             },
         };
     }
-
-    // async upgradeToPremium(userId: string, billingInfo: any) {
-    //     const subscription = await this.getOrCreateSubscription(userId);
-    //     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-
-    //     if (!user) {
-    //         throw new NotFoundException('User not found');
-    //     }
-
-    //     if (subscription.tier === 'PREMIUM') {
-    //         throw new BadRequestException('Already a premium member');
-    //     }
-
-    //     // Create or get Stripe customer
-    //     let stripeCustomerId = subscription.stripeCustomerId;
-    //     if (!stripeCustomerId) {
-    //         const customer = await this.stripe.customers.create({
-    //             email: user.email,
-    //             name: `${billingInfo.firstName} ${billingInfo.lastName}`,
-    //             metadata: {
-    //                 userId: user.id,
-    //             },
-    //             address: {
-    //                 line1: billingInfo.address,
-    //                 city: billingInfo.city,
-    //                 state: billingInfo.stateRegion,
-    //                 postal_code: billingInfo.zipPostalCode,
-    //                 country: billingInfo.country,
-    //             },
-    //         });
-    //         stripeCustomerId = customer.id;
-    //     }
-
-    //     // Get predefined price IDs based on billing interval
-    //     const billingInterval = billingInfo.billingInterval || 'monthly';
-    //     const basePriceId = this.getBasePriceId(billingInterval);
-    //     const meteredPriceId = this.getMeteredPriceId(billingInterval);
-
-    //     // Create Stripe subscription with both base and metered prices
-    //     const stripeSubscription = await this.stripe.subscriptions.create({
-    //         customer: stripeCustomerId,
-    //         items: [
-    //             { price: basePriceId },      // Base fee
-    //             { price: meteredPriceId },   // Usage-based
-    //         ],
-    //         metadata: {
-    //             userId: user.id,
-    //             billingInterval: billingInterval,
-    //         },
-    //         payment_behavior: 'default_incomplete',
-    //         payment_settings: {
-    //             save_default_payment_method: 'on_subscription',
-    //         },
-    //         expand: ['latest_invoice.payment_intent'],
-    //     });
-
-    //     // Save billing info
-    //     await this.prisma.billingInfo.upsert({
-    //         where: { userId },
-    //         create: {
-    //             userId,
-    //             ...billingInfo,
-    //         },
-    //         update: billingInfo,
-    //     });
-
-    //     // Update subscription
-    //     const currentPeriodStart = (stripeSubscription as any).current_period_start
-    //         ? new Date((stripeSubscription as any).current_period_start * 1000)
-    //         : new Date();
-    //     const currentPeriodEnd = (stripeSubscription as any).current_period_end
-    //         ? new Date((stripeSubscription as any).current_period_end * 1000)
-    //         : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
-
-    //     const updatedSubscription = await this.prisma.subscription.update({
-    //         where: { userId },
-    //         data: {
-    //             tier: 'PREMIUM',
-    //             status: 'ACTIVE',
-    //             stripeCustomerId,
-    //             stripeSubscriptionId: stripeSubscription.id,
-    //             stripePriceId: basePriceId,
-    //             currentPeriodStart,
-    //             currentPeriodEnd,
-    //             monthlyTokenAllocation: await this.getPremiumTokenLimit(),
-    //             tokensUsedThisMonth: 0,
-    //         },
-    //     });
-
-    //     return {
-    //         subscription: updatedSubscription,
-    //         clientSecret: (stripeSubscription.latest_invoice as any)?.payment_intent?.client_secret,
-    //     };
-    // }
 
     async cancelSubscription(userId: string) {
         const subscription = await this.prisma.subscription.findUnique({
