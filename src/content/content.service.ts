@@ -199,6 +199,85 @@ export class ContentService {
         console.log("ingest gelen", data);
     }
 
+    async ingestWebPages(body: any, user: IUser) {
+        try {
+            const { botId, urls } = body;
+
+            // Check quota
+            const quota = await this.getQuota(user.teamId);
+            if (quota.remaining < urls.length) {
+                return {
+                    success: false,
+                    message: `Insufficient quota. You can add ${quota.remaining} more pages, but you're trying to add ${urls.length}.`
+                };
+            }
+
+            // Create content records for each URL
+            const contentRecords = [];
+            for (const url of urls) {
+                const content = await this.prisma.content.create({
+                    data: {
+                        teamId: user.teamId,
+                        botId: botId,
+                        type: 'WEBPAGE',
+                        content: { url },
+                        status: 'UPLOADED',
+                        taskId: '',
+                        ingestionInfo: {},
+                        createdAt: new Date(),
+                    }
+                });
+                contentRecords.push(content);
+            }
+
+            // Update quota
+            const currentQuota = await this.prisma.quota.findFirst({
+                where: {
+                    teamId: user.teamId,
+                    quotaType: 'FILE'
+                }
+            });
+
+            if (currentQuota) {
+                await this.prisma.quota.update({
+                    where: { id: currentQuota.id },
+                    data: { used: currentQuota.used + urls.length }
+                });
+            }
+
+            // Send to ingest service
+            const ingestUrl = this.configService.get('INGEST_ENPOINT');
+            const { data } = await firstValueFrom(
+                this.httpService.post(`${ingestUrl}/ingest-webpages`, {
+                    "bot_cuid": botId,
+                    "customer_cuid": user.teamId,
+                    "page_list": urls,
+                })
+                    .pipe(
+                        catchError((error: AxiosError) => {
+                            console.log("error", error);
+                            throw 'An error happened!';
+                        }),
+                    )
+            );
+
+            console.log("ingest response", data);
+
+            return {
+                success: true,
+                message: 'Web pages ingestion started',
+                count: urls.length
+            };
+
+        } catch (error) {
+            console.error('Error ingesting web pages:', error);
+            return {
+                success: false,
+                message: 'Error starting ingestion'
+            };
+        }
+    }
+
     async ingestQA(body: any, user: IUser) {
 
         console.log("ingestQA body", body);
@@ -508,85 +587,6 @@ export class ContentService {
                 limit: 0,
                 used: 0,
                 remaining: 0
-            };
-        }
-    }
-
-    async ingestWebPages(body: any, user: IUser) {
-        try {
-            const { botId, urls } = body;
-
-            // Check quota
-            const quota = await this.getQuota(user.teamId);
-            if (quota.remaining < urls.length) {
-                return {
-                    success: false,
-                    message: `Insufficient quota. You can add ${quota.remaining} more pages, but you're trying to add ${urls.length}.`
-                };
-            }
-
-            // Create content records for each URL
-            const contentRecords = [];
-            for (const url of urls) {
-                const content = await this.prisma.content.create({
-                    data: {
-                        teamId: user.teamId,
-                        botId: botId,
-                        type: 'WEBPAGE',
-                        content: { url },
-                        status: 'UPLOADED',
-                        taskId: '',
-                        ingestionInfo: {},
-                        createdAt: new Date(),
-                    }
-                });
-                contentRecords.push(content);
-            }
-
-            // Update quota
-            const currentQuota = await this.prisma.quota.findFirst({
-                where: {
-                    teamId: user.teamId,
-                    quotaType: 'FILE'
-                }
-            });
-
-            if (currentQuota) {
-                await this.prisma.quota.update({
-                    where: { id: currentQuota.id },
-                    data: { used: currentQuota.used + urls.length }
-                });
-            }
-
-            // Send to ingest service
-            const ingestUrl = this.configService.get('INGEST_ENPOINT');
-            const { data } = await firstValueFrom(
-                this.httpService.post(`${ingestUrl}/ingest-webpages`, {
-                    "bot_cuid": botId,
-                    "customer_cuid": user.teamId,
-                    "page_list": urls,
-                })
-                    .pipe(
-                        catchError((error: AxiosError) => {
-                            console.log("error", error);
-                            throw 'An error happened!';
-                        }),
-                    )
-            );
-
-            console.log("ingest response", data);
-
-            return {
-                success: true,
-                message: 'Web pages ingestion started',
-                count: urls.length
-            };
-
-        } catch (error) {
-            console.error('Error ingesting web pages:', error);
-            return {
-                success: false,
-                message: 'Error starting ingestion'
             };
         }
     }

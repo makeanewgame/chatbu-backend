@@ -32,19 +32,19 @@ export class SubscriptionController {
         return this.subscriptionService.getOrCreateSubscription(userId);
     }
 
-    @Post('upgrade')
-    @UseGuards(JwtGuard)
-    async upgrade(@Req() req, @Body() billingInfo: any) {
-        const userId = req.user?.sub || req.user?.id;
-        return this.subscriptionService.upgradeToPremium(userId, billingInfo);
-    }
+    // @Post('upgrade')
+    // @UseGuards(JwtGuard)
+    // async upgrade(@Req() req, @Body() billingInfo: any) {
+    //     const userId = req.user?.sub || req.user?.id;
+    //     return this.subscriptionService.upgradeToPremium(userId, billingInfo);
+    // }
 
-    @Post('create-checkout-session')
-    @UseGuards(JwtGuard)
-    async createCheckoutSession(@Req() req, @Body() body: { billingInfo: any; planDetails: any }) {
-        const userId = req.user?.sub || req.user?.id;
-        return this.subscriptionService.createCheckoutSession(userId, body.billingInfo, body.planDetails);
-    }
+    // @Post('create-checkout-session')
+    // @UseGuards(JwtGuard)
+    // async createCheckoutSession(@Req() req, @Body() body: { billingInfo: any; planDetails: any }) {
+    //     const userId = req.user?.sub || req.user?.id;
+    //     return this.subscriptionService.createCheckoutSession(userId, body.billingInfo, body.planDetails);
+    // }
 
     @Post('create-payment-intent')
     @UseGuards(JwtGuard)
@@ -60,11 +60,11 @@ export class SubscriptionController {
         return this.subscriptionService.confirmPayment(userId, body.paymentIntentId);
     }
 
-    @Post('checkout-success')
-    @UseGuards(JwtGuard)
-    async handleCheckoutSuccess(@Req() req, @Body() body: { sessionId: string }) {
-        return this.subscriptionService.handleCheckoutSuccess(body.sessionId);
-    }
+    // @Post('checkout-success')
+    // @UseGuards(JwtGuard)
+    // async handleCheckoutSuccess(@Req() req, @Body() body: { sessionId: string }) {
+    //     return this.subscriptionService.handleCheckoutSuccess(body.sessionId);
+    // }
 
     @Post('cancel')
     @UseGuards(JwtGuard)
