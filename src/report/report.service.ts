@@ -97,6 +97,32 @@ export class ReportService {
             }
         });
 
+        const team = await this.prisma.team.findFirst({
+            where: {
+                id: teamId,
+            },
+            select: {
+                ownerId: true,
+            }
+        });
+
+        const tokenUsage = await this.prisma.subscription.findFirst({
+            where: {
+                userId: team?.ownerId,
+            },
+            select: {
+                tokensUsedThisMonth: true,
+                monthlyTokenAllocation: true,
+            }
+        });
+
+        userUsage.push({
+            id: 'token-usage',
+            quotaType: 'TOKEN',
+            limit: tokenUsage?.monthlyTokenAllocation || 0,
+            used: tokenUsage?.tokensUsedThisMonth || 0,
+        })
+
         if (!userUsage) {
             return {
                 message: 'No user found',
