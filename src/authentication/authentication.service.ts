@@ -75,12 +75,12 @@ export class AuthenticationService {
 
     if (findUser) {
       if (findUser.email === user.email) {
-        return new UnauthorizedException('User with this email already exists');
+        throw new UnauthorizedException('User with this email already exists');
       }
       if (findUser.phoneNumber === user.phoneNumber) {
-        return new UnauthorizedException('User with this phone number already exists');
+        throw new UnauthorizedException('User with this phone number already exists');
       }
-      return new UnauthorizedException('User already exists');
+      throw new UnauthorizedException('User already exists');
     } else {
       const bcrypt = require('bcrypt');
       user.password = await bcrypt.hash(user.password, 10);
