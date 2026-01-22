@@ -253,7 +253,14 @@ export class SubscriptionService {
         const basePriceId = this.getBasePriceId(billingInterval);
         const meteredPriceId = this.getMeteredPriceId(billingInterval);
 
+        // Calculate billing cycle anchor (next period start)
+        // User already paid for the first period via payment intent
+        const now = Math.floor(Date.now() / 1000);
+        const periodDuration = billingInterval === 'yearly' ? 365 * 24 * 60 * 60 : 30 * 24 * 60 * 60;
+        const billingCycleAnchor = now + periodDuration;
+
         // Create Stripe Subscription with both base and metered prices
+        // Setting billing_cycle_anchor to prevent immediate charge since user already paid
         const stripeSubscription = await this.stripe.subscriptions.create({
             customer: paymentIntent.customer as string,
             items: [
@@ -261,9 +268,12 @@ export class SubscriptionService {
                 { price: meteredPriceId },   // Usage-based
             ],
             default_payment_method: paymentMethodId,
+            billing_cycle_anchor: billingCycleAnchor,
+            proration_behavior: 'none',
             metadata: {
                 userId: userId,
                 billingInterval: billingInterval,
+                initialPaymentIntentId: paymentIntentId,
             },
         });
 
