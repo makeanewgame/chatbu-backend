@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
+import * as crypto from 'crypto';
 import { UploadSingleFileRequest } from './dto/uploadfile.request';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { HttpService } from '@nestjs/axios';
@@ -74,6 +75,8 @@ export class FileService {
             for (const file of files) {
                 const uploaded_file = await this.minioClientService.upload(file, this.configService.get('S3_BUCKET_NAME'), user.teamId, body.botId)
 
+                const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
                 await this.prisma.storage.create({
                     data: {
                         teamId: user.teamId,
@@ -86,6 +89,7 @@ export class FileService {
                         taskId: '',
                         fileName: file.originalname,
                         createdAt: new Date(),
+                        fileHash: fileHash,
                     }
                 })
 
@@ -380,6 +384,52 @@ export class FileService {
         })
         console.log("ingest gelen", data);
         return { ...data, pending_count: userStorage };
+
+    }
+
+    async fileCheck(user, fileName, fileHash, botId) {
+
+        const existingFileHash = await this.prisma.storage.findFirst({
+            where: {
+                teamId: user.teamId,
+                fileHash: fileHash,
+                botId: botId,
+            }
+        })
+
+        if (existingFileHash) {
+            return {
+                status: 'duplicate',
+                message: 'File with same hash already exists',
+                fileId: existingFileHash.id,
+                fileName: existingFileHash.fileName,
+                fileUrl: existingFileHash.fileUrl,
+            }
+        }
+
+        const existingFileName = await this.prisma.storage.findFirst({
+            where: {
+                teamId: user.teamId,
+                fileName: fileName,
+                botId: botId,
+            }
+        })
+
+        if (existingFileName) {
+            return {
+                status: 'update_required',
+                message: 'File with same name exists but content is different',
+                fileId: existingFileName.id,
+                fileName: existingFileName.fileName,
+                fileUrl: existingFileName.fileUrl,
+            }
+        }
+        
+        return {
+            status: 'ok',
+            message: 'File is new and can be uploaded',
+            fileName: fileName,
+        }
 
     }
 

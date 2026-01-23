@@ -176,4 +176,32 @@ export class FileController {
     }
     //#endregion
 
+    //#region fileCheck
+    @ApiOperation({ summary: 'Check if a file is already uploaded by its hash and file name' })
+    @ApiResponse({
+        status: 200,
+        description: 'File exists or not',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                fileName: { type: 'string' },
+                fileHash: { type: 'string' },
+                botId: { type: 'string' },
+            },
+            required: ['fileName', 'fileHash', 'botId'],
+        },
+    })
+    @Post('fileCheck')
+    @UseGuards(AccessTokenGuard)
+    async fileCheck(@Req() req: Request, @Body() body: { fileName: string, fileHash: string, botId: string }) {
+        const user = req.user as IUser;
+
+        return await this.fileService.fileCheck(user, body.fileName, body.fileHash, body.botId)
+    }
 }   
