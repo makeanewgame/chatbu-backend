@@ -144,29 +144,8 @@ export class ContentService {
                 }
             }
 
-            //Vector DB den de silinecek
-            const ingestUrl = this.configService.get('INGEST_ENPOINT')
-
-            console.log("Deleting vectors for content sourceId", sourceId);
-
-            const { data } = await firstValueFrom(
-                this.httpService.post(`${ingestUrl}/delete-vectors`, {
-                    "bot_cuid": botId,
-                    "customer_cuid": user.teamId,
-                    "source": sourceId,
-                })
-                    .pipe(
-                        catchError((error: AxiosError) => {
-                            console.log("error", error);
-                            throw 'An error happened!';
-                        }),
-                    ));
-            if (data?.status?.code === 500) {
-                console.log("ingest service not available");
-                return {
-                    message: "Ingest service is not available"
-                }
-            }
+            // Delete ingested vectors
+            const data = await this.deleteIngestedContent(botId, user, sourceId);
 
             console.log("deleted Vectors response", data);
             return {
@@ -180,6 +159,85 @@ export class ContentService {
             }
 
         }
+    }
+
+    async editContent(body: any, user: IUser) {
+
+        try {
+            const findUser = await this.prisma.team.findFirst({
+                where: {
+                    id: user.teamId,
+                    Content: {
+                        some: {
+                            id: body.contentId
+                        }
+                    }
+                }
+            })
+
+            if (user.sub && !findUser) {
+                return {
+                    message: "User or Content not found"
+                }
+            }
+
+            await this.prisma.content.update({
+                where: {
+                    id: body.contentId
+                },
+                data: {
+                    content: body.content,
+                    status: 'UPLOADED',
+                    taskId: '',
+                    updatedAt: new Date(),
+                }
+            })
+
+            console.log("content edited", body.contentId);
+
+            //Delete existing vectors for the content
+            await this.deleteIngestedContent(body.botId, user, body.content.meta.source);
+
+            // Re-ingest the updated content
+            await this.ingestQA(body, user);
+
+            return {
+                message: "Content edited successfully"
+            }
+        } catch (err) {
+            console.log("editContent error", err);
+            return {
+                message: "Error editing content"
+            }
+        }
+    }
+
+    async deleteIngestedContent(botId: string, user: IUser, sourceId: string) {
+        //Vector DB den de silinecek
+        const ingestUrl = this.configService.get('INGEST_ENPOINT')
+
+        console.log("Deleting vectors for content sourceId", sourceId);
+
+        const { data } = await firstValueFrom(
+            this.httpService.post(`${ingestUrl}/delete-vectors`, {
+                "bot_cuid": botId,
+                "customer_cuid": user.teamId,
+                "source": sourceId,
+            })
+                .pipe(
+                    catchError((error: AxiosError) => {
+                        console.log("error", error);
+                        throw 'An error happened!';
+                    }),
+                ));
+        if (data?.status?.code === 500) {
+            console.log("ingest service not available");
+            return {
+                message: "Ingest service is not available"
+            }
+        }
+
+        return data;
     }
 
     async ingestWebPage(body: any, user: IUser, url: string) {

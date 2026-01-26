@@ -102,6 +102,35 @@ export class ContentController {
     }
     //#endregion
 
+    //#region editContent
+    @ApiOperation({ summary: 'Edit user vault content for specific types' })
+    @ApiResponse({
+        status: 200,
+        description: 'Content edited successfully',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                botId: { type: 'string' },
+                type: { type: 'string' },
+                contentId: { type: 'string' },
+                content: { type: 'object' },
+            },
+            required: ['botId', 'type', 'contentId', 'content'],
+        },
+    })
+    @Post('edit')
+    @UseGuards(AccessTokenGuard)
+    async editContent(@Body() body: any, @Req() req: any) {
+        const user = req.user as IUser;
+        return this.contentService.editContent(body, user);
+    }
+
     //#region fetchSitemap
     @ApiOperation({ summary: 'Fetch sitemap URLs from a domain' })
     @ApiResponse({
