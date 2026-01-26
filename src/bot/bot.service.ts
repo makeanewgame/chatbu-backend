@@ -280,20 +280,25 @@ export class BotService {
         throw new Error('Error acuring bot');
       }
 
-      let activeChat = await this.prisma.customerChats.findFirst({
-        where: {
-          botId: body.botId,
-          teamId: body.teamId,
-          chatId: body.chatId,
-          isDeleted: false
-        }
-      });
+      let activeChat = null;
+      let isNewChat = false;
+      let geoData = null;
 
+      // Sadece chatId varsa mevcut chat'i ara
+      if (body.chatId) {
+        activeChat = await this.prisma.customerChats.findFirst({
+          where: {
+            botId: body.botId,
+            teamId: body.teamId,
+            chatId: body.chatId,
+            isDeleted: false
+          }
+        });
+      }
+
+      // Yeni chat ise geolocation bilgisini al
       if (!activeChat) {
-        //get user geolocation from GeoJS
-        //https://get.geojs.io/v1/ip/geo.json
-        //send request to geojs
-        //check local request
+        isNewChat = true;
         let ipAddress = ip === "::1" ? "176.40.241.220" : ip;
 
         const geo = await firstValueFrom(
@@ -305,60 +310,9 @@ export class BotService {
               }),
             ));
         console.log("geo", geo.data);
+        geoData = geo.data;
+      }
 
-        activeChat = await this.prisma.customerChats.create({
-          data: {
-            botId: body.botId,
-            teamId: body.teamId,
-            chatId: body.chatId,
-            isDeleted: false,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            CustomerChatDetails: {
-              create: {
-                sender: body.sender,
-                message: body.message,
-                createdAt: new Date(body.date),
-              }
-            },
-            GeoLocation: {
-              create: {
-                ip: geo.data.ip || '',
-                country: geo.data.country || '',
-                countryCode: geo.data.country_code || '',
-                region: geo.data.region || '',
-                city: geo.data.city || '',
-                latitude: parseFloat(geo.data.latitude) || 0,
-                longitude: parseFloat(geo.data.longitude) || 0,
-                timezone: geo.data.timezone || '',
-                organization: geo.data.organization || '',
-                organization_name: geo.data.organization_name || '',
-                accuracy: Number(geo.data.accuracy) || 0,
-              }
-            }
-          }
-        });
-      }
-      else {
-        activeChat = await this.prisma.customerChats.update({
-          where: {
-            id: activeChat.id
-          },
-          data: {
-            updatedAt: new Date(),
-            CustomerChatDetails: {
-              create: {
-                sender: body.sender,
-                message: body.message,
-                createdAt: new Date(body.date),
-              }
-            }
-          }
-        });
-      }
-      if (!activeChat) {
-        throw new Error('Error acuring chat');
-      }
       const ingestUrl = this.configService.get('INGEST_ENPOINT');
 
       // Get team owner to check subscription
@@ -386,6 +340,7 @@ export class BotService {
         throw new ForbiddenException(quotaCheck.message || 'Token quota exceeded');
       }
 
+      // FastAPI'ye istek at - session_id FastAPI tarafından üretilir
       let data;
       try {
         const response = await firstValueFrom(
@@ -394,7 +349,7 @@ export class BotService {
             customer_cuid: botUser.teamId,
             messages: [body.message],
             system_prompt: botUser.systemPrompt,
-            session_id: body.chatId,
+            session_id: body.chatId, // null veya mevcut session_id
           })
         );
         data = response.data;
@@ -407,6 +362,13 @@ export class BotService {
         throw new Error('Error in chat');
       }
       console.log("ingest gelen", data);
+
+      // FastAPI'den dönen session_id'yi kullan
+      const sessionId = data.session_id;
+      if (!sessionId) {
+        throw new Error('Session ID not returned from FastAPI');
+      }
+
       const tokenArr = data.content.split(" ");
       const tokenCount = data.tokens?.total_tokens || tokenArr.length;
 
@@ -420,30 +382,88 @@ export class BotService {
         body.teamId
       );
 
-      await this.prisma.customerChats.update({
-        where: {
-          id: activeChat.id
-        },
-        data: {
-          updatedAt: new Date(),
-          totalTokens: tokenCount,
-          isDeleted: false,
-        }
-      });
+      // Yeni chat ise oluştur, mevcut ise güncelle
+      if (isNewChat) {
+        activeChat = await this.prisma.customerChats.create({
+          data: {
+            botId: body.botId,
+            teamId: body.teamId,
+            chatId: sessionId, // FastAPI'den gelen session_id
+            isDeleted: false,
+            totalTokens: tokenCount,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            CustomerChatDetails: {
+              create: [
+                {
+                  sender: body.sender,
+                  message: body.message,
+                  createdAt: new Date(body.date),
+                },
+                {
+                  sender: "bot",
+                  message: data.content,
+                  tokenDetails: data.tokens,
+                  createdAt: new Date(),
+                }
+              ]
+            },
+            GeoLocation: {
+              create: {
+                ip: geoData.ip || '',
+                country: geoData.country || '',
+                countryCode: geoData.country_code || '',
+                region: geoData.region || '',
+                city: geoData.city || '',
+                latitude: parseFloat(geoData.latitude) || 0,
+                longitude: parseFloat(geoData.longitude) || 0,
+                timezone: geoData.timezone || '',
+                organization: geoData.organization || '',
+                organization_name: geoData.organization_name || '',
+                accuracy: Number(geoData.accuracy) || 0,
+              }
+            }
+          }
+        });
+      } else {
+        // Mevcut chat'e kullanıcı mesajını ve bot cevabını ekle
+        await this.prisma.customerChatDetails.createMany({
+          data: [
+            {
+              chatId: activeChat.id,
+              sender: body.sender,
+              message: body.message,
+              createdAt: new Date(body.date),
+            },
+            {
+              chatId: activeChat.id,
+              sender: "bot",
+              message: data.content,
+              tokenDetails: data.tokens,
+              createdAt: new Date(),
+            }
+          ]
+        });
 
-      const chatDetails = await this.prisma.customerChatDetails.create({
-        data: {
-          chatId: activeChat.id,
-          sender: "bot",
-          message: data.content,
-          tokenDetails: data.tokens,
-          createdAt: new Date(),
-        }
-      });
+        await this.prisma.customerChats.update({
+          where: {
+            id: activeChat.id
+          },
+          data: {
+            updatedAt: new Date(),
+            totalTokens: {
+              increment: tokenCount
+            },
+          }
+        });
+      }
 
       console.log("return data", data)
 
-      return data;
+      return {
+        ...data,
+        session_id: sessionId
+      };
     }
     catch (error) {
       console.log("error", error);
