@@ -76,7 +76,7 @@ export class ContentService {
 
         if (body.type === 'CONTENT') {
             console.log("Q&A content ingest started", body.type);
-            await this.ingestQA(body, user);
+            await this.ingestContent(body, user);
         }
 
         return {
@@ -309,6 +309,40 @@ export class ContentService {
                 ));
 
         console.log("ingestQA gelen", data);
+    }
+
+    async ingestContent(body: any, user: IUser) {
+
+        console.log("ingestContent body", body);
+
+        //body.content.data 'yı sadece text olacak şekilde parse etmemiz gerekebilir
+
+
+        const ingestUrl = this.configService.get('INGEST_ENPOINT')
+
+        // const { data } = await firstValueFrom(
+        //     this.httpService.post(`${ingestUrl}/store-qa-pairs-bulk`, {
+        //         "bot_cuid": body.botId,
+        //         "customer_cuid": user.teamId,
+        //         "qa_pairs": [
+        //             {
+        //                 "data": body.content.data,
+        //                 "metadata": {
+        //                     "category": body.content.meta.category,
+        //                     "source": body.content.meta.source
+        //                 },
+        //             }
+        //         ],
+        //     })
+        //         .pipe(
+        //             catchError((error: AxiosError) => {
+        //                 console.log("error", error);
+        //                 throw 'An error happened!';
+        //             }),
+        //         ));
+
+        //console.log("ingestQA gelen", data);
+
     }
 
     async ingestVideo(body: any, user: IUser, url: string) {
