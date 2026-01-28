@@ -378,28 +378,29 @@ export class ContentService {
 
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
-        // const { data } = await firstValueFrom(
-        //     this.httpService.post(`${ingestUrl}/store-qa-pairs-bulk`, {
-        //         "bot_cuid": body.botId,
-        //         "customer_cuid": user.teamId,
-        //         "qa_pairs": [
-        //             {
-        //                 "data": body.content.data,
-        //                 "metadata": {
-        //                     "category": body.content.meta.category,
-        //                     "source": body.content.meta.source
-        //                 },
-        //             }
-        //         ],
-        //     })
-        //         .pipe(
-        //             catchError((error: AxiosError) => {
-        //                 console.log("error", error);
-        //                 throw 'An error happened!';
-        //             }),
-        //         ));
+        const { data } = await firstValueFrom(
+            this.httpService.post(`${ingestUrl}/store-qa-pairs-bulk`, {
+                "bot_cuid": body.botId,
+                "customer_cuid": user.teamId,
+                "qa_pairs": [
+                    {
+                        "data": body.content.data,
+                        "metadata": {
+                            "category": body.content.meta.category,
+                            "source": body.content.meta.source,
+                            "title": body.content.meta.title
+                        },
+                    }
+                ],
+            })
+                .pipe(
+                    catchError((error: AxiosError) => {
+                        console.log("error", error);
+                        throw 'An error happened!';
+                    }),
+                ));
 
-        //console.log("ingestQA gelen", data);
+        console.log("ingestQA gelen", data);
 
     }
 
