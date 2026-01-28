@@ -21,6 +21,7 @@ import { TeamModule } from './team/team.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { FeedbackModule } from './feedback/feedback.module';
+import { TicketModule } from './ticket/ticket.module';
 
 @Module({
   imports: [
@@ -38,7 +39,7 @@ import { FeedbackModule } from './feedback/feedback.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule],
   controllers: [AppController],
   providers: [AppService],
 })

@@ -35,6 +35,9 @@ model User {
   Subscription          Subscription?
   BillingInfo           BillingInfo?
   Feedback              Feedback[]
+  Ticket                Ticket[]
+  TicketMessage         TicketMessage[]
+  Notification          Notification[]
 }
 
 model Team {
@@ -50,6 +53,7 @@ model Team {
   CustomerChats CustomerChats[]
   Quota         Quota[]
   Storage       Storage[]
+  Ticket        Ticket[]
 }
 
 model TeamMember {
@@ -215,6 +219,20 @@ enum FeedbackStatus {
   RESOLVED
 }
 
+enum TicketCategory {
+  BUG_REPORT
+  FEATURE_REQUEST
+  BILLING
+  GENERAL
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
 model Subscription {
   id                        String             @id @default(cuid())
   userId                    String             @unique
@@ -286,4 +304,48 @@ model Feedback {
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Ticket {
+  id          String         @id @default(cuid())
+  ticketNumber String        @unique @default(cuid())
+  userId      String
+  teamId      String
+  title       String
+  description String
+  category    TicketCategory
+  status      TicketStatus   @default(OPEN)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  resolvedAt  DateTime?
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team        Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  messages    TicketMessage[]
+  notifications Notification[]
+}
+
+model TicketMessage {
+  id        String   @id @default(cuid())
+  ticketId  String
+  userId    String
+  message   String
+  isAdminReply Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  ticketId  String
+  userId    String
+  type      String   // "NEW_TICKET", "TICKET_REPLY"
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
