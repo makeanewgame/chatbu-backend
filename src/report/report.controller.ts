@@ -99,7 +99,7 @@ export class ReportController {
     @UseGuards(AccessTokenGuard)
     async getGeoLocations(@Req() req: Request) {
         const user = req.user as IUser;
-        return this.reportService.getGeoLocations(user.sub);
+        return this.reportService.getGeoLocations(user.teamId);
     }
     //#endregion
 }
