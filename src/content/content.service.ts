@@ -373,25 +373,38 @@ export class ContentService {
 
         console.log("ingestContent body", body);
 
+        const sendBody = {
+            "bot_cuid": body.botId,
+            "customer_cuid": user.teamId,
+            "question": body.content.meta.source,
+            "answer": body.content.data,
+            "metadata": {
+                "type": "CONTENT",
+                "category": body.content.meta.category,
+                "source": body.content.meta.source,
+                "title": body.content.meta.title
+            },
+        }
+
+        console.log("ingestContent sendBody", sendBody);
+
         //body.content.data 'yı sadece text olacak şekilde parse etmemiz gerekebilir
 
 
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
         const { data } = await firstValueFrom(
-            this.httpService.post(`${ingestUrl}/store-qa-pairs-bulk`, {
+            this.httpService.post(`${ingestUrl}/store-qa-pair`, {
                 "bot_cuid": body.botId,
                 "customer_cuid": user.teamId,
-                "qa_pairs": [
-                    {
-                        "data": body.content.data,
-                        "metadata": {
-                            "category": body.content.meta.category,
-                            "source": body.content.meta.source,
-                            "title": body.content.meta.title
-                        },
-                    }
-                ],
+                "question": body.content.meta.source,
+                "answer": body.content.data,
+                "metadata": {
+                    "type": "CONTENT",
+                    "category": body.content.meta.category,
+                    "source": body.content.meta.source,
+                    "title": body.content.meta.title
+                },
             })
                 .pipe(
                     catchError((error: AxiosError) => {
