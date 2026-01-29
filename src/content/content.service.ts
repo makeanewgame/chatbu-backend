@@ -216,7 +216,11 @@ export class ContentService {
         //Vector DB den de silinecek
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
-        console.log("Deleting vectors for content sourceId", sourceId);
+        console.log("Deleting vectors for content",);
+        console.log("bot_cuid : ", botId);
+        console.log("customer_cuid : ", user.teamId);
+        console.log("sourceId : ", sourceId);
+
 
         const { data } = await firstValueFrom(
             this.httpService.post(`${ingestUrl}/delete-vectors`, {
