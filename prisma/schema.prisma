@@ -54,6 +54,7 @@ model Team {
   Quota         Quota[]
   Storage       Storage[]
   Ticket        Ticket[]
+  Integrations  Integrations[]
 }
 
 model TeamMember {
@@ -291,6 +292,16 @@ model SystemSettings {
   description                String?
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
+}
+
+model Integrations {
+  id        String   @id @default(cuid())
+  teamId    String
+  type      String
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
 model Feedback {
