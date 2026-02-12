@@ -488,7 +488,7 @@ export class BotService {
     });
 
     if (!bot) {
-      throw new Error('Error acuring bot');
+      return { id: null, settings: null, missing: true };
     }
 
     return bot;

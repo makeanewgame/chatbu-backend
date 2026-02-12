@@ -6,6 +6,7 @@ import { IntegrationService } from './integration.service';
 import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { UpdateIntegrationDto } from './dto/update-integration.dto';
 import { DeleteIntegrationDto } from './dto/delete-integration.dto';
+import { TestIntegrationDto } from './dto/test-integration.dto';
 
 @ApiTags('Integration Services')
 @Controller('integration')
@@ -47,5 +48,14 @@ export class IntegrationController {
     async delete(@Req() req, @Body() body: DeleteIntegrationDto) {
         const user = req.user as IUser;
         return this.integrationService.deleteIntegration(user.teamId, body);
+    }
+
+    @ApiOperation({ summary: 'Test integration connection' })
+    @ApiResponse({ status: 200, description: 'Connection test result' })
+    @ApiBearerAuth()
+    @Post('test-connection')
+    async testConnection(@Req() req, @Body() body: TestIntegrationDto) {
+        const user = req.user as IUser;
+        return this.integrationService.testIntegrationConnection(user.teamId, body);
     }
 }

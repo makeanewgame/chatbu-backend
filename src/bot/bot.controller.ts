@@ -260,6 +260,9 @@ export class BotController {
   @UseGuards(AccessTokenGuard)
   async getBotAppearance(@Body() body: any, @Req() req: Request) {
     const user = req.user as IUser;
+    if (!body?.botId) {
+      return { id: null, settings: null, missing: true };
+    }
     return this.botService.getBotAppearance(body.botId, user.teamId);
   }
   //#endregion
