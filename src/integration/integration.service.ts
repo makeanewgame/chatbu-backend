@@ -172,10 +172,15 @@ export class IntegrationService {
                     return;
                 }
 
-                databases[type] = {
+                const defaultKey = type === 'postgresql' ? 'public_db' : `${type}_db`;
+                const defaultName = type === 'postgresql' ? 'Public Database' : `${type} Database`;
+                const databaseKey = config?.dbKey ? String(config.dbKey) : defaultKey;
+                const databaseName = config?.name ? String(config.name) : defaultName;
+
+                databases[databaseKey] = {
                     connection_string: connectionString,
                     db_type: type,
-                    name: config?.database ? String(config.database) : type,
+                    name: databaseName,
                     schema: config?.schema ? String(config.schema) : undefined,
                 };
                 return;
@@ -226,6 +231,8 @@ export class IntegrationService {
             }
             return;
         }
+
+        console.log('Syncing MCP config with payload:', payload);
 
         try {
             await axios.post(`${baseUrl}/api/v1/customers`, payload, { timeout: 10000 });
