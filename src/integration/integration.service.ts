@@ -243,11 +243,13 @@ export class IntegrationService {
                     await axios.put(`${baseUrl}/api/v1/customers/${teamId}`, payload, { timeout: 10000 });
                     return;
                 } catch (updateError) {
-                    throw new InternalServerErrorException('MCP config update failed');
+
+                    console.log(updateError);
+                    throw new InternalServerErrorException('MCP config update failed', updateError instanceof Error ? updateError.message : undefined);
                 }
             }
 
-            throw new InternalServerErrorException('MCP config create failed');
+            throw new InternalServerErrorException('MCP config create failed', error instanceof Error ? error.message : undefined);
         }
     }
 }
