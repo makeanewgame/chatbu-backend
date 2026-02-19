@@ -63,6 +63,11 @@ export class AuthenticationService {
     user.refreshToken = '';
     user.updatedAt = new Date().toISOString();
 
+    // Validate terms acceptance
+    if (!user.termsAccepted) {
+      throw new UnauthorizedException('You must accept the Terms of Service to register');
+    }
+
     // Check if user exists by email or phone number
     const findUser = await this.prisma.user.findFirst({
       where: {
@@ -129,6 +134,8 @@ export class AuthenticationService {
           emailVerified: false,
           phoneVerified: false,
           activationCode: code,
+          termsAccepted: true,
+          termsAcceptedAt: new Date(),
         },
       });
 

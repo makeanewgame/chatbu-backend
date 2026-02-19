@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional } from "@nestjs/class-validator";
+import { IsNotEmpty, IsString, IsOptional, IsBoolean } from "@nestjs/class-validator";
 
 export class RegisterRequest {
     @IsString()
@@ -16,6 +16,10 @@ export class RegisterRequest {
     @IsString()
     @IsNotEmpty()
     phoneNumber: string;
+
+    @IsBoolean()
+    @IsNotEmpty()
+    termsAccepted: boolean;
 
     @IsString()
     @IsOptional()

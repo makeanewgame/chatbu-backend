@@ -30,6 +30,8 @@ model User {
   accountBlocked        Boolean         @default(false)
   blockedAt             DateTime?
   blockedReason         String?
+  termsAccepted         Boolean         @default(false)
+  termsAcceptedAt       DateTime?
   Team                  Team[]
   User                  TeamMember[]
   Subscription          Subscription?
