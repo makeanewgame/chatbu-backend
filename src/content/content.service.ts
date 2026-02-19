@@ -161,6 +161,120 @@ export class ContentService {
         }
     }
 
+    async deleteAllContent(user: IUser, contentIds: string[], botId: string) {
+        try {
+            // Verify user owns the bot
+            const findUser = await this.prisma.team.findFirst({
+                where: {
+                    id: user.teamId,
+                    CustomerBots: {
+                        some: {
+                            id: botId
+                        }
+                    }
+                }
+            });
+
+            if (user.sub && !findUser) {
+                return { message: "User or Bot not found" };
+            }
+
+            // Fetch all content records to get sourceIds and types
+            const contents = await this.prisma.content.findMany({
+                where: {
+                    id: { in: contentIds },
+                    teamId: user.teamId,
+                    botId: botId,
+                }
+            });
+
+            if (contents.length === 0) {
+                return { message: "No content found to delete" };
+            }
+
+            // Mark all as BEING_DELETED
+            await this.prisma.content.updateMany({
+                where: { id: { in: contents.map(c => c.id) } },
+                data: { status: 'BEING_DELETED' }
+            });
+
+            // Process deletions asynchronously (don't await — return immediately)
+            this.processDeleteAll(user, contents, botId).catch(err => {
+                console.log("processDeleteAll background error", err);
+            });
+
+            return {
+                message: "Deletion started",
+                count: contents.length,
+            };
+        } catch (err) {
+            console.log("deleteAllContent error", err);
+            return { message: "Error deleting content" };
+        }
+    }
+
+    private async processDeleteAll(user: IUser, contents: any[], botId: string) {
+        let webpageCount = 0;
+
+        for (const content of contents) {
+            try {
+                // Determine sourceId based on content type
+                let sourceId = '';
+                const contentData = content.content as any;
+
+                if (content.type === 'WEBPAGE' || content.type === 'VIDEO' || content.type === 'LINK') {
+                    sourceId = contentData?.url || '';
+                    webpageCount++;
+                } else if (content.type === 'Q&A') {
+                    sourceId = contentData?.meta?.source || '';
+                } else if (content.type === 'CONTENT') {
+                    sourceId = contentData?.meta?.source || '';
+                }
+
+                // Delete vectors from vector DB
+                if (sourceId) {
+                    await this.deleteIngestedContent(botId, user, sourceId);
+                }
+
+                // Delete the content record
+                await this.prisma.content.delete({
+                    where: { id: content.id }
+                });
+
+                console.log(`Deleted content ${content.id} (${content.type})`);
+            } catch (err) {
+                console.log(`Error deleting content ${content.id}:`, err);
+                // Mark failed items back to their previous status
+                try {
+                    await this.prisma.content.update({
+                        where: { id: content.id },
+                        data: { status: 'INDEXED' }
+                    });
+                } catch (_) { }
+            }
+        }
+
+        // Decrease quota for WEBPAGE type content
+        if (webpageCount > 0) {
+            const currentQuota = await this.prisma.quota.findFirst({
+                where: {
+                    teamId: user.teamId,
+                    quotaType: 'FILE'
+                }
+            });
+
+            if (currentQuota && currentQuota.used > 0) {
+                const newUsed = Math.max(0, currentQuota.used - webpageCount);
+                await this.prisma.quota.update({
+                    where: { id: currentQuota.id },
+                    data: { used: newUsed }
+                });
+            }
+        }
+
+        console.log(`Bulk delete completed: ${contents.length} items processed`);
+    }
+
     async editContent(body: any, user: IUser) {
 
         try {

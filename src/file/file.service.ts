@@ -276,6 +276,121 @@ export class FileService {
         }
     }
 
+    async deleteAll(fileIds: string[], user: IUser) {
+        try {
+            // Verify user has access
+            const findUser = await this.prisma.team.findFirst({
+                where: { id: user.teamId }
+            });
+
+            if (user.sub && !findUser) {
+                return { message: "User not found" };
+            }
+
+            // Fetch all storage records
+            const files = await this.prisma.storage.findMany({
+                where: {
+                    id: { in: fileIds },
+                    teamId: user.teamId,
+                }
+            });
+
+            if (files.length === 0) {
+                return { message: "No files found to delete" };
+            }
+
+            // Mark all as BEING_DELETED
+            await this.prisma.storage.updateMany({
+                where: { id: { in: files.map(f => f.id) } },
+                data: { status: 'BEING_DELETED' }
+            });
+
+            // Process deletions asynchronously
+            this.processDeleteAllFiles(user, files).catch(err => {
+                console.log("processDeleteAllFiles background error", err);
+            });
+
+            return {
+                message: "Deletion started",
+                count: files.length,
+            };
+        } catch (err) {
+            console.log("deleteAll files error", err);
+            return { message: "Error deleting files" };
+        }
+    }
+
+    private async processDeleteAllFiles(user: IUser, files: any[]) {
+        const ingestUrl = this.configService.get('INGEST_ENPOINT');
+        let deletedCount = 0;
+
+        for (const file of files) {
+            try {
+                // Delete from MinIO
+                await this.minioClientService.delete(file.fileUrl, this.configService.get('S3_BUCKET_NAME'));
+
+                // Delete vectors from vector DB
+                await firstValueFrom(
+                    this.httpService.post(`${ingestUrl}/delete-vectors`, {
+                        "bot_cuid": file.botId,
+                        "customer_cuid": user.teamId,
+                        "source": file.fileUrl,
+                    }).pipe(
+                        catchError((error: AxiosError) => {
+                            console.log(`Error deleting vectors for file ${file.id}:`, error.message);
+                            throw error;
+                        }),
+                    )
+                );
+
+                // Delete the storage record
+                await this.prisma.storage.delete({
+                    where: { id: file.id }
+                });
+
+                deletedCount++;
+                console.log(`Deleted file ${file.id}`);
+            } catch (err) {
+                console.log(`Error deleting file ${file.id}:`, err);
+                // Mark failed items back to INDEXED
+                try {
+                    await this.prisma.storage.update({
+                        where: { id: file.id },
+                        data: { status: 'INDEXED' }
+                    });
+                } catch (_) { }
+            }
+        }
+
+        // Decrease quota
+        if (deletedCount > 0) {
+            const existingQuota = await this.prisma.team.findFirst({
+                where: {
+                    id: user.teamId,
+                    Quota: { some: { quotaType: 'FILE' } }
+                },
+                include: {
+                    Quota: { where: { quotaType: 'FILE' } }
+                },
+            });
+
+            if (existingQuota?.Quota?.[0]) {
+                const newUsed = Math.max(0, existingQuota.Quota[0].used - deletedCount);
+                await this.prisma.quota.update({
+                    where: {
+                        teamId_quotaType: {
+                            teamId: user.teamId,
+                            quotaType: 'FILE'
+                        }
+                    },
+                    data: { used: newUsed }
+                });
+            }
+        }
+
+        console.log(`Bulk file delete completed: ${deletedCount}/${files.length} files deleted`);
+    }
+
     async getFiles(user: IUser, botId: string) {
 
         console.log("getFiles user.teamId", user.teamId);
@@ -424,7 +539,7 @@ export class FileService {
                 fileUrl: existingFileName.fileUrl,
             }
         }
-        
+
         return {
             status: 'ok',
             message: 'File is new and can be uploaded',

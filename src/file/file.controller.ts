@@ -78,6 +78,30 @@ export class FileController {
     }
     //#endregion
 
+    //#region deleteAll
+    @ApiOperation({ summary: 'Bulk delete files from minio and db' })
+    @ApiResponse({
+        status: 200,
+        description: 'File deletion started',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                ids: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['ids'],
+        },
+    })
+    @Post('deleteAll')
+    @UseGuards(AccessTokenGuard)
+    async deleteAll(@Req() req: Request, @Body() body: { ids: string[] }) {
+        const user = req.user as IUser;
+        return await this.fileService.deleteAll(body.ids, user);
+    }
+    //#endregion
+
     //#region getFiles
     @ApiOperation({ summary: 'Get files list for user and selected bot' })
     @ApiResponse({

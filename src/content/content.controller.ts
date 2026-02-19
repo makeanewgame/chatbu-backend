@@ -102,6 +102,34 @@ export class ContentController {
     }
     //#endregion
 
+    //#region deleteAllContent
+    @ApiOperation({ summary: 'Bulk delete user vault content' })
+    @ApiResponse({
+        status: 200,
+        description: 'Content deletion started',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                botId: { type: 'string' },
+                contentIds: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['botId', 'contentIds'],
+        },
+    })
+    @Post('deleteAll')
+    @UseGuards(AccessTokenGuard)
+    async deleteAllContent(@Body() body: any, @Req() req: any) {
+        const user = req.user as IUser;
+        return this.contentService.deleteAllContent(user, body.contentIds, body.botId);
+    }
+    //#endregion
+
     //#region editContent
     @ApiOperation({ summary: 'Edit user vault content for specific types' })
     @ApiResponse({
