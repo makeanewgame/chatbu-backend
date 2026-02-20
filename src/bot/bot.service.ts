@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
@@ -513,6 +513,61 @@ export class BotService {
 
     return bot;
 
+  }
+
+  async getPublicBotSettings(token: string) {
+    let payload: any;
+    try {
+      payload = await this.jwtService.verifyAsync(token, {
+        secret: this.configService.get('JWT_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired embed token');
+    }
+    if (payload.type !== 'embed') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: payload.botId, isDeleted: false },
+      select: { id: true, settings: true, botName: true },
+    });
+    if (!bot) throw new NotFoundException('Bot not found');
+    return bot;
+  }
+
+  async publicChat(
+    token: string,
+    message: string,
+    chatId: string | undefined,
+    ip: string,
+  ) {
+    let payload: any;
+    try {
+      payload = await this.jwtService.verifyAsync(token, {
+        secret: this.configService.get('JWT_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired embed token');
+    }
+    if (payload.type !== 'embed') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: payload.botId, isDeleted: false },
+      select: { id: true, teamId: true },
+    });
+    if (!bot) throw new NotFoundException('Bot not found');
+    return this.chat(
+      {
+        botId: bot.id,
+        teamId: bot.teamId,
+        message,
+        chatId: chatId ?? null,
+        sender: 'user',
+        date: new Date().toISOString(),
+      } as any,
+      ip,
+    );
   }
 
   async checkIntegration(botId: string) {

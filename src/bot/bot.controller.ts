@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   Req,
   UseGuards,
   BadRequestException,
@@ -299,6 +300,42 @@ export class BotController {
       user.sub,
       body.botId,
       body.settings,
+    );
+  }
+  //#endregion
+
+  //#region getPublicSettings
+  @ApiOperation({ summary: 'Get public bot settings via embed token' })
+  @ApiResponse({ status: 200, description: 'Bot settings' })
+  @Get('settings')
+  async getPublicBotSettings(@Query('token') token: string) {
+    if (!token) throw new BadRequestException('token is required');
+    return this.botService.getPublicBotSettings(token);
+  }
+  //#endregion
+
+  //#region publicChat
+  @ApiOperation({ summary: 'Public chat endpoint for embedded bots' })
+  @ApiResponse({ status: 200, description: 'Chat response' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string' },
+        message: { type: 'string' },
+        chatId: { type: 'string' },
+      },
+      required: ['token', 'message'],
+    },
+  })
+  @Post('embed/chat')
+  async publicChat(@Body() body: any, @Req() req: Request) {
+    const ip = (req as any).headers['x-forwarded-for'] || (req as any).socket?.remoteAddress || '127.0.0.1';
+    return this.botService.publicChat(
+      body.token,
+      body.message,
+      body.chatId,
+      ip.toString(),
     );
   }
   //#endregion
