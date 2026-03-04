@@ -7,6 +7,11 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "local": "bash ./scripts/use-local-env.sh",
+    "aws": "bash ./scripts/use-aws-env.sh",
+    "aws:db": "bash ./scripts/port-forward-k8s-postgres.sh postgresql postgresql-service 5432 5432",
+    "start:dev:local": "npm run local && npm run start:dev",
+    "start:dev:aws": "bash ./scripts/start-dev-aws.sh",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

@@ -28,6 +28,67 @@ export class AuthenticationController {
     private configService: ConfigService,
   ) { }
 
+  private parseGoogleState(state: unknown): Record<string, any> | null {
+    if (typeof state !== 'string' || !state.length) {
+      return null;
+    }
+
+    let decodedState = state;
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        const nextValue = decodeURIComponent(decodedState);
+        if (nextValue === decodedState) {
+          break;
+        }
+        decodedState = nextValue;
+      } catch {
+        break;
+      }
+    }
+
+    try {
+      const jsonString = Buffer.from(decodedState, 'base64').toString('utf8');
+      const parsed = JSON.parse(jsonString);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveFrontendGoogleRedirectUri(state: unknown): string {
+    const defaultRedirectUri = this.configService.get<string>('FRONTEND_GOOGLE_REDIRECT_URI') || '';
+    const parsedState = this.parseGoogleState(state);
+    const requestedRedirectUri = parsedState?.redirectUri;
+
+    if (!requestedRedirectUri || typeof requestedRedirectUri !== 'string') {
+      return defaultRedirectUri;
+    }
+
+    try {
+      const requestedUrl = new URL(requestedRedirectUri);
+      const defaultUrl = defaultRedirectUri ? new URL(defaultRedirectUri) : null;
+
+      if (!['http:', 'https:'].includes(requestedUrl.protocol)) {
+        return defaultRedirectUri;
+      }
+
+      if (requestedUrl.pathname !== '/auth/google/redirect') {
+        return defaultRedirectUri;
+      }
+
+      const isLocalhost = ['localhost', '127.0.0.1'].includes(requestedUrl.hostname);
+      const isDefaultOrigin = !!defaultUrl && requestedUrl.origin === defaultUrl.origin;
+
+      if (!isLocalhost && !isDefaultOrigin) {
+        return defaultRedirectUri;
+      }
+
+      return `${requestedUrl.origin}${requestedUrl.pathname}`;
+    } catch {
+      return defaultRedirectUri;
+    }
+  }
+
   @Get('google/register')
   @UseGuards(GoogleGuard)
   handleGoogleRegister() {
@@ -47,8 +108,9 @@ export class AuthenticationController {
       req.user.emails[0].value,
       req.user,
     );
+    const frontendRedirectUri = this.resolveFrontendGoogleRedirectUri(req.query?.state);
     res.redirect(
-      this.configService.get('FRONTEND_GOOGLE_REDIRECT_URI') +
+      frontendRedirectUri +
       `?user=${JSON.stringify(data)}`,
     );
   }

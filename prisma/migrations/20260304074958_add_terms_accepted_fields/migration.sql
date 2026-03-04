@@ -1,9 +1,10 @@
 -- AlterTable
-ALTER TABLE "User" ADD COLUMN     "termsAccepted" BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN     "termsAcceptedAt" TIMESTAMP(3);
+ALTER TABLE "User"
+ADD COLUMN IF NOT EXISTS "termsAccepted" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "termsAcceptedAt" TIMESTAMP(3);
 
 -- CreateTable
-CREATE TABLE "Integrations" (
+CREATE TABLE IF NOT EXISTS "Integrations" (
     "id" TEXT NOT NULL,
     "teamId" TEXT NOT NULL,
     "type" TEXT NOT NULL,
@@ -15,4 +16,16 @@ CREATE TABLE "Integrations" (
 );
 
 -- AddForeignKey
-ALTER TABLE "Integrations" ADD CONSTRAINT "Integrations_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'Integrations_teamId_fkey'
+    ) THEN
+        ALTER TABLE "Integrations"
+        ADD CONSTRAINT "Integrations_teamId_fkey"
+        FOREIGN KEY ("teamId") REFERENCES "Team"("id")
+        ON DELETE CASCADE ON UPDATE CASCADE;
+    END IF;
+END $$;

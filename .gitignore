@@ -41,6 +41,10 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.local
+.env.k8s.local
+.env.k8s.generated
+.env.localdev
+.env.aws.local
 
 # temp directory
 .temp
