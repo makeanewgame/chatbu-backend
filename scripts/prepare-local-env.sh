@@ -60,6 +60,7 @@ upsert "CORS_ORIGIN" "http://localhost:3000"
 upsert "FRONTEND_URL" "http://localhost:3000"
 upsert "FRONTEND_GOOGLE_REDIRECT_URI" "http://localhost:3000/auth/google/redirect"
 upsert "GOOGLE_REDIRECT_URI" "http://localhost:3001/api/auth/google/redirect"
+upsert "INGEST_ENPOINT" "http://localhost:8000"
 
 chmod 600 "${TARGET_FILE}"
 echo "Prepared local env: ${TARGET_FILE}"
