@@ -55,3 +55,4 @@ npx prisma generate         # regenerates generated/prisma after schema changes
 - `src/lang/` translation dictionaries are empty stubs. Email localization is done via separate `_tr.html` template files, not through the `Language.translate()` method.
 - `schema.prisma.back` in project root is a backup file — ignore it.
 - TypeScript strict mode is off (`strictNullChecks: false`, `noImplicitAny: false`) — the codebase uses `any` extensively.
+- When building Docker images on Apple Silicon (arm64) for AWS/Kubernetes amd64 nodes, build with `--platform linux/amd64` to avoid `no match for platform in manifest` / `ImagePullBackOff`.
