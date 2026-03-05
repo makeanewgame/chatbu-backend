@@ -51,6 +51,31 @@ spec:
             secretKeyRef:
               name: backend-secrets
               key: JWT_REFRESH_SECRET
+        - name: MINIO_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: MINIO_ENDPOINT
+        - name: MINIO_PORT
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: MINIO_PORT
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: MINIO_SECRET_KEY
+        - name: MINIO_USE_SSL
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: MINIO_USE_SSL
         resources:
           requests:
             memory: "1Gi"
