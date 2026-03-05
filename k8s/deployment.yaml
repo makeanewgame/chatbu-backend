@@ -33,8 +33,8 @@ spec:
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
-              name: postgresql-app-credentials
-              key: uri
+              name: backend-secrets
+              key: DATABASE_URL
         - name: API_URL
           value: "https://backend.chatbu.io"
         - name: FRONTEND_URL
@@ -44,20 +44,8 @@ spec:
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:
-              name: chatbu-api-secrets
-              key: jwt-secret
-        - name: STRIPE_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: chatbu-api-secrets
-              key: stripe-secret-key
-              optional: true
-        - name: STRIPE_WEBHOOK_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: chatbu-api-secrets
-              key: stripe-webhook-secret
-              optional: true
+              name: backend-secrets
+              key: JWT_SECRET
         resources:
           requests:
             memory: "256Mi"
