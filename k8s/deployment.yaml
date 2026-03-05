@@ -46,6 +46,11 @@ spec:
             secretKeyRef:
               name: backend-secrets
               key: JWT_SECRET
+        - name: JWT_REFRESH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: JWT_REFRESH_SECRET
         resources:
           requests:
             memory: "1Gi"
