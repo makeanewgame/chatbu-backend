@@ -64,16 +64,13 @@ jobs:
         run: |
           # Update the image tag in deployment.yaml
           sed -i "s|image: .*|image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}|g" k8s/deployment.yaml
-          
-          # Update kustomization.yaml
-          sed -i "s|newTag: .*|newTag: ${{ steps.meta.outputs.version }}|g" k8s/kustomization.yaml
 
       - name: Commit and push manifest updates
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Actions"
           
-          git add k8s/deployment.yaml k8s/kustomization.yaml
+          git add k8s/deployment.yaml
           
           # Check if there are changes to commit
           if git diff --staged --quiet; then
