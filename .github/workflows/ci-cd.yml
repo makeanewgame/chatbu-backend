@@ -11,7 +11,7 @@ on:
 
 env:
   AWS_REGION: eu-central-1
-  ECR_REPOSITORY: chatbu-backend
+  ECR_REPOSITORY: chatbu-repo
   ECR_REGISTRY: 152100380489.dkr.ecr.eu-central-1.amazonaws.com
 
 jobs:
