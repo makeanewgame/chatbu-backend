@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: 152100380489.dkr.ecr.eu-central-1.amazonaws.com/chatbu-repo:backend-0a9a9f7
+        image: 152100380489.dkr.ecr.eu-central-1.amazonaws.com/chatbu-repo:backend-431e030
         imagePullPolicy: Always
         ports:
         - containerPort: 3001
