@@ -61,32 +61,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Update Kubernetes manifest
-        run: |
-          # Update the image tag in deployment.yaml
-          sed -i "s|image: .*|image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}|g" k8s/deployment.yaml
-
-      - name: Commit and push manifest updates
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Actions"
-          
-          git add k8s/deployment.yaml
-          
-          # Check if there are changes to commit
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "🚀 Update backend image to ${{ steps.meta.outputs.version }}
-
-            Automated deployment by GitHub Actions
-            Commit: ${GITHUB_SHA}
-            Build: #${{ github.run_number }}"
-            
-            # Configure git to use the token
-            git remote set-url origin https://${{ secrets.HELM_REPO_TOKEN }}@github.com/${{ github.repository }}
-            git push
-          fi
+      # No more automatic commits - using :latest tags instead
+      # Deployment will use :latest tag with imagePullPolicy: Always
 
       - name: Deployment summary
         run: |
