@@ -15,3 +15,7 @@ spec:
     targetPort: 3001
     protocol: TCP
     name: http
+  - port: 3002
+    targetPort: 3002
+    protocol: TCP
+    name: socket
