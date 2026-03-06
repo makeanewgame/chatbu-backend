@@ -7,4 +7,4 @@ resources:
 
 images:
   - name: 152100380489.dkr.ecr.eu-central-1.amazonaws.com/chatbu-repo
-    newTag: backend-421a22f  # This will be updated by Image Updater
+    newTag: backend-latest  # Using :latest tag strategy
