@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+
+images:
+  - name: 152100380489.dkr.ecr.eu-central-1.amazonaws.com/chatbu-repo
+    newTag: backend-421a22f  # This will be updated by Image Updater
