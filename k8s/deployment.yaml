@@ -40,7 +40,7 @@ spec:
         - name: FRONTEND_URL
           value: "https://chatbu.io"
         - name: CORS_ORIGIN
-          value: "https://chatbu.io"
+          value: "https://app.chatbu.io,https://chatbu.io"
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:

@@ -27,8 +27,13 @@ async function bootstrap() {
 
   app.use(bodyParser.json({ limit: '20mb' }));
   app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
+  const rawOrigin = configService.get<string>('CORS_ORIGIN') ?? '';
+  const allowedOrigins = rawOrigin.includes(',')
+    ? rawOrigin.split(',').map((o) => o.trim())
+    : rawOrigin;
+
   app.enableCors({
-    origin: configService.get<string>('CORS_ORIGIN'),
+    origin: allowedOrigins,
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
     optionsSuccessStatus: 204
