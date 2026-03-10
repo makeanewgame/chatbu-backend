@@ -4,7 +4,6 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
-  - ingress.yaml
 
 images:
   - name: 152100380489.dkr.ecr.eu-central-1.amazonaws.com/chatbu-repo
