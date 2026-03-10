@@ -21,18 +21,13 @@ spec:
   - hosts:
     - backend.chatbu.io
     secretName: backend-chatbu-tls
+  - hosts:
+    - socket.chatbu.io
+    secretName: socket-chatbu-tls
   rules:
   - host: backend.chatbu.io
     http:
       paths:
-      # socket.io WebSocket bağlantısı (port 3002)
-      - path: /socket.io/
-        pathType: Prefix
-        backend:
-          service:
-            name: backend
-            port:
-              number: 3002
       # REST API (port 3001)
       - path: /api
         pathType: Prefix
@@ -49,3 +44,14 @@ spec:
             name: backend
             port:
               number: 3001
+  - host: socket.chatbu.io
+    http:
+      paths:
+      # Socket.IO WebSocket gateway (port 3002, namespace: /events)
+      - path: /events
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 3002

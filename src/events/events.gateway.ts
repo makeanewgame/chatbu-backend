@@ -7,7 +7,7 @@ import { cli } from 'winston/lib/winston/config';
 
 
 
-@WebSocketGateway(3002, { namespace: 'events', cors: true })
+@WebSocketGateway(3002, { namespace: 'events', path: '/events', cors: true })
 export class EventsGateway {
   @WebSocketServer()
   server: Server;
