@@ -19,13 +19,11 @@ metadata:
 spec:
   tls:
   - hosts:
-    - backend.chatbu.io
-    secretName: backend-chatbu-tls
-  - hosts:
-    - socket.chatbu.io
-    secretName: socket-chatbu-tls
+    - app.chatbu.io
+    - chatbu.io
+    secretName: chatbu-tls
   rules:
-  - host: backend.chatbu.io
+  - host: app.chatbu.io
     http:
       paths:
       # REST API (port 3001)
@@ -36,17 +34,25 @@ spec:
             name: backend
             port:
               number: 3001
-      # Diğer tüm istekler API'ye
-      - path: /
+      # Socket.IO WebSocket gateway (port 3002, namespace: /events)
+      - path: /events
+        pathType: Prefix
+        backend:
+          service:
+            name: backend
+            port:
+              number: 3002
+  - host: chatbu.io
+    http:
+      paths:
+      # REST API (port 3001)
+      - path: /api
         pathType: Prefix
         backend:
           service:
             name: backend
             port:
               number: 3001
-  - host: socket.chatbu.io
-    http:
-      paths:
       # Socket.IO WebSocket gateway (port 3002, namespace: /events)
       - path: /events
         pathType: Prefix

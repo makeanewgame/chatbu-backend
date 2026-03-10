@@ -69,4 +69,4 @@ jobs:
           echo "✅ Deployment completed successfully!"
           echo "📦 Image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}"
           echo "🔄 ArgoCD will sync automatically"
-          echo "🌐 Service will be available at: https://backend.chatbu.io"
+          echo "🌐 Service will be available at: https://app.chatbu.io/api"

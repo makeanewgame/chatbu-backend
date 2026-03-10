@@ -36,7 +36,7 @@ spec:
               name: backend-secrets
               key: DATABASE_URL
         - name: API_URL
-          value: "https://backend.chatbu.io"
+          value: "http://backend.chatbu.svc.cluster.local:3001"
         - name: FRONTEND_URL
           value: "https://chatbu.io"
         - name: CORS_ORIGIN
