@@ -548,4 +548,8 @@ export class FileService {
 
     }
 
+    async test() {
+        return "test"
+    }
+
 }
