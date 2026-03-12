@@ -76,6 +76,11 @@ spec:
             secretKeyRef:
               name: backend-secrets
               key: MINIO_USE_SSL
+        - name: S3_BUCKET_NAME
+          valueFrom:
+            secretKeyRef:
+              name: backend-secrets
+              key: S3_BUCKET_NAME
         - name: GOOGLE_CLIENT_ID
           valueFrom:
             secretKeyRef:
