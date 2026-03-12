@@ -25,82 +25,22 @@ spec:
         ports:
         - containerPort: 3001
           name: http
+        envFrom:
+        - secretRef:
+            name: backend-secrets
         env:
         - name: NODE_ENV
           value: "production"
         - name: PORT
           value: "3001"
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: DATABASE_URL
         - name: API_URL
           value: "http://backend.chatbu.svc.cluster.local:3001"
         - name: FRONTEND_URL
           value: "https://chatbu.io"
         - name: CORS_ORIGIN
           value: "https://app.chatbu.io,https://chatbu.io"
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: JWT_SECRET
-        - name: JWT_REFRESH_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: JWT_REFRESH_SECRET
-        - name: MINIO_ENDPOINT
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: MINIO_ENDPOINT
-        - name: MINIO_PORT
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: MINIO_PORT
-        - name: MINIO_ACCESS_KEY
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: MINIO_ACCESS_KEY
-        - name: MINIO_SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: MINIO_SECRET_KEY
-        - name: MINIO_USE_SSL
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: MINIO_USE_SSL
-        - name: S3_BUCKET_NAME
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: S3_BUCKET_NAME
-        - name: GOOGLE_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: GOOGLE_CLIENT_ID
-        - name: GOOGLE_CLIENT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: GOOGLE_CLIENT_SECRET
-        - name: GOOGLE_REDIRECT_URI
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: GOOGLE_REDIRECT_URI
-        - name: FRONTEND_GOOGLE_REDIRECT_URI
-          valueFrom:
-            secretKeyRef:
-              name: backend-secrets
-              key: FRONTEND_GOOGLE_REDIRECT_URI
+        - name: INGEST_ENPOINT
+          value: "http://fastapi-gateway-service.chatbu.svc.cluster.local:8000"
         resources:
           requests:
             memory: "1Gi"

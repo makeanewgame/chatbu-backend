@@ -1,7 +1,8 @@
 ## Strip Listen (backend tarafında çalışmalı) - Localde test yaparken
 stripe listen --forward-to localhost:3001/api/subscription/webhook
 
-
+## Yeni KEY Eklemek
+Bundan sonra .env'e yeni bir değişken eklediğinizde, bunu kubectl patch secret backend-secrets -n chatbu --type=merge -p '{"stringData":{"KEY":"VALUE"}}' ile secret'a eklemeniz yeterli; deployment.yaml'a dokunmanıza gerek yok.
 
 Backend: kod değiştir → image build/push (<tag> her zaman unique) → 
 
