@@ -17,6 +17,7 @@ import { ConfigService } from '@nestjs/config';
         useSSL: configService.get('S3_USE_SSL') === 'true',
         accessKey: configService.get('S3_ACCESS_KEY'),
         secretKey: configService.get('S3_SECRET_KEY'),
+        region: configService.get('S3_REGION') || 'eu-central-1',
       }),
     }),
   ],
