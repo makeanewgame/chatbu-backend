@@ -12,11 +12,11 @@ import { ConfigService } from '@nestjs/config';
     MinioModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        endPoint: configService.get('MINIO_ENDPOINT'),
-        port: parseInt(configService.get('MINIO_PORT')),
-        useSSL: configService.get('MINIO_USE_SSL') === 'true',
-        accessKey: configService.get('MINIO_ACCESS_KEY'),
-        secretKey: configService.get('MINIO_SECRET_KEY'),
+        endPoint: configService.get('S3_ENDPOINT_HOST'),
+        port: parseInt(configService.get('S3_PORT')),
+        useSSL: configService.get('S3_USE_SSL') === 'true',
+        accessKey: configService.get('S3_ACCESS_KEY'),
+        secretKey: configService.get('S3_SECRET_KEY'),
       }),
     }),
   ],
