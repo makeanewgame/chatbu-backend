@@ -24,6 +24,7 @@ import {
 import { AdminService } from './admin.service';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { AdminGuard } from './guards/admin.guard';
+import { GetAllChatbotsDto } from './dto/getAllChatbots.dto';
 import { GetAllTeamsDto } from './dto/getAllTeams.dto';
 import { GetAllUsersDto } from './dto/getAllUsers.dto';
 import { UpdateUserDto } from './dto/updateUser.dto';
@@ -205,6 +206,30 @@ export class AdminController {
     @Patch('users/:id/verify-phone')
     async verifyUserPhone(@Param('id') id: string) {
         return this.adminService.verifyUserPhone(id);
+    }
+    //#endregion
+
+    //#region getAllChatbots
+    @ApiOperation({ summary: 'Get all chatbots with owner and file info (Admin only)' })
+    @ApiQuery({ name: 'page', required: false, type: Number })
+    @ApiQuery({ name: 'limit', required: false, type: Number })
+    @ApiQuery({ name: 'search', required: false, type: String })
+    @ApiQuery({ name: 'includeDeleted', required: false, type: Boolean })
+    @Get('chatbots')
+    async getAllChatbots(@Query() query: GetAllChatbotsDto) {
+        return this.adminService.getAllChatbots(query);
+    }
+    //#endregion
+
+    //#region hardDeleteBot
+    @ApiOperation({ summary: 'Permanently delete a soft-deleted bot and all its data (Admin only)' })
+    @ApiResponse({ status: 200, description: 'Bot permanently deleted' })
+    @ApiResponse({ status: 400, description: 'Bot must be soft-deleted first' })
+    @ApiResponse({ status: 404, description: 'Bot not found' })
+    @ApiParam({ name: 'id', type: String, description: 'Bot ID' })
+    @Delete('chatbots/:id/hard-delete')
+    async hardDeleteBot(@Param('id') id: string) {
+        return this.adminService.hardDeleteBot(id);
     }
     //#endregion
 }

@@ -4,10 +4,12 @@ import { AdminService } from './admin.service';
 import { SettingsController } from './settings.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { JwtModule } from '@nestjs/jwt';
+import { MinioClientModule } from 'src/minio-client/minio-client.module';
+import { ConfigModule } from '@nestjs/config';
 
 @Module({
     controllers: [AdminController, SettingsController],
     providers: [AdminService],
-    imports: [PrismaModule, JwtModule],
+    imports: [PrismaModule, JwtModule, MinioClientModule, ConfigModule],
 })
 export class AdminModule { }

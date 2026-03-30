@@ -3,12 +3,17 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { GetAllUsersDto } from './dto/getAllUsers.dto';
 import { UpdateUserDto } from './dto/updateUser.dto';
 import { GetAllTeamsDto } from './dto/getAllTeams.dto';
+import { GetAllChatbotsDto } from './dto/getAllChatbots.dto';
+import { MinioClientService } from 'src/minio-client/minio-client.service';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AdminService {
     constructor(
-        private prisma: PrismaService
+        private prisma: PrismaService,
+        private minioClientService: MinioClientService,
+        private configService: ConfigService,
     ) { }
 
     async getAllTeams(dto: GetAllTeamsDto) {
@@ -341,5 +346,107 @@ export class AdminService {
         });
 
         return { message: 'Phone verified successfully' };
+    }
+
+    async getAllChatbots(dto: GetAllChatbotsDto) {
+        const { page = 1, limit = 20, search, includeDeleted = true } = dto;
+        const skip = (page - 1) * limit;
+
+        const where: any = {};
+
+        if (!includeDeleted) {
+            where.isDeleted = false;
+        }
+
+        if (search) {
+            where.botName = { contains: search, mode: 'insensitive' };
+        }
+
+        const [bots, total] = await Promise.all([
+            this.prisma.customerBots.findMany({
+                where,
+                skip,
+                take: limit,
+                include: {
+                    team: {
+                        include: {
+                            owner: {
+                                select: { id: true, name: true, email: true },
+                            },
+                        },
+                    },
+                },
+                orderBy: { createdAt: 'desc' },
+            }),
+            this.prisma.customerBots.count({ where }),
+        ]);
+
+        const botIds = bots.map((b) => b.id);
+
+        const [storageCounts, contentCounts] = await Promise.all([
+            this.prisma.storage.groupBy({
+                by: ['botId'],
+                where: { botId: { in: botIds } },
+                _count: { id: true },
+            }),
+            this.prisma.content.groupBy({
+                by: ['botId'],
+                where: { botId: { in: botIds } },
+                _count: { id: true },
+            }),
+        ]);
+
+        const storageCountMap: Record<string, number> = Object.fromEntries(
+            storageCounts.map((s) => [s.botId, s._count.id]),
+        );
+        const contentCountMap: Record<string, number> = Object.fromEntries(
+            contentCounts.map((c) => [c.botId, c._count.id]),
+        );
+
+        const enrichedBots = bots.map((bot) => ({
+            ...bot,
+            fileCount: storageCountMap[bot.id] || 0,
+            contentCount: contentCountMap[bot.id] || 0,
+        }));
+
+        return {
+            data: enrichedBots,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+        };
+    }
+
+    async hardDeleteBot(botId: string) {
+        const bot = await this.prisma.customerBots.findUnique({ where: { id: botId } });
+
+        if (!bot) {
+            throw new NotFoundException('Bot not found');
+        }
+
+        if (!bot.isDeleted) {
+            throw new BadRequestException('Bot must be soft-deleted before hard deletion');
+        }
+
+        // Clean up MinIO files
+        const bucket = this.configService.get('S3_BUCKET_NAME');
+        const storageRecords = await this.prisma.storage.findMany({ where: { botId } });
+
+        for (const file of storageRecords) {
+            try {
+                await this.minioClientService.delete(file.fileUrl, bucket);
+            } catch (err) {
+                console.error(`MinIO delete failed for ${file.fileUrl}:`, err);
+            }
+        }
+
+        // Hard delete all related records in dependency order
+        await this.prisma.storage.deleteMany({ where: { botId } });
+        await this.prisma.content.deleteMany({ where: { botId } });
+        await this.prisma.customerChats.deleteMany({ where: { botId } });
+        await this.prisma.customerBots.delete({ where: { id: botId } });
+
+        return { message: 'Bot permanently deleted' };
     }
 }

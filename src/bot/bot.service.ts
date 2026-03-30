@@ -13,6 +13,7 @@ import { AxiosError } from 'axios';
 import { JwtService } from '@nestjs/jwt';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { MailService } from '../mail/mail.service';
+import { MinioClientService } from 'src/minio-client/minio-client.service';
 
 @Injectable()
 export class BotService {
@@ -23,6 +24,7 @@ export class BotService {
     private jwtService: JwtService,
     private subscriptionService: SubscriptionService,
     private mailService: MailService,
+    private minioClientService: MinioClientService,
   ) { }
 
   async createBot(body: CreateBotRequest) {
@@ -107,7 +109,25 @@ export class BotService {
       throw new Error('Error acuring user');
     }
 
-    const bot = await this.prisma.customerBots.update({
+    const bot = await this.prisma.customerBots.findUnique({
+      where: {
+        teamId: body.teamId,
+        id: body.botId,
+        isDeleted: false,
+      },
+    });
+
+    if (!bot) {
+      throw new Error('Bot not found');
+    }
+
+    // Run cascade cleanup in background — do not block the response
+    this.performBotCascadeCleanup(body.teamId, body.botId).catch((err) =>
+      console.error('Bot cascade cleanup error:', err),
+    );
+
+    // Soft-delete the bot record
+    await this.prisma.customerBots.update({
       where: {
         teamId: body.teamId,
         id: body.botId,
@@ -118,30 +138,84 @@ export class BotService {
       },
     });
 
-    if (bot) {
-      const botQuota = await this.prisma.quota.findFirst({
+    const botQuota = await this.prisma.quota.findFirst({
+      where: {
+        teamId: body.teamId,
+        quotaType: 'BOT',
+      },
+    });
+
+    if (botQuota) {
+      await this.prisma.quota.update({
         where: {
-          teamId: body.teamId,
-          quotaType: 'BOT',
+          id: botQuota.id,
+        },
+        data: {
+          used: Math.max(0, botQuota.used - 1),
         },
       });
-
-      console.log('bot quota used Value  -->', botQuota.used);
-
-      if (botQuota) {
-        await this.prisma.quota.update({
-          where: {
-            id: botQuota.id,
-          },
-          data: {
-            used: botQuota.used - 1,
-          },
-        });
-      }
-
-      return { message: 'Bot deleted' };
     }
-    throw new Error('Error deleting bot');
+
+    return { message: 'Bot deleted' };
+  }
+
+  private async performBotCascadeCleanup(teamId: string, botId: string): Promise<void> {
+    const bucket = this.configService.get('S3_BUCKET_NAME');
+    const ingestUrl = this.configService.get('INGEST_ENPOINT');
+
+    // 1. Soft-delete all Storage records and remove files from MinIO
+    const storageRecords = await this.prisma.storage.findMany({
+      where: { teamId, botId, isDeleted: false },
+    });
+
+    for (const file of storageRecords) {
+      try {
+        await this.minioClientService.delete(file.fileUrl, bucket);
+      } catch (err) {
+        console.error(`MinIO delete failed for ${file.fileUrl}:`, err);
+      }
+      try {
+        await this.prisma.storage.update({
+          where: { id: file.id },
+          data: { isDeleted: true, deletedAt: new Date() },
+        });
+      } catch (err) {
+        console.error(`Storage soft-delete failed for ${file.id}:`, err);
+      }
+    }
+
+    // 2. Soft-delete all Content records (Q&A, web pages, text, etc.)
+    await this.prisma.content.updateMany({
+      where: { teamId, botId, isDeleted: false },
+      data: { isDeleted: true, deletedAt: new Date() },
+    });
+
+    // 3. Soft-delete all CustomerChats for this bot
+    await this.prisma.customerChats.updateMany({
+      where: { teamId, botId, isDeleted: false },
+      data: { isDeleted: true, deletedAt: new Date() },
+    });
+
+    // 4. Delete the entire Elasticsearch index for this bot (most efficient)
+    //
+    // TODO: This call requires the /delete-bot-index endpoint to be implemented
+    // in fovi-longa-chat-be. See: DEVELOPER_NOTE_delete_bot_index.md in that repo.
+    // Until then this will fail gracefully (non-fatal, caught below).
+    try {
+      await firstValueFrom(
+        this.httpService.post(`${ingestUrl}/delete-bot-index`, {
+          customer_cuid: teamId,
+          bot_cuid: botId,
+        }).pipe(
+          catchError((err: AxiosError) => {
+            console.error('delete-bot-index failed:', err.message);
+            throw err;
+          }),
+        ),
+      );
+    } catch (err) {
+      console.error('Vector index deletion failed (non-fatal):', err);
+    }
   }
   async updateSettings(body: UpdateSettingsRequest) {
     const { botId, settings } = body;
