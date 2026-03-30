@@ -362,3 +362,55 @@ model Notification {
   ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+enum LogCategory {
+  CONTENT
+  INGEST
+  BOT
+  INTEGRATION
+  STRIPE
+  FILE
+  AUTH
+}
+
+enum LogAction {
+  CREATE
+  UPDATE
+  DELETE
+  UPLOAD
+  INGEST
+  SUBSCRIBE
+  UNSUBSCRIBE
+  PAYMENT
+  QUOTA_EXCEEDED
+  LOGIN
+  REGISTER
+}
+
+enum LogStatus {
+  SUCCESS
+  ERROR
+}
+
+model SystemLog {
+  id          String      @id @default(cuid())
+  category    LogCategory
+  action      LogAction
+  status      LogStatus
+  userId      String?
+  userName    String?
+  userEmail   String?
+  teamId      String?
+  entityId    String?
+  entityName  String?
+  message     String?
+  details     Json?
+  ipAddress   String?
+  createdAt   DateTime    @default(now())
+
+  @@index([category])
+  @@index([userId])
+  @@index([teamId])
+  @@index([createdAt])
+  @@index([status])
+}

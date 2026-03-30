@@ -9,6 +9,7 @@ import { FileStorageType } from 'src/minio-client/file.model';
 import * as cheerio from 'cheerio';
 import { QuotaService } from 'src/quota/quota.service';
 import { QuotaType } from 'src/util/enums';
+import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
 export class ContentService {
@@ -18,6 +19,7 @@ export class ContentService {
         private configService: ConfigService,
         private httpService: HttpService,
         private quotaService: QuotaService,
+        private systemLogService: SystemLogService,
 
     ) { }
 
@@ -78,6 +80,18 @@ export class ContentService {
             console.log("Q&A content ingest started", body.type);
             await this.ingestContent(body, user);
         }
+
+        await this.systemLogService.createLog({
+            category: 'CONTENT',
+            action: 'CREATE',
+            status: 'SUCCESS',
+            userId: user.sub,
+            userEmail: user.email,
+            teamId: user.teamId,
+            entityId: body.botId,
+            entityName: body.type,
+            message: `Content created: ${body.type}`,
+        });
 
         return {
             message: "Content created successfully"
@@ -148,12 +162,37 @@ export class ContentService {
             const data = await this.deleteIngestedContent(botId, user, sourceId);
 
             console.log("deleted Vectors response", data);
+
+            await this.systemLogService.createLog({
+                category: 'CONTENT',
+                action: 'DELETE',
+                status: 'SUCCESS',
+                userId: user.sub,
+                userEmail: user.email,
+                teamId: user.teamId,
+                entityId: contentId,
+                entityName: content?.type,
+                message: `Content deleted: ${contentId}`,
+            });
+
             return {
                 message: "Content deleted successfully"
             }
 
         } catch (err) {
             console.log("deleteContent error", err);
+
+            await this.systemLogService.createLog({
+                category: 'CONTENT',
+                action: 'DELETE',
+                status: 'ERROR',
+                userId: user.sub,
+                userEmail: user.email,
+                teamId: user.teamId,
+                entityId: contentId,
+                message: `Content delete failed: ${err?.message || err}`,
+            });
+
             return {
                 message: "Error deleting content"
             }
@@ -315,11 +354,34 @@ export class ContentService {
             // Re-ingest the updated content
             await this.ingestQA(body, user);
 
+            await this.systemLogService.createLog({
+                category: 'CONTENT',
+                action: 'UPDATE',
+                status: 'SUCCESS',
+                userId: user.sub,
+                userEmail: user.email,
+                teamId: user.teamId,
+                entityId: body.contentId,
+                message: `Content edited: ${body.contentId}`,
+            });
+
             return {
                 message: "Content edited successfully"
             }
         } catch (err) {
             console.log("editContent error", err);
+
+            await this.systemLogService.createLog({
+                category: 'CONTENT',
+                action: 'UPDATE',
+                status: 'ERROR',
+                userId: user.sub,
+                userEmail: user.email,
+                teamId: user.teamId,
+                entityId: body.contentId,
+                message: `Content edit failed: ${err?.message || err}`,
+            });
+
             return {
                 message: "Error editing content"
             }

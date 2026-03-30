@@ -6,10 +6,14 @@ import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { UpdateIntegrationDto } from './dto/update-integration.dto';
 import { DeleteIntegrationDto } from './dto/delete-integration.dto';
 import { TestIntegrationDto } from './dto/test-integration.dto';
+import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
 export class IntegrationService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private systemLogService: SystemLogService,
+    ) { }
 
     async listIntegrations(teamId: string) {
         return this.prisma.integrations.findMany({
@@ -30,6 +34,17 @@ export class IntegrationService {
             });
 
             await this.syncMcpConfig(teamId);
+
+            await this.systemLogService.createLog({
+                category: 'INTEGRATION',
+                action: 'UPDATE',
+                status: 'SUCCESS',
+                teamId,
+                entityId: existing.id,
+                entityName: dto.type,
+                message: `Integration updated: ${dto.type}`,
+            });
+
             return updated;
         }
 
@@ -42,6 +57,16 @@ export class IntegrationService {
         });
 
         await this.syncMcpConfig(teamId);
+
+        await this.systemLogService.createLog({
+            category: 'INTEGRATION',
+            action: 'CREATE',
+            status: 'SUCCESS',
+            teamId,
+            entityId: created.id,
+            entityName: dto.type,
+            message: `Integration created: ${dto.type}`,
+        });
         return created;
     }
 
@@ -77,6 +102,15 @@ export class IntegrationService {
         });
 
         await this.syncMcpConfig(teamId);
+
+        await this.systemLogService.createLog({
+            category: 'INTEGRATION',
+            action: 'DELETE',
+            status: 'SUCCESS',
+            teamId,
+            entityId: dto.id,
+            message: `Integration deleted`,
+        });
 
         return { success: true };
     }

@@ -12,6 +12,7 @@ import { IngestRequest } from './dto/ingestRequest';
 import { IUser } from 'src/util/interfaces';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
+import { SystemLogService } from 'src/system-log/system-log.service';
 
 
 @Injectable()
@@ -22,6 +23,7 @@ export class FileService {
         private prisma: PrismaService,
         private httpService: HttpService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache,
+        private systemLogService: SystemLogService,
 
     ) { }
 
@@ -125,6 +127,21 @@ export class FileService {
                     }
                 }
             })
+
+            for (const file of files) {
+                await this.systemLogService.createLog({
+                    category: 'FILE',
+                    action: 'UPLOAD',
+                    status: 'SUCCESS',
+                    userId: user.sub,
+                    userEmail: user.email,
+                    teamId: user.teamId,
+                    entityId: body.botId,
+                    entityName: file.originalname,
+                    message: `File uploaded: ${file.originalname}`,
+                });
+            }
+
             return returnObject;
         }
         finally {

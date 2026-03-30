@@ -14,6 +14,7 @@ import { JwtService } from '@nestjs/jwt';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { MailService } from '../mail/mail.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
+import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
 export class BotService {
@@ -25,6 +26,7 @@ export class BotService {
     private subscriptionService: SubscriptionService,
     private mailService: MailService,
     private minioClientService: MinioClientService,
+    private systemLogService: SystemLogService,
   ) { }
 
   async createBot(body: CreateBotRequest) {
@@ -88,6 +90,16 @@ export class BotService {
             data: {
               used: botQuota.used + 1,
             },
+          });
+
+          await this.systemLogService.createLog({
+            category: 'BOT',
+            action: 'CREATE',
+            status: 'SUCCESS',
+            teamId: body.user,
+            entityId: bot.id,
+            entityName: body.botName,
+            message: `Bot created: ${body.botName}`,
           });
 
           return { message: 'Bot created' };
@@ -155,6 +167,16 @@ export class BotService {
         },
       });
     }
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'DELETE',
+      status: 'SUCCESS',
+      teamId: body.teamId,
+      entityId: body.botId,
+      entityName: bot.botName,
+      message: `Bot deleted: ${bot.botName}`,
+    });
 
     return { message: 'Bot deleted' };
   }
@@ -237,6 +259,14 @@ export class BotService {
       },
     });
 
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE',
+      status: 'SUCCESS',
+      entityId: botId,
+      message: `Bot settings updated`,
+    });
+
     return {
       message: 'Settings updated successfully',
       bot: updatedBot,
@@ -307,6 +337,15 @@ export class BotService {
     });
 
     if (bot) {
+      await this.systemLogService.createLog({
+        category: 'BOT',
+        action: 'UPDATE',
+        status: 'SUCCESS',
+        teamId: body.teamId,
+        entityId: body.botId,
+        entityName: body.name,
+        message: `Bot renamed/prompt updated: ${body.name}`,
+      });
       return { message: 'Bot name changed' };
     }
     throw new Error('Error changing bot name');

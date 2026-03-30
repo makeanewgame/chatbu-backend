@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import Stripe from 'stripe';
 import { ConfigService } from '@nestjs/config';
+import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
 export class SubscriptionService {
@@ -10,6 +11,7 @@ export class SubscriptionService {
     constructor(
         private prisma: PrismaService,
         private config: ConfigService,
+        private systemLogService: SystemLogService,
     ) {
         const stripeKey = this.config.get('STRIPE_SECRET_KEY');
         if (stripeKey) {
@@ -327,6 +329,16 @@ export class SubscriptionService {
         })
 
 
+        await this.systemLogService.createLog({
+            category: 'STRIPE',
+            action: 'SUBSCRIBE',
+            status: 'SUCCESS',
+            userId,
+            teamId,
+            message: `Premium subscription activated`,
+            details: { stripeSubscriptionId: stripeSubscription.id, billingInterval },
+        });
+
         return {
             success: true,
             message: 'Subscription activated successfully',
@@ -359,6 +371,14 @@ export class SubscriptionService {
             data: {
                 cancelAtPeriodEnd: true,
             },
+        });
+
+        await this.systemLogService.createLog({
+            category: 'STRIPE',
+            action: 'UNSUBSCRIBE',
+            status: 'SUCCESS',
+            userId,
+            message: `Subscription cancellation requested`,
         });
 
         return { message: 'Subscription will be cancelled at period end' };
@@ -495,6 +515,14 @@ export class SubscriptionService {
 
         if (remaining <= 0) {
             if (subscription.tier === 'FREE') {
+                await this.systemLogService.createLog({
+                    category: 'STRIPE',
+                    action: 'QUOTA_EXCEEDED',
+                    status: 'ERROR',
+                    userId,
+                    message: `Free token quota exceeded`,
+                    details: { tier: 'FREE', tokensUsed: subscription.tokensUsedThisMonth, limit: totalAvailable },
+                });
                 return {
                     allowed: false,
                     message: 'You have reached your token limit. Please upgrade to Premium to continue.',
