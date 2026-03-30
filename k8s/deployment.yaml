@@ -41,6 +41,8 @@ spec:
           value: "https://app.chatbu.io,https://chatbu.io"
         - name: INGEST_ENPOINT
           value: "http://fastapi-gateway-service.chatbu.svc.cluster.local:8000"
+        - name: MCP_API_GATEWAY_URL
+          value: "http://fastapi-gateway-service.chatbu.svc.cluster.local:8000"
         resources:
           requests:
             memory: "1Gi"
