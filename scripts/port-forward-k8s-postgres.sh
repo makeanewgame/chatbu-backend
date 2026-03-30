@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NAMESPACE="${1:-postgresql}"
-SERVICE_NAME="${2:-postgresql-service}"
+SERVICE_NAME="${2:-chatbu-postgres-rw}"
 LOCAL_PORT="${3:-5432}"
 REMOTE_PORT="${4:-5432}"
 

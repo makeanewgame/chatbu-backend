@@ -350,6 +350,17 @@ export class AuthenticationService {
     return true;
   }
   async login(email: string, password: string) {
+    const LOCK_KEY = `bf_lock:${email}`;
+    const ATTEMPTS_KEY = `bf_attempts:${email}`;
+    const MAX_ATTEMPTS = 5;
+    const LOCK_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+    const isLocked = await this.cacheManager.get(LOCK_KEY);
+    if (isLocked) {
+      this.logger.warn(`Blocked login attempt for locked account: ${email}`);
+      return { success: false, locked: true, retryAfter: 900 };
+    }
+
     const bcrypt = require('bcrypt');
 
     const findUser = await this.prisma.user.findFirst({
@@ -367,10 +378,23 @@ export class AuthenticationService {
       },
     });
 
-    if (!findUser) return null;
+    if (!findUser) {
+      const attempts: number = ((await this.cacheManager.get<number>(ATTEMPTS_KEY)) || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.cacheManager.set(LOCK_KEY, true, LOCK_TTL_MS);
+        await this.cacheManager.del(ATTEMPTS_KEY);
+        this.logger.warn(`Login locked for ${email} after ${MAX_ATTEMPTS} failed attempts`);
+        return { success: false, locked: true, retryAfter: 900 };
+      }
+      await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
+      return null;
+    }
 
     return await bcrypt.compare(password, findUser.password).then(async (result) => {
       if (result) {
+        await this.cacheManager.del(ATTEMPTS_KEY);
+        await this.cacheManager.del(LOCK_KEY);
+
         const { password, isDeleted, deletionScheduledFor, ...data } = findUser;
 
         // Check if account is scheduled for deletion
@@ -428,6 +452,14 @@ export class AuthenticationService {
         };
       }
 
+      const attempts: number = ((await this.cacheManager.get<number>(ATTEMPTS_KEY)) || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.cacheManager.set(LOCK_KEY, true, LOCK_TTL_MS);
+        await this.cacheManager.del(ATTEMPTS_KEY);
+        this.logger.warn(`Login locked for ${email} after ${MAX_ATTEMPTS} failed attempts`);
+        return { success: false, locked: true, retryAfter: 900 };
+      }
+      await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
       return new UnauthorizedException();
     });
   }

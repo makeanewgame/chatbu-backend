@@ -14,7 +14,7 @@ echo "[aws-dev] Preparing AWS-backed env..."
 npm run aws >/dev/null
 
 echo "[aws-dev] Starting Kubernetes PostgreSQL port-forward..."
-kubectl port-forward -n postgresql svc/postgresql-service 5432:5432 >/tmp/chatbu-backend-aws-db.log 2>&1 &
+kubectl port-forward -n postgresql svc/chatbu-postgres-rw 5432:5432 >/tmp/chatbu-backend-aws-db.log 2>&1 &
 PF_PID=$!
 
 echo "[aws-dev] Waiting for localhost:5432..."

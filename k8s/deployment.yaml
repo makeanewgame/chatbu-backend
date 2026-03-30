@@ -36,7 +36,7 @@ spec:
         - name: API_URL
           value: "http://backend.chatbu.svc.cluster.local:3001"
         - name: FRONTEND_URL
-          value: "https://chatbu.io"
+          value: "https://app.chatbu.io"
         - name: CORS_ORIGIN
           value: "https://app.chatbu.io,https://chatbu.io"
         - name: INGEST_ENPOINT

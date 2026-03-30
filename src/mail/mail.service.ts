@@ -85,7 +85,7 @@ export class MailService {
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to: email,
-      subject: 'Activate your account',
+      subject: lang === 'en' ? 'Reset your password' : 'Şifrenizi sıfırlayın',
       html: html,
     };
 
