@@ -15,6 +15,7 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { MailService } from '../mail/mail.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { ActionsService } from 'src/actions/actions.service';
 
 @Injectable()
 export class BotService {
@@ -27,6 +28,7 @@ export class BotService {
     private mailService: MailService,
     private minioClientService: MinioClientService,
     private systemLogService: SystemLogService,
+    private actionsService: ActionsService,
   ) { }
 
   async createBot(body: CreateBotRequest) {
@@ -456,6 +458,7 @@ export class BotService {
       // FastAPI'ye istek at - session_id FastAPI tarafından üretilir
       let data;
       try {
+        const availableActions = await this.actionsService.getResolvedActionDescriptions(botUser.id);
         const response = await firstValueFrom(
           this.httpService.post(`${ingestUrl}/chat`, {
             bot_cuid: botUser.id,
@@ -463,6 +466,7 @@ export class BotService {
             messages: [body.message],
             system_prompt: botUser.systemPrompt,
             session_id: body.chatId, // null veya mevcut session_id
+            available_actions: availableActions,
           })
         );
         data = response.data;
@@ -573,9 +577,19 @@ export class BotService {
 
       console.log("return data", data)
 
+      const matchedActions = await this.actionsService.matchAndProcess(
+        botUser.id,
+        body.message,
+        sessionId,
+      );
+
+      const fastapiActions = Array.isArray(data?.actions) ? data.actions : [];
+      const mergedActions = [...fastapiActions, ...matchedActions];
+
       return {
         ...data,
-        session_id: sessionId
+        session_id: sessionId,
+        actions: mergedActions,
       };
     }
     catch (error) {
@@ -709,6 +723,28 @@ export class BotService {
       control: true,
       token: token,
     }
+  }
+
+  async publicAuthStep(
+    embedToken: string,
+    actionId: string,
+    stepId: string,
+    stepData: Record<string, any>,
+    chatId: string,
+  ) {
+    let payload: any;
+    try {
+      payload = await this.jwtService.verifyAsync(embedToken, {
+        secret: this.configService.get('JWT_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired embed token');
+    }
+    if (payload.type !== 'embed') {
+      throw new UnauthorizedException('Invalid token type');
+    }
+
+    return this.actionsService.processAuthStep(actionId, stepId, stepData, chatId);
   }
 
   // async generateEmbedToken(

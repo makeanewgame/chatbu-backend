@@ -121,18 +121,19 @@ model Content {
 }
 
 model CustomerBots {
-  id           String    @id @default(cuid())
+  id           String      @id @default(cuid())
   teamId       String
   botName      String
   botAvatar    String
-  systemPrompt String    @default("")
+  systemPrompt String      @default("")
   settings     Json?
-  active       Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  isDeleted    Boolean   @default(false)
+  active       Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  isDeleted    Boolean     @default(false)
   deletedAt    DateTime?
-  team         Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team         Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  actions      BotAction[]
 }
 
 model CustomerChats {
@@ -373,6 +374,18 @@ enum LogCategory {
   AUTH
 }
 
+enum BotActionType {
+  LINK
+  PRODUCT_CARDS
+  AUTH_FLOW
+  WEBHOOK
+}
+
+enum BotActionTriggerType {
+  KEYWORD
+  INTENT
+}
+
 enum LogAction {
   CREATE
   UPDATE
@@ -413,4 +426,35 @@ model SystemLog {
   @@index([teamId])
   @@index([createdAt])
   @@index([status])
+}
+
+// -- Actions Feature --
+
+model BotAction {
+  id          String               @id @default(cuid())
+  botId       String
+  bot         CustomerBots         @relation(fields: [botId], references: [id], onDelete: Cascade)
+  name        String
+  type        BotActionType
+  triggerType BotActionTriggerType @default(KEYWORD)
+  keywords    String[]
+  config      Json
+  priority    Int                  @default(0)
+  isActive    Boolean              @default(true)
+  onError     String               @default("fallback")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([botId])
+}
+
+model ChatAuthSession {
+  id        String   @id @default(cuid())
+  chatId    String
+  botId     String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([chatId, botId])
 }

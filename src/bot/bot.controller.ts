@@ -340,6 +340,34 @@ export class BotController {
   }
   //#endregion
 
+  //#region publicAuthStep
+  @ApiOperation({ summary: 'Process an AUTH_FLOW step for an embedded bot' })
+  @ApiResponse({ status: 200, description: 'Next step or completion token' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string' },
+        actionId: { type: 'string' },
+        stepId: { type: 'string' },
+        stepData: { type: 'object' },
+        chatId: { type: 'string' },
+      },
+      required: ['token', 'actionId', 'stepId', 'stepData', 'chatId'],
+    },
+  })
+  @Post('embed/auth-step')
+  async publicAuthStep(@Body() body: any) {
+    return this.botService.publicAuthStep(
+      body.token,
+      body.actionId,
+      body.stepId,
+      body.stepData,
+      body.chatId,
+    );
+  }
+  //#endregion
+
   //#region checkIntegration
   @ApiOperation({ summary: 'Check bot integration' })
   @ApiResponse({
