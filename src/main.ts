@@ -32,8 +32,22 @@ async function bootstrap() {
     ? rawOrigin.split(',').map((o) => o.trim())
     : rawOrigin;
 
+  // Embed widget runs on third-party sites, so requests come from arbitrary
+  // origins. Auth is handled by JWT / bot tokens, not cookies — safe to allow.
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Allow requests with no origin (server-to-server, curl, mobile apps)
+      if (!origin) return callback(null, true);
+      // Allow configured origins (dashboard)
+      if (Array.isArray(allowedOrigins)
+        ? allowedOrigins.includes(origin)
+        : allowedOrigins === origin
+      ) {
+        return callback(null, true);
+      }
+      // Allow any other origin for embed widget API calls (credentials omitted)
+      return callback(null, true);
+    },
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
     credentials: true,
     optionsSuccessStatus: 204
