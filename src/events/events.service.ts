@@ -18,6 +18,7 @@ export class EventsService implements OnModuleInit {
         await this.client.connect();
         await this.client.query('LISTEN storage_updates');
         await this.client.query('LISTEN content_updates');
+        await this.client.query('LISTEN ingestion_task_updates');
 
         await this.client.on('notification', async (msg) => {
             const payload = JSON.parse(msg.payload);
@@ -38,6 +39,15 @@ export class EventsService implements OnModuleInit {
                 }
                 console.log('Received notification on content_updates:', payload);
                 await this.eventGateWay.notifyUser(payload.teamId, tempPayload);
+            }
+
+            if (msg.channel === 'ingestion_task_updates') {
+                const tempPayload = {
+                    type: 'ingestion_progress',
+                    data: [payload],
+                };
+                console.log('Received notification on ingestion_task_updates:', payload);
+                await this.eventGateWay.notifyUser(payload.customer_cuid, tempPayload);
             }
         });
 

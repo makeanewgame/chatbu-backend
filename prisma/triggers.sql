@@ -54,3 +54,33 @@ CREATE TRIGGER content_delete_trigger
 AFTER DELETE ON "Content"
 FOR EACH ROW
 EXECUTE FUNCTION notify_content_update();
+
+-- Ingestion task progress notification trigger
+CREATE OR REPLACE FUNCTION notify_ingestion_task_update()
+RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify('ingestion_task_updates', json_build_object(
+    'task_id', NEW.task_id,
+    'customer_cuid', NEW.customer_cuid,
+    'bot_cuid', NEW.bot_cuid,
+    'status', NEW.status,
+    'current_step', NEW.current_step,
+    'total_files', NEW.total_files,
+    'processed_files', NEW.processed_files,
+    'total_chunks', NEW.total_chunks,
+    'processed_chunks', NEW.processed_chunks,
+    'progress_pct', NEW.progress_pct,
+    'ingestion_type', NEW.ingestion_type,
+    'error_message', NEW.error_message
+  )::text);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS ingestion_task_update_trigger ON fastapi_ingestiontask;
+
+CREATE TRIGGER ingestion_task_update_trigger
+AFTER UPDATE ON fastapi_ingestiontask
+FOR EACH ROW
+WHEN (OLD IS DISTINCT FROM NEW)
+EXECUTE FUNCTION notify_ingestion_task_update();

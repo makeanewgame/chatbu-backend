@@ -179,13 +179,20 @@ model GeoLocation {
 }
 
 model fastapi_ingestiontask {
-  task_id       String   @id @db.VarChar
-  customer_cuid String   @db.VarChar
-  bot_cuid      String   @db.VarChar
-  status        String   @db.VarChar
-  error_message String?  @db.VarChar
-  created_at    DateTime @db.Timestamp(6)
-  updated_at    DateTime @db.Timestamp(6)
+  task_id          String   @id @db.VarChar
+  customer_cuid    String   @db.VarChar
+  bot_cuid         String   @db.VarChar
+  status           String   @db.VarChar
+  error_message    String?  @db.VarChar
+  current_step     String?  @db.VarChar
+  total_files      Int?     @default(0)
+  processed_files  Int?     @default(0)
+  total_chunks     Int?     @default(0)
+  processed_chunks Int?     @default(0)
+  progress_pct     Int?     @default(0)
+  ingestion_type   String?  @db.VarChar
+  created_at       DateTime @db.Timestamp(6)
+  updated_at       DateTime @db.Timestamp(6)
 
   @@index([bot_cuid], map: "ix_fastapi_ingestiontask_bot_cuid")
   @@index([customer_cuid], map: "ix_fastapi_ingestiontask_customer_cuid")
