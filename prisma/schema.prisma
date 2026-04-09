@@ -191,6 +191,7 @@ model fastapi_ingestiontask {
   processed_chunks Int?     @default(0)
   progress_pct     Int?     @default(0)
   ingestion_type   String?  @db.VarChar
+  tokens_consumed  Int?     @default(0)
   created_at       DateTime @db.Timestamp(6)
   updated_at       DateTime @db.Timestamp(6)
 
@@ -288,10 +289,16 @@ model TokenUsageLog {
   teamId         String?
   botId          String?
   chatId         String?
+  taskId         String?
+  operationType  String       @default("chat")
   tokensUsed     Int
   cost           Float
   createdAt      DateTime     @default(now())
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([operationType])
+  @@index([teamId])
+  @@index([createdAt])
 }
 
 model SystemSettings {

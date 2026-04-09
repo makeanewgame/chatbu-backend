@@ -71,7 +71,8 @@ BEGIN
     'processed_chunks', NEW.processed_chunks,
     'progress_pct', NEW.progress_pct,
     'ingestion_type', NEW.ingestion_type,
-    'error_message', NEW.error_message
+    'error_message', NEW.error_message,
+    'tokens_consumed', COALESCE(NEW.tokens_consumed, 0)
   )::text);
   RETURN NEW;
 END;

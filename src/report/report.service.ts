@@ -200,4 +200,50 @@ export class ReportService {
 
         return geoLocation;
     }
+
+    async getTokenUsageDetails(teamId: string, startDate?: string, endDate?: string, botId?: string, operationType?: string) {
+        const team = await this.prisma.team.findFirst({
+            where: { id: teamId },
+            select: { ownerId: true },
+        });
+
+        if (!team) {
+            return { logs: [], summary: {} };
+        }
+
+        const subscription = await this.prisma.subscription.findFirst({
+            where: { userId: team.ownerId },
+            select: { id: true },
+        });
+
+        if (!subscription) {
+            return { logs: [], summary: {} };
+        }
+
+        const where: any = { subscriptionId: subscription.id };
+
+        if (startDate || endDate) {
+            where.createdAt = {};
+            if (startDate) where.createdAt.gte = new Date(startDate);
+            if (endDate) where.createdAt.lte = new Date(endDate);
+        }
+        if (botId) where.botId = botId;
+        if (operationType) where.operationType = operationType;
+
+        const logs = await this.prisma.tokenUsageLog.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: 500,
+        });
+
+        // Summary by operation type
+        const summary = await this.prisma.tokenUsageLog.groupBy({
+            by: ['operationType'],
+            where: { subscriptionId: subscription.id },
+            _sum: { tokensUsed: true, cost: true },
+            _count: true,
+        });
+
+        return { logs, summary };
+    }
 }

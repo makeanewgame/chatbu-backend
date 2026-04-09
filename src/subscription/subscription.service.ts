@@ -561,7 +561,7 @@ export class SubscriptionService {
         };
     }
 
-    async trackTokenUsage(userId: string, tokensUsed: number, teamId?: string, botId?: string, chatId?: string) {
+    async trackTokenUsage(userId: string, tokensUsed: number, teamId?: string, botId?: string, chatId?: string, operationType: string = 'chat', taskId?: string) {
         const subscription = await this.prisma.subscription.findUnique({
             where: { userId },
         });
@@ -611,6 +611,8 @@ export class SubscriptionService {
                 teamId,
                 botId,
                 chatId,
+                taskId,
+                operationType,
                 tokensUsed,
                 cost,
             },

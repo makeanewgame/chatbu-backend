@@ -1,6 +1,6 @@
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ReportService } from './report.service';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { Request } from 'express';
 import { IUser } from 'src/util/interfaces';
@@ -100,6 +100,34 @@ export class ReportController {
     async getGeoLocations(@Req() req: Request) {
         const user = req.user as IUser;
         return this.reportService.getGeoLocations(user.teamId);
+    }
+    //#endregion
+
+    //#region token-usage-details
+    @ApiOperation({ summary: 'Get detailed token usage logs with breakdown by operation type' })
+    @ApiResponse({
+        status: 200,
+        description: 'Token usage details with summary',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiQuery({ name: 'startDate', required: false, type: String })
+    @ApiQuery({ name: 'endDate', required: false, type: String })
+    @ApiQuery({ name: 'botId', required: false, type: String })
+    @ApiQuery({ name: 'operationType', required: false, type: String })
+    @Get('token-usage/details')
+    @UseGuards(AccessTokenGuard)
+    async getTokenUsageDetails(
+        @Req() req: Request,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('botId') botId?: string,
+        @Query('operationType') operationType?: string,
+    ) {
+        const user = req.user as IUser;
+        return this.reportService.getTokenUsageDetails(user.teamId, startDate, endDate, botId, operationType);
     }
     //#endregion
 }

@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Client } from 'pg';
 import { EventsGateway } from './events.gateway';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { SubscriptionService } from 'src/subscription/subscription.service';
 
 @Injectable()
 export class EventsService implements OnModuleInit {
@@ -9,6 +10,7 @@ export class EventsService implements OnModuleInit {
     constructor(
         private eventGateWay: EventsGateway,
         private prisma: PrismaService,
+        private subscriptionService: SubscriptionService,
     ) { }
 
     private client = new Client({
@@ -49,6 +51,29 @@ export class EventsService implements OnModuleInit {
                 };
                 console.log('Received notification on ingestion_task_updates:', payload);
                 await this.eventGateWay.notifyUser(payload.customer_cuid, tempPayload);
+
+                // Track ingestion tokens when task completes
+                if (payload.status === 'completed' && payload.tokens_consumed > 0) {
+                    try {
+                        const team = await this.prisma.team.findUnique({
+                            where: { id: payload.customer_cuid },
+                        });
+                        if (team) {
+                            await this.subscriptionService.trackTokenUsage(
+                                team.ownerId,
+                                payload.tokens_consumed,
+                                payload.customer_cuid,
+                                payload.bot_cuid,
+                                undefined,
+                                'ingestion',
+                                payload.task_id,
+                            );
+                            console.log(`Tracked ${payload.tokens_consumed} ingestion tokens for team ${payload.customer_cuid}`);
+                        }
+                    } catch (e) {
+                        console.error('Failed to track ingestion tokens:', e);
+                    }
+                }
             }
         });
 
