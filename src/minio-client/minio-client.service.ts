@@ -43,12 +43,15 @@ export class MinioClientService {
         let filename = userId + '/' + botId + '/' + FileStorageType[file.mimetype] + '/' + hashedFileName + ext
         const fileName: string = `${filename}`;
         const fileBuffer = file.buffer;
-        this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err, exists) {
-            if (err) {
-                console.log(err)
-                throw new HttpException("Oops Something wrong happend", HttpStatus.BAD_REQUEST)
-            }
-            return exists
+        await new Promise<void>((resolve, reject) => {
+            this.client.putObject(baseBucket, fileName, fileBuffer, metaData, function (err) {
+                if (err) {
+                    console.log(err)
+                    reject(new HttpException("Oops Something wrong happend", HttpStatus.BAD_REQUEST))
+                } else {
+                    resolve()
+                }
+            })
         })
 
         return {

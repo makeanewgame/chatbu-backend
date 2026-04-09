@@ -1,12 +1,15 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Client } from 'pg';
-import { EventsModule } from './events.module';
 import { EventsGateway } from './events.gateway';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class EventsService implements OnModuleInit {
 
-    constructor(private eventGateWay: EventsGateway) { }
+    constructor(
+        private eventGateWay: EventsGateway,
+        private prisma: PrismaService,
+    ) { }
 
     private client = new Client({
         connectionString: process.env.DATABASE_URL,
@@ -24,21 +27,19 @@ export class EventsService implements OnModuleInit {
             const payload = JSON.parse(msg.payload);
 
             if (msg.channel === 'storage_updates') {
-                const tempPayload = {
-                    type: 'file',
-                    data: [payload],
-                }
                 console.log('Received notification on storage_updates:', payload);
-                await this.eventGateWay.notifyUser(payload.teamId, tempPayload);
+                const record = await this.prisma.storage.findUnique({ where: { id: payload.id }, select: { teamId: true } });
+                if (!record?.teamId) return;
+                const tempPayload = { type: 'file', data: [payload] };
+                await this.eventGateWay.notifyUser(record.teamId, tempPayload);
             }
 
             if (msg.channel === 'content_updates') {
-                const tempPayload = {
-                    type: 'content',
-                    data: [payload],
-                }
                 console.log('Received notification on content_updates:', payload);
-                await this.eventGateWay.notifyUser(payload.teamId, tempPayload);
+                const record = await this.prisma.content.findUnique({ where: { id: payload.id }, select: { teamId: true } });
+                if (!record?.teamId) return;
+                const tempPayload = { type: 'content', data: [payload] };
+                await this.eventGateWay.notifyUser(record.teamId, tempPayload);
             }
 
             if (msg.channel === 'ingestion_task_updates') {

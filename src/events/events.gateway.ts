@@ -1,36 +1,23 @@
-import { Inject } from '@nestjs/common';
 import { ConnectedSocket, MessageBody, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Socket, Server } from 'socket.io';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
-import { cli } from 'winston/lib/winston/config';
 
 
 
-@WebSocketGateway(3002, { namespace: 'events', path: '/events', cors: true })
+@WebSocketGateway(3002, { path: '/events', cors: true })
 export class EventsGateway {
   @WebSocketServer()
   server: Server;
 
-  constructor(
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
-  ) { }
-
   async handleConnection(client: Socket) {
     const teamId = client.handshake.query.teamId as string;
     if (teamId) {
-      await this.cacheManager.set(`user_socket:${teamId}`, client.id, 0); // TTL: sonsuz
+      client.join(teamId);
       client.emit('message', { msg: 'connecting chatbu...' });
-      // console.log(`User ${userId} connected with socket ${client.id}`);
     }
   }
 
-  async handleDisconnect(client: Socket) {
-    const teamId = client.handshake.query.teamId as string;
-    // console.log(`User ${userId} disconnected from socket ${client.id}`);
-    if (teamId) {
-      await this.cacheManager.del(`user_socket:${teamId}`);
-    }
+  async handleDisconnect(_client: Socket) {
+    // socket.io removes the client from all rooms automatically on disconnect
   }
 
   @SubscribeMessage('ping')
@@ -40,9 +27,6 @@ export class EventsGateway {
 
   // Storage listener tarafından çağrılır
   async notifyUser(teamId: string, payload: any) {
-    const socketId = await this.cacheManager.get<string>(`user_socket:${teamId}`);
-    if (socketId) {
-      this.server.to(socketId).emit('message', payload);
-    }
+    this.server.to(teamId).emit('message', payload);
   }
 }

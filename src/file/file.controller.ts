@@ -200,6 +200,19 @@ export class FileController {
     }
     //#endregion
 
+    //#region getIngestionProgress
+    @ApiOperation({ summary: 'Get active ingestion task progress for a bot' })
+    @ApiResponse({ status: 200, description: 'Current ingestion task or null' })
+    @ApiBearerAuth()
+    @Get('ingestionProgress')
+    @UseGuards(AccessTokenGuard)
+    async getIngestionProgress(@Req() req: Request) {
+        const user = req.user as IUser;
+        const { botId } = req.query;
+        return await this.fileService.getIngestionProgress(user, botId as string);
+    }
+    //#endregion
+
     //#region fileCheck
     @ApiOperation({ summary: 'Check if a file is already uploaded by its hash and file name' })
     @ApiResponse({

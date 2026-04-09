@@ -565,6 +565,18 @@ export class FileService {
 
     }
 
+    async getIngestionProgress(user: IUser, botId: string) {
+        const task = await (this.prisma as any).fastapi_ingestiontask.findFirst({
+            where: {
+                bot_cuid: botId,
+                customer_cuid: user.teamId,
+                status: { notIn: ['completed', 'failed'] },
+            },
+            orderBy: { updated_at: 'desc' },
+        });
+        return task ?? null;
+    }
+
     async test() {
         return "1test"
     }
