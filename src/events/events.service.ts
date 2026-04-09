@@ -17,6 +17,9 @@ export class EventsService implements OnModuleInit {
         connectionString: process.env.DATABASE_URL,
     });
 
+    // Prevent duplicate token tracking for the same ingestion task
+    private trackedTaskIds = new Set<string>();
+
 
     async onModuleInit() {
         console.log('EventsService initializing...');
@@ -52,8 +55,9 @@ export class EventsService implements OnModuleInit {
                 console.log('Received notification on ingestion_task_updates:', payload);
                 await this.eventGateWay.notifyUser(payload.customer_cuid, tempPayload);
 
-                // Track ingestion tokens when task completes
-                if (payload.status === 'completed' && payload.tokens_consumed > 0) {
+                // Track ingestion tokens when task completes (deduplicate by task_id)
+                if (payload.status === 'completed' && payload.tokens_consumed > 0 && !this.trackedTaskIds.has(payload.task_id)) {
+                    this.trackedTaskIds.add(payload.task_id);
                     try {
                         const team = await this.prisma.team.findUnique({
                             where: { id: payload.customer_cuid },
@@ -72,6 +76,7 @@ export class EventsService implements OnModuleInit {
                         }
                     } catch (e) {
                         console.error('Failed to track ingestion tokens:', e);
+                        this.trackedTaskIds.delete(payload.task_id);
                     }
                 }
             }
