@@ -24,6 +24,7 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { TicketModule } from './ticket/ticket.module';
 import { IntegrationModule } from './integration/integration.module';
 import { SystemLogModule } from './system-log/system-log.module';
+import { MetaModule } from './meta/meta.module';
 
 @Module({
   imports: [
@@ -41,7 +42,7 @@ import { SystemLogModule } from './system-log/system-log.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule],
   controllers: [AppController],
   providers: [AppService],
 })

@@ -11,6 +11,7 @@ import { MinioClientModule } from 'src/minio-client/minio-client.module';
 @Module({
   imports: [PrismaModule, HttpModule, JwtModule, SubscriptionModule, MailModule, MinioClientModule],
   controllers: [BotController],
-  providers: [BotService]
+  providers: [BotService],
+  exports: [BotService],
 })
 export class BotModule { }
