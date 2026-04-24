@@ -348,6 +348,67 @@ export class AdminService {
         return { message: 'Phone verified successfully' };
     }
 
+    async getUserTeamQuotas(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        const team = await this.prisma.team.findFirst({
+            where: { ownerId: userId },
+            include: {
+                Quota: true,
+            },
+        });
+
+        if (!team) {
+            return { teamId: null, quotas: [] };
+        }
+
+        return { teamId: team.id, quotas: team.Quota };
+    }
+
+    async updateUserQuota(userId: string, quotaType: 'BOT' | 'TOKEN', limit: number) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { id: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException('User not found');
+        }
+
+        const team = await this.prisma.team.findFirst({
+            where: { ownerId: userId },
+        });
+
+        if (!team) {
+            throw new NotFoundException('User does not have a team');
+        }
+
+        const quota = await this.prisma.quota.upsert({
+            where: {
+                teamId_quotaType: {
+                    teamId: team.id,
+                    quotaType,
+                },
+            },
+            update: { limit },
+            create: {
+                teamId: team.id,
+                quotaType,
+                limit,
+                used: 0,
+            },
+        });
+
+        return { message: 'Quota updated successfully', quota };
+    }
+
     async getAllChatbots(dto: GetAllChatbotsDto) {
         const { page = 1, limit = 20, search, includeDeleted = true } = dto;
         const skip = (page - 1) * limit;

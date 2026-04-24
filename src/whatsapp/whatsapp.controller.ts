@@ -8,7 +8,7 @@ import { WhatsAppService } from './whatsapp.service';
 export class WhatsAppController {
     private readonly logger = new Logger(WhatsAppController.name);
 
-    constructor(private readonly whatsappService: WhatsAppService) {}
+    constructor(private readonly whatsappService: WhatsAppService) { }
 
     @ApiOperation({ summary: 'WhatsApp webhook verification (GET hub.challenge)' })
     @Get('webhook')

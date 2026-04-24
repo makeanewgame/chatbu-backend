@@ -10,7 +10,7 @@ export class WhatsAppService {
     constructor(
         private prisma: PrismaService,
         private botService: BotService,
-    ) {}
+    ) { }
 
     async verifyWebhook(mode: string, verifyToken: string, challenge: string): Promise<string> {
         if (mode !== 'subscribe') {

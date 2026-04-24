@@ -29,6 +29,7 @@ import { GetAllTeamsDto } from './dto/getAllTeams.dto';
 import { GetAllUsersDto } from './dto/getAllUsers.dto';
 import { UpdateUserDto } from './dto/updateUser.dto';
 import { UpdateUserPasswordDto } from './dto/updateUserPassword.dto';
+import { UpdateUserQuotaDto } from './dto/updateUserQuota.dto';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -206,6 +207,29 @@ export class AdminController {
     @Patch('users/:id/verify-phone')
     async verifyUserPhone(@Param('id') id: string) {
         return this.adminService.verifyUserPhone(id);
+    }
+    //#endregion
+
+    //#region getUserTeamQuotas
+    @ApiOperation({ summary: 'Get quota limits for a user\'s primary team (Admin only)' })
+    @ApiResponse({ status: 200, description: 'Quotas retrieved successfully' })
+    @ApiResponse({ status: 404, description: 'User not found' })
+    @ApiParam({ name: 'id', type: String, description: 'User ID' })
+    @Get('users/:id/quotas')
+    async getUserTeamQuotas(@Param('id') id: string) {
+        return this.adminService.getUserTeamQuotas(id);
+    }
+    //#endregion
+
+    //#region updateUserQuota
+    @ApiOperation({ summary: 'Update BOT or TOKEN quota limit for a user\'s primary team (Admin only)' })
+    @ApiResponse({ status: 200, description: 'Quota updated successfully' })
+    @ApiResponse({ status: 404, description: 'User or team not found' })
+    @ApiParam({ name: 'id', type: String, description: 'User ID' })
+    @ApiBody({ type: UpdateUserQuotaDto })
+    @Patch('users/:id/quota')
+    async updateUserQuota(@Param('id') id: string, @Body() dto: UpdateUserQuotaDto) {
+        return this.adminService.updateUserQuota(id, dto.quotaType, dto.limit);
     }
     //#endregion
 
