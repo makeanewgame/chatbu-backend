@@ -61,7 +61,9 @@ export class BillingService {
         }
 
         // Reset monthly usage for new period
-        const stripeSubscription = await this.stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+        const stripeSubscription = await this.stripe.subscriptions.retrieve(subscription.stripeSubscriptionId, {
+            expand: ['items.data.price'],
+        });
         const currentPeriodStart = (stripeSubscription as any).current_period_start
             ? new Date((stripeSubscription as any).current_period_start * 1000)
             : new Date();
@@ -79,6 +81,95 @@ export class BillingService {
                 currentPeriodEnd,
             },
         });
+
+        // ── Fiyat geçiş mantığı ────────────────────────────────────────────
+        await this.applyScheduledPriceMigration(subscription, stripeSubscription, currentPeriodStart, currentPeriodEnd);
+    }
+
+    /**
+     * Eğer abonelik için scheduled fiyat geçişi varsa uygular.
+     *
+     * Token fiyatı: Her billing döneminde (aylık/yıllık) güncellenir.
+     * Base fiyatı:
+     *   - Aylık abone → her payment_succeeded'de güncellenir.
+     *   - Yıllık abone → yalnızca yıllık dönem yenilendiğinde güncellenir
+     *     (currentPeriodEnd - currentPeriodStart ≥ 350 gün).
+     */
+    private async applyScheduledPriceMigration(
+        subscription: any,
+        stripeSubscription: Stripe.Subscription,
+        currentPeriodStart: Date,
+        currentPeriodEnd: Date,
+    ) {
+        const hasScheduledBase = !!subscription.scheduledPricePlanId;
+        const hasScheduledToken = !!subscription.scheduledTokenPlanId;
+
+        if (!hasScheduledBase && !hasScheduledToken) return;
+
+        const isYearly = subscription.billingInterval === 'yearly';
+        const periodDays = (currentPeriodEnd.getTime() - currentPeriodStart.getTime()) / (1000 * 60 * 60 * 24);
+        const isYearlyRenewal = periodDays >= 350;
+
+        const shouldMigrateBase = hasScheduledBase && (!isYearly || isYearlyRenewal);
+        const shouldMigrateToken = hasScheduledToken; // Her zaman
+
+        if (!shouldMigrateBase && !shouldMigrateToken) {
+            this.logger.log(`Skipping base price migration for yearly subscriber ${subscription.userId} — not a yearly renewal`);
+            return;
+        }
+
+        try {
+            const newDbUpdates: any = {};
+
+            if (shouldMigrateBase) {
+                const newBasePlan = await this.prisma.pricePlan.findUnique({
+                    where: { id: subscription.scheduledPricePlanId },
+                });
+                if (newBasePlan?.stripePriceId) {
+                    const baseItem = stripeSubscription.items.data.find(
+                        (item) => item.price.recurring?.usage_type === 'licensed',
+                    );
+                    if (baseItem) {
+                        await this.stripe.subscriptionItems.update(baseItem.id, {
+                            price: newBasePlan.stripePriceId,
+                            proration_behavior: 'none',
+                        });
+                        this.logger.log(`Migrated base price for user ${subscription.userId} → ${newBasePlan.stripePriceId}`);
+                    }
+                    newDbUpdates.activePricePlanId = subscription.scheduledPricePlanId;
+                    newDbUpdates.scheduledPricePlanId = null;
+                }
+            }
+
+            if (shouldMigrateToken) {
+                const newTokenPlan = await this.prisma.pricePlan.findUnique({
+                    where: { id: subscription.scheduledTokenPlanId },
+                });
+                if (newTokenPlan?.stripePriceId) {
+                    const tokenItem = stripeSubscription.items.data.find(
+                        (item) => item.price.recurring?.usage_type === 'metered',
+                    );
+                    if (tokenItem) {
+                        await this.stripe.subscriptionItems.update(tokenItem.id, {
+                            price: newTokenPlan.stripePriceId,
+                            proration_behavior: 'none',
+                        });
+                        this.logger.log(`Migrated token price for user ${subscription.userId} → ${newTokenPlan.stripePriceId}`);
+                    }
+                    newDbUpdates.tokenPricePlanId = subscription.scheduledTokenPlanId;
+                    newDbUpdates.scheduledTokenPlanId = null;
+                }
+            }
+
+            if (Object.keys(newDbUpdates).length > 0) {
+                await this.prisma.subscription.update({
+                    where: { id: subscription.id },
+                    data: newDbUpdates,
+                });
+            }
+        } catch (err) {
+            this.logger.error(`Price migration failed for user ${subscription.userId}:`, err);
+        }
     }
 
     private async handlePaymentFailed(invoice: Stripe.Invoice) {

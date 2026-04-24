@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import Stripe from 'stripe';
 import { ConfigService } from '@nestjs/config';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { PricePlanService } from './price-plan.service';
+import { StripeBootstrapService } from './stripe-bootstrap.service';
 
 @Injectable()
 export class SubscriptionService {
@@ -12,6 +14,8 @@ export class SubscriptionService {
         private prisma: PrismaService,
         private config: ConfigService,
         private systemLogService: SystemLogService,
+        private pricePlanService: PricePlanService,
+        private stripeBootstrap: StripeBootstrapService,
     ) {
         const stripeKey = this.config.get('STRIPE_SECRET_KEY');
         if (stripeKey) {
@@ -252,8 +256,8 @@ export class SubscriptionService {
 
         // Get predefined price IDs - default to monthly
         const billingInterval = paymentIntent.metadata?.billingInterval as 'monthly' | 'yearly' || 'monthly';
-        const basePriceId = this.getBasePriceId(billingInterval);
-        const meteredPriceId = this.getMeteredPriceId(billingInterval);
+        const basePriceId = await this.getBasePriceId(billingInterval);
+        const meteredPriceId = await this.getMeteredPriceId();
 
         // Calculate billing cycle anchor (next period start)
         // User already paid for the first period via payment intent
@@ -287,6 +291,11 @@ export class SubscriptionService {
             : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
         // Update subscription to PREMIUM
+        const [activePlan, tokenPlan] = await Promise.all([
+            this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: billingInterval === 'yearly' ? 'YEARLY_BASE' : 'MONTHLY_BASE' } }),
+            this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: 'TOKEN_METERED' } }),
+        ]);
+
         await this.prisma.subscription.update({
             where: { userId },
             data: {
@@ -298,6 +307,9 @@ export class SubscriptionService {
                 currentPeriodEnd,
                 monthlyTokenAllocation: await this.getPremiumTokenLimit(),
                 tokensUsedThisMonth: 0,
+                billingInterval,
+                activePricePlanId: activePlan?.id ?? null,
+                tokenPricePlanId: tokenPlan?.id ?? null,
             },
         });
 
@@ -599,7 +611,7 @@ export class SubscriptionService {
 
                 // Report usage to Stripe if there's overage and spending limit is set
                 if (subscription.spendingLimit && subscription.stripeSubscriptionId) {
-                    await this.reportUsageToStripe(subscription.stripeSubscriptionId, overageTokens, cost);
+                    await this.reportUsageToStripe(subscription.stripeSubscriptionId, subscription.stripeCustomerId, overageTokens, cost);
                 }
             }
         }
@@ -626,39 +638,27 @@ export class SubscriptionService {
         };
     }
 
-    private async reportUsageToStripe(subscriptionId: string, tokensUsed: number, cost: number) {
+    private async reportUsageToStripe(subscriptionId: string, stripeCustomerId: string, tokensUsed: number, cost: number) {
         try {
-            const stripeSubscription = await this.stripe.subscriptions.retrieve(subscriptionId, {
-                expand: ['items.data.price']
-            });
-
-            // Find the metered price item (should already exist from subscription creation)
-            // Check both monthly and yearly metered price IDs
-            const monthlyMeteredPriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY_METERED');
-            const yearlyMeteredPriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY_METERED');
-            const usageItem = stripeSubscription.items.data.find(item =>
-                item.price.id === monthlyMeteredPriceId ||
-                item.price.id === yearlyMeteredPriceId ||
-                item.price.recurring?.usage_type === 'metered'
-            );
-
-            if (!usageItem) {
-                // This shouldn't happen if subscription was created correctly
-                console.error('Metered price item not found in subscription. Skipping usage report.');
+            if (!stripeCustomerId) {
+                console.error('No Stripe customer ID — skipping usage report.');
                 return;
             }
 
-            // Report usage (in units of 1000 tokens as defined in Stripe price)
-            await (this.stripe.subscriptionItems as any).createUsageRecord(
-                usageItem.id,
-                {
-                    quantity: Math.ceil(tokensUsed / 1000),
-                    timestamp: Math.floor(Date.now() / 1000),
-                    action: 'increment',
-                }
-            );
+            const eventName = this.stripeBootstrap.getTokenMeterEventName();
+            const units = Math.ceil(tokensUsed / 1000);
 
-            console.log(`✓ Reported ${tokensUsed} tokens (${Math.ceil(tokensUsed / 1000)} units) to Stripe for subscription ${subscriptionId}`);
+            // Yeni Billing Meters API: usage_type: 'metered' yerine meterEvents kullanılır
+            await (this.stripe.billing as any).meterEvents.create({
+                event_name: eventName,
+                payload: {
+                    value: String(units),
+                    stripe_customer_id: stripeCustomerId,
+                },
+                timestamp: Math.floor(Date.now() / 1000),
+            });
+
+            console.log(`✓ Reported ${tokensUsed} tokens (${units} units) to Stripe meter "${eventName}" for customer ${stripeCustomerId}`);
         } catch (error) {
             console.error('✗ Error reporting usage to Stripe:', error);
             // Don't throw - token usage is still logged locally in TokenUsageLog
@@ -720,61 +720,48 @@ export class SubscriptionService {
         return subscriptionWithLogs.tokenUsageLogs.reduce((sum, log) => sum + log.cost, 0);
     }
 
-    private getBasePriceId(billingInterval: 'monthly' | 'yearly'): string {
-        const priceId = billingInterval === 'yearly'
-            ? this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY')
-            : this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY');
-
-        if (!priceId) {
-            throw new Error(`Stripe ${billingInterval} base price ID not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID_${billingInterval.toUpperCase()} in .env`);
-        }
-
-        return priceId;
+    private async getBasePriceId(billingInterval: 'monthly' | 'yearly'): Promise<string> {
+        const planType = billingInterval === 'yearly' ? 'YEARLY_BASE' : 'MONTHLY_BASE';
+        return this.pricePlanService.getActivePriceId(planType);
     }
 
-    private getMeteredPriceId(billingInterval: 'monthly' | 'yearly'): string {
-        const priceId = billingInterval === 'yearly'
-            ? this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY_METERED')
-            : this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY_METERED');
-
-        if (!priceId) {
-            throw new Error(`Stripe ${billingInterval} metered price ID not configured. Please set STRIPE_PREMIUM_BASE_PRICE_ID_${billingInterval.toUpperCase()}_METERED in .env`);
-        }
-
-        return priceId;
+    private async getMeteredPriceId(): Promise<string> {
+        return this.pricePlanService.getActivePriceId('TOKEN_METERED');
     }
 
     async getPricingInfo() {
         try {
-            const monthlyBasePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_MONTHLY');
-            const yearlyBasePriceId = this.config.get('STRIPE_PREMIUM_BASE_PRICE_ID_YEARLY');
-
-            if (!monthlyBasePriceId || !yearlyBasePriceId) {
-                throw new Error('Stripe price IDs not configured');
-            }
-
-            // Fetch price details from Stripe
-            const [monthlyPrice, yearlyPrice] = await Promise.all([
-                this.stripe.prices.retrieve(monthlyBasePriceId, { expand: ['currency_options'] }),
-                this.stripe.prices.retrieve(yearlyBasePriceId, { expand: ['currency_options'] }),
+            const [monthlyPlan, yearlyPlan, tokenPlan] = await Promise.all([
+                this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: 'MONTHLY_BASE' } }),
+                this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: 'YEARLY_BASE' } }),
+                this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: 'TOKEN_METERED' } }),
             ]);
+
+            if (!monthlyPlan || !yearlyPlan) {
+                throw new Error('Active price plans not configured');
+            }
 
             return {
                 monthly: {
-                    priceId: monthlyPrice.id,
-                    amount: monthlyPrice.unit_amount,
-                    currency: monthlyPrice.currency,
-                    currencyOptions: monthlyPrice.currency_options || {},
+                    priceId: monthlyPlan.stripePriceId,
+                    amountUsd: monthlyPlan.amountUsd,
+                    amountTry: monthlyPlan.amountTry,
+                    exchangeRate: monthlyPlan.exchangeRate,
                 },
                 yearly: {
-                    priceId: yearlyPrice.id,
-                    amount: yearlyPrice.unit_amount,
-                    currency: yearlyPrice.currency,
-                    currencyOptions: yearlyPrice.currency_options || {},
+                    priceId: yearlyPlan.stripePriceId,
+                    amountUsd: yearlyPlan.amountUsd,
+                    amountTry: yearlyPlan.amountTry,
+                    exchangeRate: yearlyPlan.exchangeRate,
                 },
+                token: tokenPlan ? {
+                    priceId: tokenPlan.stripePriceId,
+                    amountUsd: tokenPlan.amountUsd,
+                    amountTry: tokenPlan.amountTry,
+                } : null,
             };
         } catch (error) {
-            console.error('Error fetching pricing info from Stripe:', error);
+            console.error('Error fetching pricing info:', error);
             throw new Error('Failed to fetch pricing information');
         }
     }
