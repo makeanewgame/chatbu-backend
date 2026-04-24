@@ -33,7 +33,9 @@ export class IntegrationService {
                 data: { config: dto.config },
             });
 
-            await this.syncMcpConfig(teamId);
+            if (this.isMcpRelevantType(dto.type)) {
+                await this.syncMcpConfig(teamId);
+            }
 
             await this.systemLogService.createLog({
                 category: 'INTEGRATION',
@@ -56,7 +58,9 @@ export class IntegrationService {
             },
         });
 
-        await this.syncMcpConfig(teamId);
+        if (this.isMcpRelevantType(dto.type)) {
+            await this.syncMcpConfig(teamId);
+        }
 
         await this.systemLogService.createLog({
             category: 'INTEGRATION',
@@ -84,7 +88,9 @@ export class IntegrationService {
             data: { config: dto.config },
         });
 
-        await this.syncMcpConfig(teamId);
+        if (this.isMcpRelevantType(existing.type)) {
+            await this.syncMcpConfig(teamId);
+        }
         return updated;
     }
 
@@ -101,7 +107,9 @@ export class IntegrationService {
             where: { id: dto.id },
         });
 
-        await this.syncMcpConfig(teamId);
+        if (this.isMcpRelevantType(existing.type)) {
+            await this.syncMcpConfig(teamId);
+        }
 
         await this.systemLogService.createLog({
             category: 'INTEGRATION',
@@ -192,6 +200,10 @@ export class IntegrationService {
         return ['mysql', 'postgresql', 'oracle', 'mssql', 'mongodb'].includes(type);
     }
 
+    private isMcpRelevantType(type: string): boolean {
+        return this.isDatabaseType(type) || type === 'whatsapp';
+    }
+
     private buildMcpPayload(teamId: string, integrations: Array<{ type: string; config?: Prisma.JsonValue }>) {
         const databases: Record<string, any> = {};
         const apiIntegrations: Record<string, any> = {};
@@ -259,7 +271,8 @@ export class IntegrationService {
                 await axios.delete(`${baseUrl}/api/v1/customers/${teamId}`, { timeout: 10000 });
             } catch (error) {
                 const axiosError = error as AxiosError;
-                if (axiosError.response?.status !== 404) {
+                // Only throw on real HTTP errors (not 404). Network errors (ECONNREFUSED) have no response.
+                if (axiosError.response && axiosError.response.status !== 404) {
                     throw new InternalServerErrorException('MCP config delete failed');
                 }
             }
@@ -272,12 +285,23 @@ export class IntegrationService {
             await axios.post(`${baseUrl}/api/v1/customers`, payload, { timeout: 10000 });
         } catch (error) {
             const axiosError = error as AxiosError;
+
+            // Network error (ECONNREFUSED, timeout, etc.) — MCP gateway unreachable, skip silently.
+            if (!axiosError.response) {
+                console.warn('MCP gateway unreachable, skipping sync:', axiosError.message);
+                return;
+            }
+
             if (this.isConflictError(axiosError)) {
                 try {
                     await axios.put(`${baseUrl}/api/v1/customers/${teamId}`, payload, { timeout: 10000 });
                     return;
                 } catch (updateError) {
-
+                    const updateAxiosError = updateError as AxiosError;
+                    if (!updateAxiosError.response) {
+                        console.warn('MCP gateway unreachable during update, skipping sync:', updateAxiosError.message);
+                        return;
+                    }
                     console.log(updateError);
                     throw new InternalServerErrorException('MCP config update failed', updateError instanceof Error ? updateError.message : undefined);
                 }

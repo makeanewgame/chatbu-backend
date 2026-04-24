@@ -9,7 +9,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
 
 const INTEGRATION_TYPE = 'google-calendar';
-const SCOPES = ['https://www.googleapis.com/auth/calendar'];
+const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
 
 @Injectable()

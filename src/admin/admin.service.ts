@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from 'src/prisma/prisma.service';
 import { GetAllUsersDto } from './dto/getAllUsers.dto';
 import { UpdateUserDto } from './dto/updateUser.dto';
+import { CreateAdminUserDto } from './dto/createAdminUser.dto';
 import { GetAllTeamsDto } from './dto/getAllTeams.dto';
 import { GetAllChatbotsDto } from './dto/getAllChatbots.dto';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
@@ -148,6 +149,76 @@ export class AdminService {
             page,
             limit,
             totalPages: Math.ceil(total / limit),
+        };
+    }
+
+    async createUser(dto: CreateAdminUserDto) {
+        const existing = await this.prisma.user.findUnique({
+            where: { email: dto.email },
+        });
+
+        if (existing) {
+            throw new BadRequestException('Email already in use');
+        }
+
+        const hashedPassword = await bcrypt.hash(dto.password, 10);
+
+        const createdUser = await this.prisma.user.create({
+            data: {
+                name: dto.name,
+                email: dto.email,
+                password: hashedPassword,
+                phoneNumber: dto.phoneNumber || null,
+                role: dto.role || 'USER',
+                emailVerified: true,
+                phoneVerified: false,
+                termsAccepted: true,
+                termsAcceptedAt: new Date(),
+                verifiedAt: new Date(),
+            },
+        });
+
+        // Create a default team for the new user
+        const defaultTeam = await this.prisma.team.create({
+            data: {
+                name: `${dto.name}'s Team`,
+                ownerId: createdUser.id,
+            },
+        });
+
+        // Create team member record for the owner
+        await this.prisma.teamMember.create({
+            data: {
+                teamId: defaultTeam.id,
+                userId: createdUser.id,
+                role: 'TEAM_OWNER',
+                status: 'active',
+            },
+        });
+
+        // Determine bot limit from system settings (fallback: 1)
+        const freeBotLimitSetting = await this.prisma.systemSettings.findUnique({
+            where: { key: 'FREE_BOT_LIMIT' },
+        });
+        const botLimit = freeBotLimitSetting ? parseInt(freeBotLimitSetting.value) : 1;
+
+        // Create default quotas
+        await this.prisma.quota.createMany({
+            data: [
+                { teamId: defaultTeam.id, quotaType: 'BOT', limit: botLimit, used: 0 },
+                { teamId: defaultTeam.id, quotaType: 'FILE', limit: 100, used: 0 },
+                { teamId: defaultTeam.id, quotaType: 'TOKEN', limit: 0, used: 0 },
+            ],
+        });
+
+        return {
+            message: 'User created successfully',
+            user: {
+                id: createdUser.id,
+                name: createdUser.name,
+                email: createdUser.email,
+                role: createdUser.role,
+            },
         };
     }
 

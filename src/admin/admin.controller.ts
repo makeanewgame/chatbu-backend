@@ -30,6 +30,7 @@ import { GetAllUsersDto } from './dto/getAllUsers.dto';
 import { UpdateUserDto } from './dto/updateUser.dto';
 import { UpdateUserPasswordDto } from './dto/updateUserPassword.dto';
 import { UpdateUserQuotaDto } from './dto/updateUserQuota.dto';
+import { CreateAdminUserDto } from './dto/createAdminUser.dto';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -70,6 +71,18 @@ export class AdminController {
     @Get('users')
     async getAllUsers(@Query() query: GetAllUsersDto) {
         return this.adminService.getAllUsers(query);
+    }
+    //#endregion
+
+    //#region createUser
+    @ApiOperation({ summary: 'Create a new user (Admin only)' })
+    @ApiResponse({ status: 201, description: 'User created successfully' })
+    @ApiBadRequestResponse({ description: 'Email already in use or validation error' })
+    @ApiBody({ type: CreateAdminUserDto })
+    @Post('users')
+    @HttpCode(HttpStatus.CREATED)
+    async createUser(@Body() dto: CreateAdminUserDto) {
+        return this.adminService.createUser(dto);
     }
     //#endregion
 
