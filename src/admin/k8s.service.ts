@@ -13,8 +13,10 @@ const CA_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt';
 const SERVICE_MAP: Record<string, { deployment: string; labelSelector: string } | null> = {
     'fastapi-gateway': { deployment: 'fastapi-gateway', labelSelector: 'app=fastapi-gateway' },
     'ml-services': { deployment: 'ml-services', labelSelector: 'app=ml-services' },
-    'minio': { deployment: 'rustfs', labelSelector: 'app=rustfs' },
-    'postgresql': null, // managed RDS — no restart
+    'mcp-server': { deployment: 'mcp-server', labelSelector: 'app=mcp-server' },
+    'postgresql': null,     // managed RDS — no restart
+    'aws-s3': null,         // managed AWS S3 — no restart
+    'elasticsearch': null,  // StatefulSet in separate namespace — no restart via this panel
 };
 
 @Injectable()

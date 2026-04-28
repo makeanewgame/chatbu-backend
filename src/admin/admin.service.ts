@@ -614,7 +614,20 @@ export class AdminService {
             results.push({ name: 'ml-services', status: alive ? 'healthy' : 'unhealthy', latencyMs: Date.now() - mlStart, error: alive ? undefined : e?.message });
         }
 
-        // 3. PostgreSQL (basit prisma ping)
+        // 3. MCP Server
+        const mcpStart = Date.now();
+        try {
+            const mcpUrl = 'http://mcp-server-service.chatbu.svc.cluster.local:1503';
+            const mcpResp = await firstValueFrom(
+                this.httpService.get(`${mcpUrl}/health`, { timeout: 5000 })
+            );
+            const mcpHealthy = mcpResp.data?.status === 'healthy';
+            results.push({ name: 'mcp-server', status: mcpHealthy ? 'healthy' : 'degraded', latencyMs: Date.now() - mcpStart });
+        } catch (e) {
+            results.push({ name: 'mcp-server', status: 'unhealthy', latencyMs: Date.now() - mcpStart, error: e?.message });
+        }
+
+        // 4. PostgreSQL (basit prisma ping)
         const dbStart = Date.now();
         try {
             await this.prisma.$queryRaw`SELECT 1`;
@@ -623,19 +636,36 @@ export class AdminService {
             results.push({ name: 'postgresql', status: 'unhealthy', latencyMs: Date.now() - dbStart, error: e?.message });
         }
 
-        // 4. MinIO / RustFS
-        const minioStart = Date.now();
+        // 5. AWS S3 (bucketExists üzerinden)
+        const s3Start = Date.now();
         try {
-            const bucket = this.configService.get('S3_BUCKET_NAME');
-            const endpoint = this.configService.get('MINIO_ENDPOINT');
-            const port = this.configService.get('MINIO_PORT') || 9000;
-            await firstValueFrom(
-                this.httpService.get(`http://${endpoint}:${port}/minio/health/live`, { timeout: 4000 })
-            );
-            results.push({ name: 'minio', status: 'healthy', latencyMs: Date.now() - minioStart });
+            const exists = await this.minioClientService.check();
+            results.push({ name: 'aws-s3', status: exists ? 'healthy' : 'unhealthy', latencyMs: Date.now() - s3Start, error: exists ? undefined : 'Bucket not found' });
         } catch (e) {
-            const alive = e?.response?.status >= 100 && e?.response?.status < 500;
-            results.push({ name: 'minio', status: alive ? 'healthy' : 'unhealthy', latencyMs: Date.now() - minioStart, error: alive ? undefined : e?.message });
+            results.push({ name: 'aws-s3', status: 'unhealthy', latencyMs: Date.now() - s3Start, error: e?.message });
+        }
+
+        // 6. Elasticsearch
+        const esStart = Date.now();
+        try {
+            const esUrl = this.configService.get('ES_URL') || 'http://elasticsearch-master.elasticsearch.svc.cluster.local:9200';
+            const esUser = this.configService.get('ES_USERNAME') || 'elastic';
+            const esPass = this.configService.get('ES_PASSWORD') || this.configService.get('ELASTIC_PASSWORD');
+            const authHeader = esPass
+                ? { Authorization: 'Basic ' + Buffer.from(`${esUser}:${esPass}`).toString('base64') }
+                : {};
+            const esResp = await firstValueFrom(
+                this.httpService.get(`${esUrl}/_cluster/health`, {
+                    headers: authHeader,
+                    timeout: 5000,
+                    httpsAgent: esUrl.startsWith('https') ? new (require('https').Agent)({ rejectUnauthorized: false }) : undefined,
+                })
+            );
+            const esStatus = esResp.data?.status;
+            const esHealthy = esStatus === 'green' || esStatus === 'yellow';
+            results.push({ name: 'elasticsearch', status: esHealthy ? 'healthy' : 'unhealthy', latencyMs: Date.now() - esStart, error: esHealthy ? undefined : `Cluster status: ${esStatus}` });
+        } catch (e) {
+            results.push({ name: 'elasticsearch', status: 'unhealthy', latencyMs: Date.now() - esStart, error: e?.message });
         }
 
         const checkedAt = new Date().toISOString();
