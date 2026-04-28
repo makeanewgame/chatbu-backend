@@ -158,6 +158,7 @@ export class ContentController {
         const user = req.user as IUser;
         return this.contentService.editContent(body, user);
     }
+    //#endregion
 
     //#region fetchSitemap
     @ApiOperation({ summary: 'Fetch sitemap URLs from a domain' })

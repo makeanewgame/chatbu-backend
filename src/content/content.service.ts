@@ -10,6 +10,7 @@ import * as cheerio from 'cheerio';
 import { QuotaService } from 'src/quota/quota.service';
 import { QuotaType } from 'src/util/enums';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { Exception } from 'handlebars';
 
 @Injectable()
 export class ContentService {
@@ -35,9 +36,19 @@ export class ContentService {
             }
         })
 
-        if (user.sub && !findUser) {
+        if (!findUser) {
             return {
                 message: "User or Bot not found"
+            }
+        }
+
+        // Quota check for URL-based content types
+        if (['WEBPAGE', 'VIDEO', 'LINK'].includes(body.type)) {
+            const quota = await this.getQuota(user.teamId);
+            if (quota.remaining < 1) {
+                return {
+                    message: `Insufficient quota. You have used ${quota.used} of ${quota.limit} pages.`
+                };
             }
         }
 
@@ -56,28 +67,25 @@ export class ContentService {
 
         console.log("content created", body.type);
 
-        if (body.type === 'WEBPAGE') {
-            console.log("webpage content ingest started", body.type);
+        if (['WEBPAGE', 'VIDEO', 'LINK'].includes(body.type)) {
+            console.log(`${body.type} content ingest started`);
             await this.ingestWebPage(body, user, body.content.url);
-        }
 
-        if (body.type === 'VIDEO') {
-            console.log("webpage content ingest started", body.type);
-            await this.ingestWebPage(body, user, body.content.url);
-        }
-
-        if (body.type === 'LINK') {
-            console.log("link content ingest started", body.type);
-            await this.ingestWebPage(body, user, body.content.url);
-        }
-
-        if (body.type === 'Q&A') {
-            console.log("Q&A content ingest started", body.type);
+            // Increment quota for URL-based types
+            const currentQuota = await this.prisma.quota.findFirst({
+                where: { teamId: user.teamId, quotaType: 'FILE' }
+            });
+            if (currentQuota) {
+                await this.prisma.quota.update({
+                    where: { id: currentQuota.id },
+                    data: { used: currentQuota.used + 1 }
+                });
+            }
+        } else if (body.type === 'Q&A') {
+            console.log("Q&A content ingest started");
             await this.ingestQA(body, user);
-        }
-
-        if (body.type === 'CONTENT') {
-            console.log("Q&A content ingest started", body.type);
+        } else if (body.type === 'CONTENT') {
+            console.log("CONTENT ingest started");
             await this.ingestContent(body, user);
         }
 
@@ -105,6 +113,7 @@ export class ContentService {
                 botId: botId,
                 teamId: user.teamId,
                 type: type,
+                isDeleted: false,
             }
         })
         return content;
@@ -124,7 +133,7 @@ export class ContentService {
                 }
             })
 
-            if (user.sub && !findUser) {
+            if (!findUser) {
                 return {
                     message: "User or Bot not found"
                 }
@@ -179,7 +188,7 @@ export class ContentService {
                 message: "Content deleted successfully"
             }
 
-        } catch (err) {
+        } catch (err: any) {
             console.log("deleteContent error", err);
 
             await this.systemLogService.createLog({
@@ -214,7 +223,7 @@ export class ContentService {
                 }
             });
 
-            if (user.sub && !findUser) {
+            if (!findUser) {
                 return { message: "User or Bot not found" };
             }
 
@@ -328,7 +337,7 @@ export class ContentService {
                 }
             })
 
-            if (user.sub && !findUser) {
+            if (!findUser) {
                 return {
                     message: "User or Content not found"
                 }
@@ -348,11 +357,25 @@ export class ContentService {
 
             console.log("content edited", body.contentId);
 
-            //Delete existing vectors for the content
-            await this.deleteIngestedContent(body.botId, user, body.content.meta.source);
+            // Fetch current content to determine type
+            const existingContent = await this.prisma.content.findUnique({
+                where: { id: body.contentId }
+            });
 
-            // Re-ingest the updated content
-            await this.ingestQA(body, user);
+            // Delete existing vectors
+            const sourceId = body.content?.meta?.source || body.content?.url || '';
+            if (sourceId) {
+                await this.deleteIngestedContent(body.botId, user, sourceId);
+            }
+
+            // Re-ingest based on content type
+            if (existingContent?.type === 'Q&A') {
+                await this.ingestQA(body, user);
+            } else if (existingContent?.type === 'CONTENT') {
+                await this.ingestContent(body, user);
+            } else if (['WEBPAGE', 'VIDEO', 'LINK'].includes(existingContent?.type)) {
+                await this.ingestWebPage(body, user, body.content.url);
+            }
 
             await this.systemLogService.createLog({
                 category: 'CONTENT',
@@ -368,7 +391,7 @@ export class ContentService {
             return {
                 message: "Content edited successfully"
             }
-        } catch (err) {
+        } catch (err: any) {
             console.log("editContent error", err);
 
             await this.systemLogService.createLog({
@@ -452,10 +475,27 @@ export class ContentService {
                 };
             }
 
-            // Create content records for each URL
-            const contentRecords = [];
+            // Send to ingest service first — only persist if successful
+            const ingestUrl = this.configService.get('INGEST_ENPOINT');
+            const { data } = await firstValueFrom(
+                this.httpService.post(`${ingestUrl}/ingest-webpages`, {
+                    "bot_cuid": botId,
+                    "customer_cuid": user.teamId,
+                    "page_list": urls,
+                })
+                    .pipe(
+                        catchError((error: AxiosError) => {
+                            console.log("ingestWebPages error", error);
+                            throw 'An error happened!';
+                        }),
+                    )
+            );
+
+            console.log("ingest response", data);
+
+            // Create content records after successful ingest
             for (const url of urls) {
-                const content = await this.prisma.content.create({
+                await this.prisma.content.create({
                     data: {
                         teamId: user.teamId,
                         botId: botId,
@@ -467,15 +507,11 @@ export class ContentService {
                         createdAt: new Date(),
                     }
                 });
-                contentRecords.push(content);
             }
 
-            // Update quota
+            // Update quota after successful ingest + DB writes
             const currentQuota = await this.prisma.quota.findFirst({
-                where: {
-                    teamId: user.teamId,
-                    quotaType: 'FILE'
-                }
+                where: { teamId: user.teamId, quotaType: 'FILE' }
             });
 
             if (currentQuota) {
@@ -484,24 +520,6 @@ export class ContentService {
                     data: { used: currentQuota.used + urls.length }
                 });
             }
-
-            // Send to ingest service
-            const ingestUrl = this.configService.get('INGEST_ENPOINT');
-            const { data } = await firstValueFrom(
-                this.httpService.post(`${ingestUrl}/ingest-webpages`, {
-                    "bot_cuid": botId,
-                    "customer_cuid": user.teamId,
-                    "page_list": urls,
-                })
-                    .pipe(
-                        catchError((error: AxiosError) => {
-                            console.log("error", error);
-                            throw 'An error happened!';
-                        }),
-                    )
-            );
-
-            console.log("ingest response", data);
 
             return {
                 success: true,
@@ -553,24 +571,6 @@ export class ContentService {
 
         console.log("ingestContent body", body);
 
-        const sendBody = {
-            "bot_cuid": body.botId,
-            "customer_cuid": user.teamId,
-            "question": body.content.meta.source,
-            "answer": body.content.data,
-            "metadata": {
-                "type": "CONTENT",
-                "category": body.content.meta.category,
-                "source": body.content.meta.source,
-                "title": body.content.meta.title
-            },
-        }
-
-        console.log("ingestContent sendBody", sendBody);
-
-        //body.content.data 'yı sadece text olacak şekilde parse etmemiz gerekebilir
-
-
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
         const { data } = await firstValueFrom(
@@ -598,10 +598,9 @@ export class ContentService {
     }
 
     async ingestVideo(body: any, user: IUser, url: string) {
-
-        const ingestUrl = this.configService.get('INGEST_ENPOINT')
-
-        console.log("ingest Video not implemented yet");
+        // TODO: Implement video ingestion
+        console.log("ingestVideo: not implemented", url);
+        return { message: 'Video ingestion not yet supported' };
     }
 
     // Helper: URL normalization
@@ -679,7 +678,12 @@ export class ContentService {
     }
 
     // Parse sitemap XML
-    private async parseSitemap(sitemapUrl: string): Promise<string[]> {
+    private async parseSitemap(sitemapUrl: string, depth: number = 0): Promise<string[]> {
+        const MAX_DEPTH = 3;
+        if (depth > MAX_DEPTH) {
+            console.log(`parseSitemap: max depth ${MAX_DEPTH} reached, skipping ${sitemapUrl}`);
+            return [];
+        }
         try {
             const { data } = await firstValueFrom(
                 this.httpService.get(sitemapUrl).pipe(
@@ -709,9 +713,9 @@ export class ContentService {
                 }
             });
 
-            // Recursively fetch sub-sitemaps
+            // Recursively fetch sub-sitemaps (with depth limit)
             for (const subSitemapUrl of subSitemaps) {
-                const subUrls = await this.parseSitemap(subSitemapUrl);
+                const subUrls = await this.parseSitemap(subSitemapUrl, depth + 1);
                 urls.push(...subUrls);
             }
 
@@ -768,7 +772,7 @@ export class ContentService {
                         }
                     });
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.log(`Failed to crawl ${currentUrl}:`, err.message);
                 // Continue with next URL
             }

@@ -1,4 +1,4 @@
-import { Controller, UseInterceptors, Post, Body, ParseFilePipe, FileTypeValidator, UploadedFiles, Get, UseGuards, Req } from '@nestjs/common';
+import { Controller, UseInterceptors, Post, Body, ParseFilePipe, FileTypeValidator, UploadedFiles, Get, UseGuards, Req, Query } from '@nestjs/common';
 import { FileService } from './file.service';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
@@ -234,6 +234,16 @@ export class FileController {
             required: ['fileName', 'fileHash', 'botId'],
         },
     })
+    @ApiOperation({ summary: 'Get a presigned view URL for a file' })
+    @ApiResponse({ status: 200, description: 'Presigned URL generated' })
+    @ApiBearerAuth()
+    @Get('view-url')
+    @UseGuards(AccessTokenGuard)
+    async getViewUrl(@Req() req: Request, @Query('fileId') fileId: string) {
+        const user = (req as any).user as IUser;
+        return await this.fileService.getViewUrl(user, fileId);
+    }
+
     @Post('fileCheck')
     @UseGuards(AccessTokenGuard)
     async fileCheck(@Req() req: Request, @Body() body: { fileName: string, fileHash: string, botId: string }) {

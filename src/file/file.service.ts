@@ -464,6 +464,24 @@ export class FileService {
         return data;
     }
 
+    async getViewUrl(user: IUser, fileId: string) {
+        const bucket = this.configService.get('S3_BUCKET_NAME');
+
+        const storage = await this.prisma.storage.findFirst({
+            where: {
+                id: fileId,
+                teamId: user.teamId,
+            },
+        });
+
+        if (!storage) {
+            return { message: 'File not found' };
+        }
+
+        const url = await this.minioClientService.getPresignedUrl(storage.fileUrl, bucket);
+        return { url };
+    }
+
     async check() {
 
         const check = await this.minioClientService.check();

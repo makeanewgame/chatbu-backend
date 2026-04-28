@@ -65,6 +65,18 @@ export class MinioClientService {
         })
     }
 
+    async getPresignedUrl(objectName: string, baseBucket: string, expirySeconds: number = 3600): Promise<string> {
+        return new Promise((resolve, reject) => {
+            this.client.presignedGetObject(baseBucket, objectName, expirySeconds, (err: Error, url: string) => {
+                if (err) {
+                    reject(new HttpException('Could not generate presigned URL', HttpStatus.INTERNAL_SERVER_ERROR));
+                } else {
+                    resolve(url);
+                }
+            });
+        });
+    }
+
     async check() {
         try {
             const exists = await this.client.bucketExists(this.configService.get('S3_BUCKET_NAME'))
