@@ -22,6 +22,7 @@ import {
     ApiQuery
 } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
+import { K8sService } from './k8s.service';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { AdminGuard } from './guards/admin.guard';
 import { GetAllChatbotsDto } from './dto/getAllChatbots.dto';
@@ -37,7 +38,10 @@ import { CreateAdminUserDto } from './dto/createAdminUser.dto';
 @UseGuards(AccessTokenGuard, AdminGuard)
 @ApiBearerAuth()
 export class AdminController {
-    constructor(private adminService: AdminService) { }
+    constructor(
+        private adminService: AdminService,
+        private k8sService: K8sService,
+    ) { }
 
     //#region getAllTeams
     @ApiOperation({ summary: 'Get all teams (Admin only)' })
@@ -276,6 +280,31 @@ export class AdminController {
     @Get('services/health')
     async getServicesHealth() {
         return this.adminService.getServicesHealth();
+    }
+    //#endregion
+
+    //#region getServiceLogs
+    @ApiOperation({ summary: 'Get last pod logs for a service (Admin only)' })
+    @ApiParam({ name: 'name', type: String, description: 'Service name (fastapi-gateway | ml-services | minio)' })
+    @ApiQuery({ name: 'tail', required: false, type: Number, description: 'Number of log lines (default 50)' })
+    @ApiResponse({ status: 200, description: 'Pod logs retrieved' })
+    @Get('services/:name/logs')
+    async getServiceLogs(
+        @Param('name') name: string,
+        @Query('tail') tail?: string,
+    ) {
+        return this.k8sService.getPodLogs(name, tail ? parseInt(tail, 10) : 50);
+    }
+    //#endregion
+
+    //#region restartService
+    @ApiOperation({ summary: 'Restart a K8s deployment (Admin only)' })
+    @ApiParam({ name: 'name', type: String, description: 'Service name (fastapi-gateway | ml-services | minio)' })
+    @ApiResponse({ status: 200, description: 'Restart initiated' })
+    @Post('services/:name/restart')
+    @HttpCode(HttpStatus.OK)
+    async restartService(@Param('name') name: string) {
+        return this.k8sService.restartDeployment(name);
     }
     //#endregion
 }

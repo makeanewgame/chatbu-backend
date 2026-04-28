@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
+import { K8sService } from './k8s.service';
 import { SettingsController } from './settings.controller';
 import { PricePlanController } from './price-plan.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
@@ -12,7 +13,7 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
 
 @Module({
     controllers: [AdminController, SettingsController, PricePlanController],
-    providers: [AdminService],
+    providers: [AdminService, K8sService],
     imports: [PrismaModule, JwtModule, MinioClientModule, ConfigModule, SubscriptionModule, HttpModule],
 })
 export class AdminModule { }

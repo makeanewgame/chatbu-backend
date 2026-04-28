@@ -1,0 +1,42 @@
+---
+# ServiceAccount for the NestJS backend
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: chatbu
+
+---
+# Role: read pods/logs + restart deployments in chatbu namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-ops-role
+  namespace: chatbu
+rules:
+  # List pods and read logs
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  # Patch deployments (for rollout restart)
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-ops-binding
+  namespace: chatbu
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: chatbu
+roleRef:
+  kind: Role
+  name: backend-ops-role
+  apiGroup: rbac.authorization.k8s.io
