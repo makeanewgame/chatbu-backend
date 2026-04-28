@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { SettingsController } from './settings.controller';
@@ -12,6 +13,6 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
 @Module({
     controllers: [AdminController, SettingsController, PricePlanController],
     providers: [AdminService],
-    imports: [PrismaModule, JwtModule, MinioClientModule, ConfigModule, SubscriptionModule],
+    imports: [PrismaModule, JwtModule, MinioClientModule, ConfigModule, SubscriptionModule, HttpModule],
 })
 export class AdminModule { }

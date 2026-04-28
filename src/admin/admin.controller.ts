@@ -269,4 +269,13 @@ export class AdminController {
         return this.adminService.hardDeleteBot(id);
     }
     //#endregion
+
+    //#region getServicesHealth
+    @ApiOperation({ summary: 'Get health status of all backend services (Admin only)' })
+    @ApiResponse({ status: 200, description: 'Service health retrieved' })
+    @Get('services/health')
+    async getServicesHealth() {
+        return this.adminService.getServicesHealth();
+    }
+    //#endregion
 }

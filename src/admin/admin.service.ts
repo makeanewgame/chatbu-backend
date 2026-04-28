@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { GetAllUsersDto } from './dto/getAllUsers.dto';
 import { UpdateUserDto } from './dto/updateUser.dto';
@@ -15,6 +17,7 @@ export class AdminService {
         private prisma: PrismaService,
         private minioClientService: MinioClientService,
         private configService: ConfigService,
+        private httpService: HttpService,
     ) { }
 
     async getAllTeams(dto: GetAllTeamsDto) {
@@ -580,5 +583,63 @@ export class AdminService {
         await this.prisma.customerBots.delete({ where: { id: botId } });
 
         return { message: 'Bot permanently deleted' };
+    }
+
+    async getServicesHealth() {
+        const ingestUrl = this.configService.get('INGEST_ENPOINT');
+        const results: any[] = [];
+
+        // 1. FastAPI Gateway
+        const gatewayStart = Date.now();
+        try {
+            await firstValueFrom(
+                this.httpService.get(`${ingestUrl}/`, { timeout: 5000 })
+            );
+            results.push({ name: 'fastapi-gateway', status: 'healthy', latencyMs: Date.now() - gatewayStart });
+        } catch (e) {
+            results.push({ name: 'fastapi-gateway', status: 'unhealthy', latencyMs: Date.now() - gatewayStart, error: e?.message });
+        }
+
+        // 2. ML Services (collection-count üzerinden)
+        const mlStart = Date.now();
+        try {
+            await firstValueFrom(
+                this.httpService.get(`${ingestUrl}/collection-count/?bot_cuid=health&customer_cuid=health`, { timeout: 8000 })
+            );
+            results.push({ name: 'ml-services', status: 'healthy', latencyMs: Date.now() - mlStart });
+        } catch (e) {
+            const status = e?.response?.status;
+            // 422/404 = endpoint erişilebilir ama parametre geçersiz → servis ayakta
+            const alive = status === 422 || status === 404 || status === 400;
+            results.push({ name: 'ml-services', status: alive ? 'healthy' : 'unhealthy', latencyMs: Date.now() - mlStart, error: alive ? undefined : e?.message });
+        }
+
+        // 3. PostgreSQL (basit prisma ping)
+        const dbStart = Date.now();
+        try {
+            await this.prisma.$queryRaw`SELECT 1`;
+            results.push({ name: 'postgresql', status: 'healthy', latencyMs: Date.now() - dbStart });
+        } catch (e) {
+            results.push({ name: 'postgresql', status: 'unhealthy', latencyMs: Date.now() - dbStart, error: e?.message });
+        }
+
+        // 4. MinIO / RustFS
+        const minioStart = Date.now();
+        try {
+            const bucket = this.configService.get('S3_BUCKET_NAME');
+            const endpoint = this.configService.get('MINIO_ENDPOINT');
+            const port = this.configService.get('MINIO_PORT') || 9000;
+            await firstValueFrom(
+                this.httpService.get(`http://${endpoint}:${port}/minio/health/live`, { timeout: 4000 })
+            );
+            results.push({ name: 'minio', status: 'healthy', latencyMs: Date.now() - minioStart });
+        } catch (e) {
+            const alive = e?.response?.status >= 100 && e?.response?.status < 500;
+            results.push({ name: 'minio', status: alive ? 'healthy' : 'unhealthy', latencyMs: Date.now() - minioStart, error: alive ? undefined : e?.message });
+        }
+
+        const checkedAt = new Date().toISOString();
+        const overall = results.every(r => r.status === 'healthy') ? 'healthy' : 'degraded';
+        return { overall, checkedAt, services: results };
     }
 }
