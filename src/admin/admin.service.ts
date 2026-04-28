@@ -648,9 +648,10 @@ export class AdminService {
         // 6. Elasticsearch
         const esStart = Date.now();
         try {
-            const esUrl = this.configService.get('ES_URL') || 'http://elasticsearch-master.elasticsearch.svc.cluster.local:9200';
-            const esUser = this.configService.get('ES_USERNAME') || 'elastic';
-            const esPass = this.configService.get('ES_PASSWORD') || this.configService.get('ELASTIC_PASSWORD');
+            const esUrl = this.configService.get('ELASTICSEARCH_URL') || 'https://elasticsearch-master.elasticsearch.svc.cluster.local:9200';
+            const esUser = this.configService.get('ELASTICSEARCH_USERNAME') || 'elastic';
+            const esPass = this.configService.get('ELASTICSEARCH_PASSWORD');
+            const sslVerify = this.configService.get('ELASTICSEARCH_SSL_VERIFY') !== 'false';
             const authHeader = esPass
                 ? { Authorization: 'Basic ' + Buffer.from(`${esUser}:${esPass}`).toString('base64') }
                 : {};
@@ -658,7 +659,7 @@ export class AdminService {
                 this.httpService.get(`${esUrl}/_cluster/health`, {
                     headers: authHeader,
                     timeout: 5000,
-                    httpsAgent: esUrl.startsWith('https') ? new (require('https').Agent)({ rejectUnauthorized: false }) : undefined,
+                    httpsAgent: new (require('https').Agent)({ rejectUnauthorized: sslVerify }),
                 })
             );
             const esStatus = esResp.data?.status;
