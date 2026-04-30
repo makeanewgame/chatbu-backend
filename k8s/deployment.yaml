@@ -6,6 +6,8 @@ metadata:
   labels:
     app: backend
     component: api
+  annotations:
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 2
   revisionHistoryLimit: 2
