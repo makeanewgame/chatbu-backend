@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
@@ -6,6 +7,7 @@ import { AuthenticationModule } from './authentication/authentication.module';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { MailModule } from './mail/mail.module';
 import { FileModule } from './file/file.module';
 import { MinioClientModule } from './minio-client/minio-client.module';
@@ -31,6 +33,15 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
   imports: [
     ScheduleModule.forRoot(),
     CacheModule.register({ isGlobal: true }),
+    // Global rate limit. THROTTLE_TTL is milliseconds in env (existing convention from
+    // chatbu-secrets) but @nestjs/throttler v6 expects ms too — pass through directly.
+    // Defaults: 100 requests per 60 seconds per IP.
+    ThrottlerModule.forRoot([
+      {
+        ttl: parseInt(process.env.THROTTLE_TTL || '60000', 10),
+        limit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
+      },
+    ]),
     WinstonModule.forRoot({
       format: winston.format.combine(
         winston.format.timestamp(),
@@ -45,6 +56,12 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
       isGlobal: true,
     }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule { }
