@@ -174,6 +174,44 @@ export class MailService {
     }
   }
 
+  async sendBookingVerificationMail(
+    email: string,
+    code: string,
+    botName: string,
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      'booking-verification.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const html = template({
+      code,
+      botName: botName || 'our team',
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: email,
+      subject: `Verify your appointment with ${botName || 'our team'}`,
+      html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Booking verification mail sent to ${email}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
+
   async sendEmailVerificationMail(
     email: string,
     code: string,

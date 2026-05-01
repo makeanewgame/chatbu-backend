@@ -490,3 +490,16 @@ model SystemLog {
   @@index([createdAt])
   @@index([status])
 }
+
+model BookingVerification {
+  id        String   @id @default(cuid())
+  email     String
+  code      String   // 6-digit OTP, plaintext (matches existing User.activationCode pattern; row is short-lived and single-use)
+  botCuid   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email, botCuid])
+  @@index([expiresAt])
+}
