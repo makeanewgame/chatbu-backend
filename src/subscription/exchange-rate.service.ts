@@ -34,7 +34,7 @@ export class ExchangeRateService {
             this.updateCache(rate);
             await this.saveToDb(rate);
             return rate;
-        } catch (err) {
+        } catch (err: any) {
             this.logger.warn(`TCMB fetch failed, using fallback: ${err.message}`);
             return this.getFallbackRate();
         }
@@ -108,7 +108,7 @@ export class ExchangeRateService {
                 },
                 update: { value: rate.toString() },
             });
-        } catch (err) {
+        } catch (err: any) {
             this.logger.warn(`Could not save rate to DB: ${err.message}`);
         }
     }

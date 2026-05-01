@@ -596,7 +596,7 @@ export class AdminService {
                 this.httpService.get(`${ingestUrl}/`, { timeout: 5000 })
             );
             results.push({ name: 'fastapi-gateway', status: 'healthy', latencyMs: Date.now() - gatewayStart });
-        } catch (e) {
+        } catch (e: any) {
             results.push({ name: 'fastapi-gateway', status: 'unhealthy', latencyMs: Date.now() - gatewayStart, error: e?.message });
         }
 
@@ -607,7 +607,7 @@ export class AdminService {
                 this.httpService.get(`${ingestUrl}/collection-count/?bot_cuid=health&customer_cuid=health`, { timeout: 8000 })
             );
             results.push({ name: 'ml-services', status: 'healthy', latencyMs: Date.now() - mlStart });
-        } catch (e) {
+        } catch (e: any) {
             const status = e?.response?.status;
             // 422/404 = endpoint erişilebilir ama parametre geçersiz → servis ayakta
             const alive = status === 422 || status === 404 || status === 400;
@@ -623,7 +623,7 @@ export class AdminService {
             );
             const mcpHealthy = mcpResp.data?.status === 'healthy';
             results.push({ name: 'mcp-server', status: mcpHealthy ? 'healthy' : 'degraded', latencyMs: Date.now() - mcpStart });
-        } catch (e) {
+        } catch (e: any) {
             results.push({ name: 'mcp-server', status: 'unhealthy', latencyMs: Date.now() - mcpStart, error: e?.message });
         }
 
@@ -632,7 +632,7 @@ export class AdminService {
         try {
             await this.prisma.$queryRaw`SELECT 1`;
             results.push({ name: 'postgresql', status: 'healthy', latencyMs: Date.now() - dbStart });
-        } catch (e) {
+        } catch (e: any) {
             results.push({ name: 'postgresql', status: 'unhealthy', latencyMs: Date.now() - dbStart, error: e?.message });
         }
 
@@ -641,7 +641,7 @@ export class AdminService {
         try {
             const exists = await this.minioClientService.check();
             results.push({ name: 'aws-s3', status: exists ? 'healthy' : 'unhealthy', latencyMs: Date.now() - s3Start, error: exists ? undefined : 'Bucket not found' });
-        } catch (e) {
+        } catch (e: any) {
             results.push({ name: 'aws-s3', status: 'unhealthy', latencyMs: Date.now() - s3Start, error: e?.message });
         }
 
@@ -665,7 +665,7 @@ export class AdminService {
             const esStatus = esResp.data?.status;
             const esHealthy = esStatus === 'green' || esStatus === 'yellow';
             results.push({ name: 'elasticsearch', status: esHealthy ? 'healthy' : 'unhealthy', latencyMs: Date.now() - esStart, error: esHealthy ? undefined : `Cluster status: ${esStatus}` });
-        } catch (e) {
+        } catch (e: any) {
             results.push({ name: 'elasticsearch', status: 'unhealthy', latencyMs: Date.now() - esStart, error: e?.message });
         }
 

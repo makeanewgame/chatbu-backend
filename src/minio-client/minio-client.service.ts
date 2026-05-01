@@ -3,7 +3,6 @@ import { MinioService } from 'nestjs-minio-client';
 import { BufferedFile, AppMimeType, FileStorageType } from './file.model';
 import * as crypto from 'crypto'
 import { ConfigService } from '@nestjs/config';
-import { Express } from 'express';
 
 @Injectable()
 export class MinioClientService {

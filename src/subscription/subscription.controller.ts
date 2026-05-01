@@ -114,7 +114,7 @@ export class SubscriptionController {
                 signature,
                 webhookSecret,
             );
-        } catch (err) {
+        } catch (err: any) {
             throw new Error(`Webhook signature verification failed: ${err.message}`);
         }
 

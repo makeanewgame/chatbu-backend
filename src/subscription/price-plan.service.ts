@@ -131,7 +131,7 @@ export class PricePlanService {
 
             stripeToken = await this.createStripePrice(tokenDraft, 'month', true, meterId);
             createdPriceIds.push(stripeToken.id);
-        } catch (err) {
+        } catch (err: any) {
             // Kısmi oluşturma — Stripe'ta yaratılanları inactive yap ve fırlat
             if (createdPriceIds.length > 0) {
                 this.logger.warn(`Rolling back ${createdPriceIds.length} Stripe price(s) due to error: ${err.message}`);
