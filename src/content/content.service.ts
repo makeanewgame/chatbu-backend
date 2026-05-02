@@ -25,6 +25,7 @@ export class ContentService {
     ) { }
 
     async createContent(body: any, user: IUser) {
+        const forceReingest = Boolean(body.forceReingest);
         const findUser = await this.prisma.team.findFirst({
             where: {
                 id: user.teamId,
@@ -42,14 +43,78 @@ export class ContentService {
             }
         }
 
+        const isUrlBasedType = ['WEBPAGE', 'VIDEO', 'LINK'].includes(body.type);
+        let existingUrlContent: any = null;
+
+        if (isUrlBasedType && body.content?.url) {
+            const incomingUrl = this.normalizeComparableUrl(body.content.url);
+            if (incomingUrl) {
+                const existingUrlContents = await this.prisma.content.findMany({
+                    where: {
+                        teamId: user.teamId,
+                        botId: body.botId,
+                        type: body.type,
+                        isDeleted: false,
+                    },
+                    select: {
+                        id: true,
+                        content: true,
+                    }
+                });
+
+                existingUrlContent = existingUrlContents.find((item) => {
+                    const existingUrl = this.normalizeComparableUrl((item.content as any)?.url);
+                    return existingUrl && existingUrl === incomingUrl;
+                });
+            }
+        }
+
+        if (existingUrlContent && !forceReingest) {
+            return {
+                message: 'URL already exists',
+                duplicate: true,
+                existingContentId: existingUrlContent.id,
+            };
+        }
+
         // Quota check for URL-based content types
-        if (['WEBPAGE', 'VIDEO', 'LINK'].includes(body.type)) {
+        if (isUrlBasedType && !existingUrlContent) {
             const quota = await this.getQuota(user.teamId);
             if (quota.remaining < 1) {
                 return {
                     message: `Insufficient quota. You have used ${quota.used} of ${quota.limit} pages.`
                 };
             }
+        }
+
+        if (existingUrlContent && forceReingest) {
+            await this.prisma.content.update({
+                where: { id: existingUrlContent.id },
+                data: {
+                    status: 'UPLOADED',
+                    taskId: '',
+                    ingestionInfo: {},
+                    updatedAt: new Date(),
+                }
+            });
+
+            await this.ingestWebPage(body, user, body.content.url);
+
+            await this.systemLogService.createLog({
+                category: 'CONTENT',
+                action: 'UPDATE',
+                status: 'SUCCESS',
+                userId: user.sub,
+                userEmail: user.email,
+                teamId: user.teamId,
+                entityId: existingUrlContent.id,
+                entityName: body.type,
+                message: `Content re-ingested: ${body.type}`,
+            });
+
+            return {
+                message: 'Content re-ingested successfully'
+            };
         }
 
         await this.prisma.content.create({
@@ -67,7 +132,7 @@ export class ContentService {
 
         console.log("content created", body.type);
 
-        if (['WEBPAGE', 'VIDEO', 'LINK'].includes(body.type)) {
+        if (isUrlBasedType) {
             console.log(`${body.type} content ingest started`);
             await this.ingestWebPage(body, user, body.content.url);
 
@@ -464,14 +529,74 @@ export class ContentService {
 
     async ingestWebPages(body: any, user: IUser) {
         try {
-            const { botId, urls } = body;
+            const { botId, urls, forceReingest } = body;
+
+            const normalizedIncomingUrlMap = new Map<string, string>();
+            for (const rawUrl of urls) {
+                const normalizedUrl = this.normalizeComparableUrl(rawUrl);
+                if (normalizedUrl && !normalizedIncomingUrlMap.has(normalizedUrl)) {
+                    normalizedIncomingUrlMap.set(normalizedUrl, rawUrl);
+                }
+            }
+
+            const existingWebpages = await this.prisma.content.findMany({
+                where: {
+                    teamId: user.teamId,
+                    botId,
+                    type: 'WEBPAGE',
+                    isDeleted: false,
+                },
+                select: {
+                    id: true,
+                    content: true,
+                }
+            });
+
+            const existingByNormalizedUrl = new Map<string, { id: string; url: string }>();
+            for (const item of existingWebpages) {
+                const contentUrl = this.normalizeComparableUrl((item.content as any)?.url);
+                if (contentUrl && !existingByNormalizedUrl.has(contentUrl)) {
+                    existingByNormalizedUrl.set(contentUrl, {
+                        id: item.id,
+                        url: (item.content as any)?.url,
+                    });
+                }
+            }
+
+            const duplicateUrls: string[] = [];
+            const newUrls: string[] = [];
+
+            normalizedIncomingUrlMap.forEach((rawUrl, normalizedUrl) => {
+                if (existingByNormalizedUrl.has(normalizedUrl)) {
+                    duplicateUrls.push(rawUrl);
+                } else {
+                    newUrls.push(rawUrl);
+                }
+            });
+
+            if (duplicateUrls.length > 0 && !forceReingest) {
+                return {
+                    success: false,
+                    duplicate: true,
+                    duplicates: duplicateUrls,
+                    message: `${duplicateUrls.length} URL already exists.`
+                };
+            }
+
+            const urlsToIngest = [...newUrls, ...duplicateUrls];
+            if (urlsToIngest.length === 0) {
+                return {
+                    success: false,
+                    message: 'No valid URLs to ingest.'
+                };
+            }
 
             // Check quota
             const quota = await this.getQuota(user.teamId);
-            if (quota.remaining < urls.length) {
+            if (quota.remaining < newUrls.length) {
                 return {
                     success: false,
-                    message: `Insufficient quota. You can add ${quota.remaining} more pages, but you're trying to add ${urls.length}.`
+                    message: `Insufficient quota. You can add ${quota.remaining} more pages, but you're trying to add ${newUrls.length}.`
                 };
             }
 
@@ -481,7 +606,7 @@ export class ContentService {
                 this.httpService.post(`${ingestUrl}/ingest-webpages`, {
                     "bot_cuid": botId,
                     "customer_cuid": user.teamId,
-                    "page_list": urls,
+                    "page_list": urlsToIngest,
                 })
                     .pipe(
                         catchError((error: AxiosError) => {
@@ -493,8 +618,8 @@ export class ContentService {
 
             console.log("ingest response", data);
 
-            // Create content records after successful ingest
-            for (const url of urls) {
+            // Create content records for new URLs after successful ingest
+            for (const url of newUrls) {
                 await this.prisma.content.create({
                     data: {
                         teamId: user.teamId,
@@ -509,6 +634,26 @@ export class ContentService {
                 });
             }
 
+            // Re-mark existing duplicate URLs as UPLOADED if user confirmed re-ingest
+            if (duplicateUrls.length > 0 && forceReingest) {
+                for (const duplicateUrl of duplicateUrls) {
+                    const normalizedDuplicateUrl = this.normalizeComparableUrl(duplicateUrl);
+                    if (!normalizedDuplicateUrl) continue;
+                    const existing = existingByNormalizedUrl.get(normalizedDuplicateUrl);
+                    if (!existing) continue;
+
+                    await this.prisma.content.update({
+                        where: { id: existing.id },
+                        data: {
+                            status: 'UPLOADED',
+                            taskId: '',
+                            ingestionInfo: {},
+                            updatedAt: new Date(),
+                        },
+                    });
+                }
+            }
+
             // Update quota after successful ingest + DB writes
             const currentQuota = await this.prisma.quota.findFirst({
                 where: { teamId: user.teamId, quotaType: 'FILE' }
@@ -517,14 +662,15 @@ export class ContentService {
             if (currentQuota) {
                 await this.prisma.quota.update({
                     where: { id: currentQuota.id },
-                    data: { used: currentQuota.used + urls.length }
+                    data: { used: currentQuota.used + newUrls.length }
                 });
             }
 
             return {
                 success: true,
                 message: 'Web pages ingestion started',
-                count: urls.length
+                count: urlsToIngest.length,
+                duplicatesReingested: duplicateUrls.length,
             };
 
         } catch (error) {
@@ -601,6 +747,22 @@ export class ContentService {
         // TODO: Implement video ingestion
         console.log("ingestVideo: not implemented", url);
         return { message: 'Video ingestion not yet supported' };
+    }
+
+    // Helper: URL normalization
+    private normalizeComparableUrl(urlString: string): string | null {
+        try {
+            const parsed = new URL(urlString.trim());
+            parsed.hash = '';
+            parsed.hostname = parsed.hostname.toLowerCase();
+            let normalized = parsed.href;
+            if (normalized.endsWith('/') && parsed.pathname !== '/') {
+                normalized = normalized.slice(0, -1);
+            }
+            return normalized;
+        } catch {
+            return null;
+        }
     }
 
     // Helper: URL normalization
@@ -859,19 +1021,58 @@ export class ContentService {
         try {
             const quotas = await this.quotaService.list(teamId);
             const fileQuota = quotas.find(q => q.quotaType === 'FILE');
+            const [activeDocuments, activeContents] = await Promise.all([
+                this.prisma.storage.count({
+                    where: {
+                        teamId,
+                        isDeleted: false,
+                    },
+                }),
+                this.prisma.content.findMany({
+                    where: {
+                        teamId,
+                        isDeleted: false,
+                    },
+                    select: {
+                        type: true,
+                        content: true,
+                    },
+                }),
+            ]);
+
+            // URL-based vault items are counted by distinct URL across WEBPAGE/LINK variants.
+            const urlTypeSet = new Set(['webpage', 'link']);
+            const distinctUrlSet = new Set<string>();
+            let nonUrlContentCount = 0;
+
+            for (const item of activeContents) {
+                const contentType = (item.type || '').toLowerCase();
+                if (urlTypeSet.has(contentType)) {
+                    const normalizedUrl = this.normalizeComparableUrl((item.content as any)?.url);
+                    if (normalizedUrl) {
+                        distinctUrlSet.add(normalizedUrl);
+                        continue;
+                    }
+                }
+                nonUrlContentCount += 1;
+            }
+
+            const used = activeDocuments + nonUrlContentCount + distinctUrlSet.size;
 
             if (!fileQuota) {
                 return {
                     limit: 0,
-                    used: 0,
+                    used,
                     remaining: 0
                 };
             }
 
+            const remaining = Math.max(fileQuota.limit - used, 0);
+
             return {
                 limit: fileQuota.limit,
-                used: fileQuota.used,
-                remaining: fileQuota.limit - fileQuota.used
+                used,
+                remaining
             };
         } catch (error) {
             console.error('Error fetching quota:', error);
