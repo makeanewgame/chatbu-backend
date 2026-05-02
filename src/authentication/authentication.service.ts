@@ -59,6 +59,37 @@ export class AuthenticationService {
     return teamMember?.teamId || null;
   }
 
+  private async notifyInvitationAccepted(
+    teamId: string,
+    acceptedUserEmail: string,
+  ): Promise<void> {
+    try {
+      const team = await this.prisma.team.findUnique({
+        where: { id: teamId },
+        select: { ownerId: true },
+      });
+
+      if (!team?.ownerId) {
+        return;
+      }
+
+      await this.prisma.notification.create({
+        data: {
+          userId: team.ownerId,
+          type: 'TEAM_INVITE_ACCEPTED',
+          title: 'Team Invitation Accepted',
+          message: `${acceptedUserEmail} accepted your team invitation.`,
+        },
+      });
+    } catch (error) {
+      this.logger.error('Failed to create invitation accepted notification', {
+        teamId,
+        acceptedUserEmail,
+        error,
+      });
+    }
+  }
+
   async register(user: any, lang: string) {
     user.refreshToken = '';
     user.updatedAt = new Date().toISOString();
@@ -152,6 +183,11 @@ export class AuthenticationService {
             invitationToken: null,
           },
         });
+
+        await this.notifyInvitationAccepted(
+          pendingTeamMember.teamId,
+          createdUser.email,
+        );
 
         this.logger.info(
           `User ${createdUser.id} accepted team invitation for team ${pendingTeamMember.teamId}`,
@@ -513,6 +549,11 @@ export class AuthenticationService {
             invitationToken: null,
           },
         });
+
+        await this.notifyInvitationAccepted(
+          pendingTeamMember.teamId,
+          createdUser.email,
+        );
 
         this.logger.info(
           `Google user ${createdUser.id} accepted team invitation for team ${pendingTeamMember.teamId}`,

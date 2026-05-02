@@ -427,15 +427,15 @@ model TicketMessage {
 
 model Notification {
   id        String   @id @default(cuid())
-  ticketId  String
+  ticketId  String?
   userId    String
-  type      String   // "NEW_TICKET", "TICKET_REPLY"
+  type      String   // "NEW_TICKET", "TICKET_REPLY", "TEAM_INVITE_ACCEPTED"
   title     String
   message   String
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
