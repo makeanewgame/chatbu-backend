@@ -358,6 +358,10 @@ model TokenUsageLog {
   createdAt      DateTime     @default(now())
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
+  // DB-level dedup for ingestion (and any future taskId-scoped operations).
+  // Postgres treats NULL as distinct in unique indexes, so chat rows
+  // (taskId=NULL) are not affected — multiple NULL-taskId rows are allowed.
+  @@unique([taskId, operationType], name: "TokenUsageLog_taskId_operationType_key")
   @@index([operationType])
   @@index([teamId])
   @@index([createdAt])
