@@ -582,53 +582,76 @@ export class SubscriptionService {
             throw new NotFoundException('Subscription not found');
         }
 
-        // Update tokens used
-        await this.prisma.subscription.update({
-            where: { userId },
-            data: {
-                tokensUsedThisMonth: subscription.tokensUsedThisMonth + tokensUsed,
-            },
-        });
-
-        // Calculate cost for overage (if PREMIUM and exceeded base allocation)
+        // Pre-compute cost so the log row carries it. Stripe reporting + spending-limit
+        // enforcement happen AFTER tracking so they don't leave the system in a state
+        // where tokens were charged but never recorded (the previous version of this
+        // function had that bug).
         let cost = 0;
         const baseAllocation = subscription.monthlyTokenAllocation;
-
+        let overageTokens = 0;
         if (subscription.tier === 'PREMIUM' && subscription.tokensUsedThisMonth >= baseAllocation) {
-            // Only charge for tokens beyond the base allocation
-            const overageTokens = Math.min(tokensUsed, subscription.tokensUsedThisMonth + tokensUsed - baseAllocation);
+            overageTokens = Math.min(tokensUsed, subscription.tokensUsedThisMonth + tokensUsed - baseAllocation);
             if (overageTokens > 0) {
                 const tokenPrice = await this.getTokenPrice();
                 cost = (overageTokens / 1000) * tokenPrice;
-
-                // Check spending limit
-                if (subscription.spendingLimit) {
-                    const currentMonthCost = await this.getCurrentMonthCost(userId);
-                    if (currentMonthCost + cost > subscription.spendingLimit) {
-                        throw new BadRequestException('Spending limit exceeded. Please increase your limit or wait for the next billing cycle.');
-                    }
-                }
-
-                // Report usage to Stripe if there's overage and spending limit is set
-                if (subscription.spendingLimit && subscription.stripeSubscriptionId) {
-                    await this.reportUsageToStripe(subscription.stripeSubscriptionId, subscription.stripeCustomerId, overageTokens, cost);
-                }
             }
         }
 
-        // Log token usage
-        await this.prisma.tokenUsageLog.create({
-            data: {
-                subscriptionId: subscription.id,
-                teamId,
-                botId,
-                chatId,
-                taskId,
-                operationType,
-                tokensUsed,
-                cost,
-            },
-        });
+        // Atomic insert + counter increment. The TokenUsageLog has a unique index on
+        // (taskId, operationType) — Postgres treats NULL as distinct so chat rows
+        // (taskId=null) are unaffected, but ingestion duplicates from a second backend
+        // pod hit P2002. On dup, the transaction rolls back and the subscription
+        // counter is NOT incremented a second time.
+        try {
+            await this.prisma.$transaction(async (tx) => {
+                await tx.tokenUsageLog.create({
+                    data: {
+                        subscriptionId: subscription.id,
+                        teamId,
+                        botId,
+                        chatId,
+                        taskId,
+                        operationType,
+                        tokensUsed,
+                        cost,
+                    },
+                });
+                await tx.subscription.update({
+                    where: { userId },
+                    data: {
+                        tokensUsedThisMonth: { increment: tokensUsed },
+                    },
+                });
+            });
+        } catch (e: any) {
+            if (e?.code === 'P2002' && taskId) {
+                // Another replica already tracked this task. Silent skip — do not
+                // increment counters, do not report to Stripe.
+                console.log(`[trackTokenUsage] duplicate skipped taskId=${taskId} operationType=${operationType}`);
+                return {
+                    success: false,
+                    duplicate: true,
+                    tokensUsed: 0,
+                    cost: 0,
+                    tokensRemaining: subscription.monthlyTokenAllocation + subscription.additionalTokensPurchased - subscription.tokensUsedThisMonth,
+                };
+            }
+            throw e;
+        }
+
+        // Spending-limit check + Stripe report run after the row is committed.
+        if (overageTokens > 0 && cost > 0) {
+            if (subscription.spendingLimit) {
+                const currentMonthCost = await this.getCurrentMonthCost(userId);
+                if (currentMonthCost + cost > subscription.spendingLimit) {
+                    throw new BadRequestException('Spending limit exceeded. Please increase your limit or wait for the next billing cycle.');
+                }
+            }
+
+            if (subscription.spendingLimit && subscription.stripeSubscriptionId) {
+                await this.reportUsageToStripe(subscription.stripeSubscriptionId, subscription.stripeCustomerId, overageTokens, cost);
+            }
+        }
 
         return {
             success: true,

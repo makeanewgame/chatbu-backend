@@ -17,9 +17,6 @@ export class EventsService implements OnModuleInit {
         connectionString: process.env.DATABASE_URL,
     });
 
-    // Prevent duplicate token tracking for the same ingestion task
-    private trackedTaskIds = new Set<string>();
-
 
     async onModuleInit() {
         console.log('EventsService initializing...');
@@ -55,15 +52,18 @@ export class EventsService implements OnModuleInit {
                 console.log('Received notification on ingestion_task_updates:', payload);
                 await this.eventGateWay.notifyUser(payload.customer_cuid, tempPayload);
 
-                // Track ingestion tokens when task completes (deduplicate by task_id)
-                if (payload.status === 'completed' && payload.tokens_consumed > 0 && !this.trackedTaskIds.has(payload.task_id)) {
-                    this.trackedTaskIds.add(payload.task_id);
+                // Track ingestion tokens when the task completes. Dedup is enforced
+                // at the DB level via TokenUsageLog's unique (taskId, operationType)
+                // index — both backend pods receive every NOTIFY (LISTEN broadcasts),
+                // and only one INSERT will succeed. The other gets P2002 and exits
+                // silently inside trackTokenUsage.
+                if (payload.status === 'completed' && payload.tokens_consumed > 0) {
                     try {
                         const team = await this.prisma.team.findUnique({
                             where: { id: payload.customer_cuid },
                         });
                         if (team) {
-                            await this.subscriptionService.trackTokenUsage(
+                            const result = await this.subscriptionService.trackTokenUsage(
                                 team.ownerId,
                                 payload.tokens_consumed,
                                 payload.customer_cuid,
@@ -72,11 +72,12 @@ export class EventsService implements OnModuleInit {
                                 'ingestion',
                                 payload.task_id,
                             );
-                            console.log(`Tracked ${payload.tokens_consumed} ingestion tokens for team ${payload.customer_cuid}`);
+                            if (result.success) {
+                                console.log(`Tracked ${payload.tokens_consumed} ingestion tokens for team ${payload.customer_cuid} (task ${payload.task_id})`);
+                            }
                         }
                     } catch (e) {
                         console.error('Failed to track ingestion tokens:', e);
-                        this.trackedTaskIds.delete(payload.task_id);
                     }
                 }
             }
