@@ -6,6 +6,7 @@ import { SubscriptionModule } from 'src/subscription/subscription.module';
 
 @Module({
   imports: [PrismaModule, SubscriptionModule],
-  providers: [EventsGateway, EventsService]
+  providers: [EventsGateway, EventsService],
+  exports: [EventsGateway],
 })
 export class EventsModule { }

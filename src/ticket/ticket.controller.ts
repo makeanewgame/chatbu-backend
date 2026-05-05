@@ -62,7 +62,11 @@ export class TicketController {
     // Admin: Get all team tickets
     @Get('admin/team-tickets')
     async getTeamTickets(@Request() req) {
-        return await this.ticketService.getTeamTickets(req.user.teamId);
+        const user = req.user;
+        if (user.role === 'ADMIN') {
+            return await this.ticketService.getAllTickets();
+        }
+        return await this.ticketService.getTeamTickets(user.teamId);
     }
 
     // Admin: Update ticket status

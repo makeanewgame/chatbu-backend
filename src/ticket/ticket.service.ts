@@ -3,10 +3,14 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateTicketDto } from './dto/create-ticket.dto';
 import { AddTicketMessageDto } from './dto/add-ticket-message.dto';
 import { UpdateTicketStatusDto } from './dto/update-ticket-status.dto';
+import { EventsGateway } from 'src/events/events.gateway';
 
 @Injectable()
 export class TicketService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private eventsGateway: EventsGateway,
+    ) { }
 
     // Create a new ticket
     async createTicket(body: CreateTicketDto, userId: string, teamId: string) {
@@ -124,6 +128,48 @@ export class TicketService {
             };
         } catch (error) {
             console.error('Error fetching team tickets:', error);
+            return {
+                success: false,
+                message: 'Error fetching tickets',
+                error: error.message,
+            };
+        }
+    }
+
+    // Get ALL tickets — for global platform admins
+    async getAllTickets() {
+        try {
+            const tickets = await this.prisma.ticket.findMany({
+                include: {
+                    messages: {
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true,
+                                },
+                            },
+                        },
+                        orderBy: { createdAt: 'asc' },
+                    },
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                        },
+                    },
+                },
+                orderBy: { createdAt: 'desc' },
+            });
+
+            return {
+                success: true,
+                data: tickets,
+            };
+        } catch (error) {
+            console.error('Error fetching all tickets:', error);
             return {
                 success: false,
                 message: 'Error fetching tickets',
@@ -423,7 +469,10 @@ export class TicketService {
             // 2. Global platform admins (User.role = 'ADMIN') not already notified
             const globalAdmins = await this.prisma.user.findMany({
                 where: { role: 'ADMIN', isDeleted: false },
-                select: { id: true },
+                select: {
+                    id: true,
+                    User: { select: { teamId: true }, take: 1 },
+                },
             });
 
             for (const admin of globalAdmins) {
@@ -437,6 +486,11 @@ export class TicketService {
                             message,
                         },
                     });
+                }
+                // Push via WebSocket to admin's team room
+                const adminTeamId = admin.User?.[0]?.teamId;
+                if (adminTeamId) {
+                    this.eventsGateway.notifyUser(adminTeamId, { type: 'NEW_NOTIFICATION' });
                 }
             }
         } catch (error) {
