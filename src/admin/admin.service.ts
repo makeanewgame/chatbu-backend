@@ -138,6 +138,12 @@ export class AdminService {
                     isDeleted: true,
                     deletedAt: true,
                     verifiedAt: true,
+                    Subscription: {
+                        select: {
+                            tier: true,
+                            status: true,
+                        },
+                    },
                 },
                 orderBy: {
                     createdAt: 'desc',

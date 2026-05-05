@@ -54,6 +54,8 @@ export class SubscriptionService {
 
         // Fetch payment method details from Stripe if available
         let paymentMethod = null;
+        let nextBillingAmount: number | null = null;
+        let nextBillingCurrency: string | null = null;
         if (subscription.stripeCustomerId && this.stripe) {
             try {
                 const customer = await this.stripe.customers.retrieve(subscription.stripeCustomerId) as Stripe.Customer;
@@ -75,11 +77,24 @@ export class SubscriptionService {
             } catch (error) {
                 console.error('Error fetching payment method:', error);
             }
+
+            // Fetch upcoming invoice amount from Stripe
+            try {
+                const upcomingInvoice = await this.stripe.invoices.createPreview({
+                    customer: subscription.stripeCustomerId,
+                });
+                nextBillingAmount = upcomingInvoice.amount_due / 100;
+                nextBillingCurrency = upcomingInvoice.currency;
+            } catch (error) {
+                // No upcoming invoice (e.g. no active Stripe subscription) — ignore
+            }
         }
 
         return {
             ...subscription,
             paymentMethod,
+            nextBillingAmount,
+            nextBillingCurrency,
         };
     }
 

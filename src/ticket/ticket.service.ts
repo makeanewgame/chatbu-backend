@@ -395,6 +395,7 @@ export class TicketService {
         message: string
     ) {
         try {
+            // 1. Team-level admins
             const teamMembers = await this.prisma.teamMember.findMany({
                 where: {
                     teamId,
@@ -402,12 +403,35 @@ export class TicketService {
                 },
             });
 
+            const notifiedUserIds = new Set<string>();
+
             for (const member of teamMembers) {
                 if (member.userId) {
+                    notifiedUserIds.add(member.userId);
                     await this.prisma.notification.create({
                         data: {
                             ticketId,
                             userId: member.userId,
+                            type,
+                            title: 'New Support Ticket',
+                            message,
+                        },
+                    });
+                }
+            }
+
+            // 2. Global platform admins (User.role = 'ADMIN') not already notified
+            const globalAdmins = await this.prisma.user.findMany({
+                where: { role: 'ADMIN', isDeleted: false },
+                select: { id: true },
+            });
+
+            for (const admin of globalAdmins) {
+                if (!notifiedUserIds.has(admin.id)) {
+                    await this.prisma.notification.create({
+                        data: {
+                            ticketId,
+                            userId: admin.id,
                             type,
                             title: 'New Support Ticket',
                             message,
