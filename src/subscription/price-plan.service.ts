@@ -7,7 +7,7 @@ import { ExchangeRateService } from './exchange-rate.service';
 import { StripeBootstrapService } from './stripe-bootstrap.service';
 import { CreatePricePlanDto, PublishPricePlanDto } from './dto/price-plan.dto';
 
-const CONFIRMATION_TEXT = 'ONAYLA';
+const CONFIRMATION_TEXT = 'CONFIRM';
 
 @Injectable()
 export class PricePlanService {
@@ -90,7 +90,7 @@ export class PricePlanService {
     /**
      * groupTimestamp: createDraftPricePlan'dan dönen lookupKey'deki timestamp.
      * Üç draft planı birlikte yayına alır.
-     * publishDto.confirmationText === "ONAYLA" zorunlu.
+     * publishDto.confirmationText === "CONFIRM" zorunlu.
      */
     async publishPricePlans(monthlyDraftId: string, yearlyDraftId: string, tokenDraftId: string, dto: PublishPricePlanDto) {
         if (dto.confirmationText !== CONFIRMATION_TEXT) {

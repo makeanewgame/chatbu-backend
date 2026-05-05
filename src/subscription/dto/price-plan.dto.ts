@@ -5,5 +5,5 @@ export class CreatePricePlanDto {
 }
 
 export class PublishPricePlanDto {
-    confirmationText: string; // "ONAYLA" gelmeli
+    confirmationText: string; // "CONFIRM" gelmeli
 }

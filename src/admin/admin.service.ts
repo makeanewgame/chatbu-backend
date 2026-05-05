@@ -443,7 +443,34 @@ export class AdminService {
             return { teamId: null, quotas: [] };
         }
 
-        return { teamId: team.id, quotas: team.Quota };
+        // TOKEN quota limit is authoritative in Subscription.monthlyTokenAllocation.
+        // Patch the returned quota list so the admin UI reflects the real enforced limit.
+        const subscription = await this.prisma.subscription.findUnique({
+            where: { userId },
+            select: { monthlyTokenAllocation: true },
+        });
+
+        const quotas = team.Quota.map((q) => {
+            if (q.quotaType === 'TOKEN' && subscription) {
+                return { ...q, limit: subscription.monthlyTokenAllocation };
+            }
+            return q;
+        });
+
+        // If no TOKEN quota row exists yet, synthesise one from the subscription value.
+        if (!quotas.find((q) => q.quotaType === 'TOKEN') && subscription) {
+            quotas.push({
+                id: 'virtual-token',
+                teamId: team.id,
+                quotaType: 'TOKEN',
+                limit: subscription.monthlyTokenAllocation,
+                used: 0,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            } as any);
+        }
+
+        return { teamId: team.id, quotas };
     }
 
     async updateUserQuota(userId: string, quotaType: 'BOT' | 'TOKEN', limit: number) {
@@ -462,6 +489,23 @@ export class AdminService {
 
         if (!team) {
             throw new NotFoundException('User does not have a team');
+        }
+
+        // TOKEN quota is enforced via Subscription.monthlyTokenAllocation —
+        // the Quota table is NOT read by checkTokenQuota(). Update both so that
+        // the admin UI shows the correct value and the quota check actually works.
+        if (quotaType === 'TOKEN') {
+            await this.prisma.subscription.upsert({
+                where: { userId },
+                update: { monthlyTokenAllocation: limit },
+                create: {
+                    userId,
+                    tier: 'FREE',
+                    monthlyTokenAllocation: limit,
+                    additionalTokensPurchased: 0,
+                    tokensUsedThisMonth: 0,
+                },
+            });
         }
 
         const quota = await this.prisma.quota.upsert({
