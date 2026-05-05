@@ -520,6 +520,15 @@ export class TicketService {
                             : 'You have a new message on your support ticket',
                     },
                 });
+
+                // Push real-time event to target user's room
+                const membership = await this.prisma.teamMember.findFirst({
+                    where: { userId: targetUserId },
+                    select: { teamId: true },
+                });
+                if (membership?.teamId) {
+                    this.eventsGateway.notifyUser(membership.teamId, { type: 'NEW_NOTIFICATION' });
+                }
             }
         } catch (error) {
             console.error('Error notifying message reply:', error);
