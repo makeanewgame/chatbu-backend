@@ -1,0 +1,23 @@
+# Environment files — must NEVER be baked into Docker images
+.env
+.env.*
+!.env.stripe.example
+
+# Development / local tooling
+node_modules
+npm-debug.log*
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Test output
+coverage
+dist
+
+# Local scripts output
+*.local

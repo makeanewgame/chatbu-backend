@@ -97,7 +97,24 @@ export class SubscriptionService {
         }
 
         // Create or get Stripe customer
+        // Always verify that the stored stripeCustomerId actually exists in the current
+        // Stripe environment (live vs test keys may differ — old test IDs are invalid in live).
         let stripeCustomerId = subscription.stripeCustomerId;
+        if (stripeCustomerId) {
+            try {
+                const existing = await this.stripe.customers.retrieve(stripeCustomerId);
+                if ((existing as any).deleted) {
+                    console.log('Stripe customer deleted, will create new:', stripeCustomerId);
+                    stripeCustomerId = null;
+                    await this.prisma.subscription.update({ where: { userId }, data: { stripeCustomerId: null } });
+                }
+            } catch (err: any) {
+                // customer not found in current Stripe environment (e.g. test ID used with live keys)
+                console.log('Stripe customer not found, will create new:', stripeCustomerId, err?.message);
+                stripeCustomerId = null;
+                await this.prisma.subscription.update({ where: { userId }, data: { stripeCustomerId: null } });
+            }
+        }
         if (!stripeCustomerId) {
             const customerEmail = billingInfo.email || user.email;
 
