@@ -9,7 +9,10 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
 
 const INTEGRATION_TYPE = 'google-calendar';
-const SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
+// Full `calendar` scope is required so check_availability can call freebusy.query —
+// `calendar.events` alone returns 403 insufficientPermissions on freebusy. Narrowing
+// this scope was a drive-by change in 64b977c that broke every booking flow.
+const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
 
 @Injectable()
