@@ -27,7 +27,23 @@ export class TicketController {
         return await this.ticketService.getUserTickets(req.user.sub);
     }
 
-    // Get ticket by ID
+    // Get user notifications — must be BEFORE @Get(':id') to avoid param capture
+    @Get('user/notifications')
+    async getUserNotifications(@Request() req) {
+        return await this.ticketService.getUserNotifications(req.user.sub);
+    }
+
+    // Admin: Get all team tickets — must be BEFORE @Get(':id')
+    @Get('admin/team-tickets')
+    async getTeamTickets(@Request() req) {
+        const user = req.user;
+        if (user.role === 'ADMIN') {
+            return await this.ticketService.getAllTickets();
+        }
+        return await this.ticketService.getTeamTickets(user.teamId);
+    }
+
+    // Get ticket by ID — parameterized, must come AFTER all literal routes
     @Get(':id')
     async getTicketById(@Param('id') ticketId: string) {
         return await this.ticketService.getTicketById(ticketId);
@@ -47,26 +63,10 @@ export class TicketController {
         );
     }
 
-    // Get user notifications
-    @Get('user/notifications')
-    async getUserNotifications(@Request() req) {
-        return await this.ticketService.getUserNotifications(req.user.sub);
-    }
-
     // Mark notification as read
     @Patch('notifications/:id/read')
     async markNotificationAsRead(@Param('id') notificationId: string) {
         return await this.ticketService.markNotificationAsRead(notificationId);
-    }
-
-    // Admin: Get all team tickets
-    @Get('admin/team-tickets')
-    async getTeamTickets(@Request() req) {
-        const user = req.user;
-        if (user.role === 'ADMIN') {
-            return await this.ticketService.getAllTickets();
-        }
-        return await this.ticketService.getTeamTickets(user.teamId);
     }
 
     // Admin: Update ticket status
