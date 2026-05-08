@@ -77,18 +77,18 @@ export class MinioClientService {
     }
 
     async check() {
-        try {
-            const exists = await this.client.bucketExists(this.configService.get('S3_BUCKET_NAME'))
-            if (exists) {
-                return true
-            }
+        const bucket = this.configService.get('S3_BUCKET_NAME');
 
-            else {
-                return false
-            }
+        if (!bucket) {
+            throw new Error('S3_BUCKET_NAME is not configured');
         }
-        catch (err) {
-            console.log(err)
+
+        try {
+            return await this.client.bucketExists(bucket);
+        }
+        catch (err: any) {
+            const message = err?.message || 'Unknown S3 error';
+            throw new Error(`S3 health check failed for bucket ${bucket}: ${message}`);
         }
     }
 

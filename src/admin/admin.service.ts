@@ -688,9 +688,15 @@ export class AdminService {
 
         // 5. AWS S3 (bucketExists üzerinden)
         const s3Start = Date.now();
+        const s3Bucket = this.configService.get('S3_BUCKET_NAME');
         try {
             const exists = await this.minioClientService.check();
-            results.push({ name: 'aws-s3', status: exists ? 'healthy' : 'unhealthy', latencyMs: Date.now() - s3Start, error: exists ? undefined : 'Bucket not found' });
+            results.push({
+                name: 'aws-s3',
+                status: exists ? 'healthy' : 'unhealthy',
+                latencyMs: Date.now() - s3Start,
+                error: exists ? undefined : `Bucket not found: ${s3Bucket || 'S3_BUCKET_NAME is not configured'}`,
+            });
         } catch (e: any) {
             results.push({ name: 'aws-s3', status: 'unhealthy', latencyMs: Date.now() - s3Start, error: e?.message });
         }
