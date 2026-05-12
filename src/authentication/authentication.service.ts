@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -96,7 +96,7 @@ export class AuthenticationService {
 
     // Validate terms acceptance
     if (!user.termsAccepted) {
-      throw new UnauthorizedException('You must accept the Terms of Service to register');
+      throw new BadRequestException('You must accept the Terms of Service to register');
     }
 
     // Check if user exists by email or phone number
@@ -111,12 +111,12 @@ export class AuthenticationService {
 
     if (findUser) {
       if (findUser.email === user.email) {
-        throw new UnauthorizedException('User with this email already exists');
+        throw new ConflictException('User with this email already exists');
       }
       if (findUser.phoneNumber === user.phoneNumber) {
-        throw new UnauthorizedException('User with this phone number already exists');
+        throw new ConflictException('User with this phone number already exists');
       }
-      throw new UnauthorizedException('User already exists');
+      throw new ConflictException('User already exists');
     } else {
       const bcrypt = require('bcrypt');
       user.password = await bcrypt.hash(user.password, 10);
@@ -140,7 +140,7 @@ export class AuthenticationService {
         });
 
         if (!pendingTeamMember) {
-          throw new UnauthorizedException('Invalid invitation token');
+          throw new BadRequestException('Invalid invitation token');
         }
       } else {
         // If no invitation token, check if there's a pending invitation by email
