@@ -647,12 +647,12 @@ export class AuthenticationService {
   getTokens(userId: string, email: string, teamId: string, role: string) {
     const accessToken = this.jwtService.sign(
       { sub: userId, email, type: 'auth', teamId, role },
-      { expiresIn: '1m', secret: this.configService.get('JWT_SECRET') },
+      { expiresIn: '1d', secret: this.configService.get('JWT_SECRET') },
     );
     const refreshToken = this.jwtService.sign(
       { sub: userId, email, type: 'refresh', teamId, role },
       {
-        expiresIn: '2m',
+        expiresIn: '10d',
         secret: this.configService.get('JWT_REFRESH_SECRET'),
       },
     );
