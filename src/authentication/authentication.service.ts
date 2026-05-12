@@ -314,18 +314,15 @@ export class AuthenticationService {
     // const code = Math.floor(100000 + Math.random() * 900000).toString();
 
     const uuidVerificationCode = randomUUID();
+    // Expiry: 1 hour from now, encoded in the resetCode field so it works
+    // across multiple pods (no shared in-memory cache dependency).
+    const expiresAt = Date.now() + 60 * 60 * 1000;
+    const resetCodeValue = `${expiresAt}:${uuidVerificationCode}`;
 
-    // await this.cacheManager.set(
-    //   findUser.id,
-    //   uuidVerificationCode,
-    //   60 * 60 * 24,
-    // );
-
-    await this.cacheManager.set(
-      findUser.id,
-      uuidVerificationCode,
-      60 * 60 * 24,
-    );
+    await this.prisma.user.update({
+      where: { id: findUser.id },
+      data: { resetCode: resetCodeValue },
+    });
 
     const redirectUrl =
       process.env.FRONTEND_URL +
@@ -339,6 +336,7 @@ export class AuthenticationService {
       lang,
       redirectUrl,
     );
+    this.logger.info(`Password reset mail sent to ${user.email}`);
     return true;
 
     if (findUser) {
@@ -742,9 +740,21 @@ export class AuthenticationService {
       throw new Error('Şifreler uyuşmuyor.');
     }
 
-    const cachedToken = await this.cacheManager.get(userId);
+    // Token DB'den okunur — multi-pod ortamında in-memory cache güvenilmez
+    const storedCode = findUser.resetCode;
+    if (!storedCode) {
+      throw new Error('Geçersiz veya kullanılmış token.');
+    }
 
-    if (cachedToken !== token) {
+    const [expiresAtStr, storedToken] = storedCode.split(':');
+    const expiresAt = parseInt(expiresAtStr, 10);
+
+    if (Date.now() > expiresAt) {
+      await this.prisma.user.update({ where: { id: userId }, data: { resetCode: null } });
+      throw new Error('Token süresi dolmuş. Lütfen yeni bir şifre sıfırlama talebi oluşturun.');
+    }
+
+    if (storedToken !== token) {
       throw new Error('Geçersiz token.');
     }
 
@@ -753,12 +763,12 @@ export class AuthenticationService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data: { password: hashedPassword, updatedAt: new Date().toISOString() },
+      data: { password: hashedPassword, resetCode: null, updatedAt: new Date().toISOString() },
     });
 
     await this.cacheManager.del(`${userId}`);
 
-    await this.mail.sendPasswordChangedMail(findUser.email, cachedToken, 'en');
+    await this.mail.sendPasswordChangedMail(findUser.email, findUser.email, 'en');
     return { success: true, message: 'Şifreniz başarıyla güncellendi.' };
   }
 
