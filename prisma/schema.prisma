@@ -309,8 +309,6 @@ model PricePlan {
   stripePriceId        String?         @unique
   lookupKey            String?         @unique
   amountUsd            Float
-  amountTry            Float
-  exchangeRate         Float
   status               PricePlanStatus @default(DRAFT)
   createdByAdminId     String?
   activatedAt          DateTime?

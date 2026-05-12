@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { ExchangeRateService } from './exchange-rate.service';
 import { StripeBootstrapService } from './stripe-bootstrap.service';
 import { CreatePricePlanDto, PublishPricePlanDto } from './dto/price-plan.dto';
 
@@ -17,7 +16,6 @@ export class PricePlanService {
     constructor(
         private prisma: PrismaService,
         private config: ConfigService,
-        private exchangeRate: ExchangeRateService,
         private stripeBootstrap: StripeBootstrapService,
     ) {
         const stripeKey = this.config.get<string>('STRIPE_SECRET_KEY');
@@ -29,10 +27,6 @@ export class PricePlanService {
     // ─── DRAFT OLUŞTUR ──────────────────────────────────────────────────────
 
     async createDraftPricePlan(dto: CreatePricePlanDto, adminId: string) {
-        const { amountTry: monthlyTry, rate } = await this.exchangeRate.convertUsdToTry(dto.monthlyBaseUsd);
-        const { amountTry: yearlyTry } = await this.exchangeRate.convertUsdToTry(dto.yearlyBaseUsd);
-        const { amountTry: tokenTry } = await this.exchangeRate.convertUsdToTry(dto.tokenPer1000Usd);
-
         const subscriptionProduct = await this.stripeBootstrap.getProductByType('SUBSCRIPTION');
         const tokenProduct = await this.stripeBootstrap.getProductByType('TOKEN_USAGE');
 
@@ -49,8 +43,6 @@ export class PricePlanService {
                     stripeProductId: subscriptionProduct.id,
                     planType: 'MONTHLY_BASE',
                     amountUsd: dto.monthlyBaseUsd,
-                    amountTry: monthlyTry,
-                    exchangeRate: rate,
                     status: 'DRAFT',
                     createdByAdminId: adminId,
                     lookupKey: `monthly_base_${timestamp}`,
@@ -61,8 +53,6 @@ export class PricePlanService {
                     stripeProductId: subscriptionProduct.id,
                     planType: 'YEARLY_BASE',
                     amountUsd: dto.yearlyBaseUsd,
-                    amountTry: yearlyTry,
-                    exchangeRate: rate,
                     status: 'DRAFT',
                     createdByAdminId: adminId,
                     lookupKey: `yearly_base_${timestamp}`,
@@ -73,8 +63,6 @@ export class PricePlanService {
                     stripeProductId: tokenProduct.id,
                     planType: 'TOKEN_METERED',
                     amountUsd: dto.tokenPer1000Usd,
-                    amountTry: tokenTry,
-                    exchangeRate: rate,
                     status: 'DRAFT',
                     createdByAdminId: adminId,
                     lookupKey: `token_metered_${timestamp}`,
@@ -82,7 +70,7 @@ export class PricePlanService {
             }),
         ]);
 
-        return { monthly, yearly, token, exchangeRate: rate };
+        return { monthly, yearly, token };
     }
 
     // ─── YAYINA AL ──────────────────────────────────────────────────────────
@@ -231,13 +219,6 @@ export class PricePlanService {
             unit_amount: Math.round(plan.amountUsd * 100),
             billing_scheme: 'per_unit',
             recurring: recurringParams,
-            ...(!isMetered && {
-                currency_options: {
-                    try: {
-                        unit_amount: Math.round(plan.amountTry * 100),
-                    },
-                },
-            }),
             lookup_key: plan.lookupKey,
             transfer_lookup_key: true,
             metadata: {
@@ -314,7 +295,7 @@ export class PricePlanService {
     async getPlanStats() {
         const activePlans = await this.prisma.pricePlan.findMany({
             where: { status: 'ACTIVE' },
-            select: { id: true, planType: true, amountUsd: true, amountTry: true },
+            select: { id: true, planType: true, amountUsd: true },
         });
 
         const stats = await Promise.all(

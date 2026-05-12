@@ -216,7 +216,7 @@ export class SubscriptionService {
         });
 
         // Determine currency and price
-        const currency = planDetails.currency?.toLowerCase() || 'try';
+        const currency = planDetails.currency?.toLowerCase() || 'usd';
         const totalPrice = planDetails.totalPrice || 899;
         const isAnnual = planDetails.isAnnual || false;
         const billingInterval = planDetails.billingInterval || (isAnnual ? 'yearly' : 'monthly');
@@ -800,19 +800,14 @@ export class SubscriptionService {
                 monthly: {
                     priceId: monthlyPlan.stripePriceId,
                     amountUsd: monthlyPlan.amountUsd,
-                    amountTry: monthlyPlan.amountTry,
-                    exchangeRate: monthlyPlan.exchangeRate,
                 },
                 yearly: {
                     priceId: yearlyPlan.stripePriceId,
                     amountUsd: yearlyPlan.amountUsd,
-                    amountTry: yearlyPlan.amountTry,
-                    exchangeRate: yearlyPlan.exchangeRate,
                 },
                 token: tokenPlan ? {
                     priceId: tokenPlan.stripePriceId,
                     amountUsd: tokenPlan.amountUsd,
-                    amountTry: tokenPlan.amountTry,
                 } : null,
             };
         } catch (error) {
