@@ -647,38 +647,42 @@ export class AuthenticationService {
   getTokens(userId: string, email: string, teamId: string, role: string) {
     const accessToken = this.jwtService.sign(
       { sub: userId, email, type: 'auth', teamId, role },
-      { expiresIn: '1d', secret: this.configService.get('JWT_SECRET') },
+      { expiresIn: '1m', secret: this.configService.get('JWT_SECRET') },
     );
     const refreshToken = this.jwtService.sign(
       { sub: userId, email, type: 'refresh', teamId, role },
       {
-        expiresIn: '10d',
+        expiresIn: '2m',
         secret: this.configService.get('JWT_REFRESH_SECRET'),
       },
     );
     return { accessToken: accessToken, refreshToken: refreshToken };
   }
 
-  async refreshTokens(accessToken: string) {
-    const decodedToken = this.jwtService.decode(accessToken);
-
-    if (
-      !decodedToken ||
-      !decodedToken.exp ||
-      decodedToken.exp > Date.now() / 1000
-    ) {
+  async refreshTokens(refreshToken: string) {
+    if (!refreshToken) {
       return {
-        message: 'Access token is invalid or expired',
-        code: 'INVALID_ACCESS_TOKEN',
+        message: 'Refresh token not provided',
+        code: 'REFRESH_TOKEN_NOT_PROVIDED',
       };
     }
 
-    const userId = decodedToken.sub;
+    let decoded: any;
+    try {
+      decoded = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+      });
+    } catch {
+      return {
+        message: 'Refresh token is invalid or expired',
+        code: 'INVALID_REFRESH_ACCESS_TOKEN',
+      };
+    }
+
+    const userId = decoded.sub;
 
     const findUser = await this.prisma.user.findFirst({
-      where: {
-        id: userId,
-      },
+      where: { id: userId },
       select: { id: true, email: true, role: true, refreshToken: true },
     });
 
@@ -686,10 +690,11 @@ export class AuthenticationService {
       return { message: 'User not found', code: 'USER_NOT_FOUND' };
     }
 
+    // Server-side invalidation check: if logout cleared the DB token, reject
     if (!findUser.refreshToken) {
       return {
-        message: 'Refresh token not found',
-        code: 'REFRESH_TOKEN_NOT_FOUND',
+        message: 'Refresh token has been invalidated',
+        code: 'REFRESH_TOKEN_INVALIDATED',
       };
     }
 
@@ -702,39 +707,16 @@ export class AuthenticationService {
       };
     }
 
-    const savedRefreshToken = findUser.refreshToken;
-
-    const decodedRefreshToken = this.jwtService.decode(savedRefreshToken);
-    if (
-      !decodedRefreshToken ||
-      !decodedRefreshToken.exp ||
-      decodedRefreshToken.exp < Date.now() / 1000
-    ) {
-      return {
-        message: 'Refresh token is invalid or expired',
-        code: 'INVALID_REFRESH_ACCESS_TOKEN',
-      };
-    }
-
-    const refreshTokenUserID = decodedToken.sub;
-    const refreshTokenUserEmail = decodedToken.email;
-    const refreshTokenUserRole = decodedToken.role;
-
-    // Get new access token from the database
-    const tokens = await this.getTokens(
-      refreshTokenUserID,
-      refreshTokenUserEmail,
+    const tokens = this.getTokens(
+      findUser.id,
+      findUser.email,
       teamId,
-      refreshTokenUserRole
+      findUser.role,
     );
 
     await this.prisma.user.update({
-      where: {
-        id: userId,
-      },
-      data: {
-        refreshToken: tokens.refreshToken,
-      },
+      where: { id: userId },
+      data: { refreshToken: tokens.refreshToken },
     });
 
     return { accessToken: tokens.accessToken };

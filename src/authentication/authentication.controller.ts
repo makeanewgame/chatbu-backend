@@ -6,6 +6,7 @@ import {
   Put,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthenticationService } from './authentication.service';
@@ -111,7 +112,7 @@ export class AuthenticationController {
     const frontendRedirectUri = this.resolveFrontendGoogleRedirectUri(req.query?.state);
     res.redirect(
       frontendRedirectUri +
-      `?user=${JSON.stringify(data)}`,
+      `?user=${encodeURIComponent(JSON.stringify(data))}`,
     );
   }
 
@@ -216,6 +217,15 @@ export class AuthenticationController {
   @Get('refresh-token')
   async refreshToken() {
     return 'Refresh Token';
+  }
+
+  @Post('refresh')
+  async refresh(@Body() body: { refreshToken: string }) {
+    const result = await this.authService.refreshTokens(body.refreshToken);
+    if (!result.accessToken) {
+      throw new UnauthorizedException(result.message || 'Token refresh failed');
+    }
+    return result;
   }
 
   @UseGuards(AccessTokenGuard)
