@@ -100,11 +100,13 @@ export class AuthenticationService {
     }
 
     // Check if user exists by email or phone number
+    // Only check phone uniqueness if the number has meaningful digits beyond country code (min 7 digits)
+    const hasValidPhoneNumber = user.phoneNumber && user.phoneNumber.replace(/\D/g, '').length >= 7;
     const findUser = await this.prisma.user.findFirst({
       where: {
         OR: [
           { email: user.email },
-          ...(user.phoneNumber ? [{ phoneNumber: user.phoneNumber }] : []),
+          ...(hasValidPhoneNumber ? [{ phoneNumber: user.phoneNumber }] : []),
         ],
       },
     });
