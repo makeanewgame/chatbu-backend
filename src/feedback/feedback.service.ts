@@ -70,7 +70,7 @@ export class FeedbackService {
                             message: dto.message,
                             feedbackId: feedback.id,
                         },
-                        'en', // You can make this dynamic based on admin preference
+                        dto.lang || 'en',
                     )
                     .catch((error) => {
                         this.logger.error(

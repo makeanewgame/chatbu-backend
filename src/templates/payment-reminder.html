@@ -1,0 +1,128 @@
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Upcoming Payment Reminder</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            margin: 0;
+            padding: 0;
+            background-color: #f7f7f7;
+        }
+
+        p {
+            font-size: 16px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+        }
+
+        .header {
+            text-align: center;
+            padding: 20px 0;
+            border-bottom: 1px solid #eeeeee;
+        }
+
+        .logo {
+            max-height: 60px;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            padding: 30px 20px;
+        }
+
+        .info-box {
+            background-color: #e8f4fd;
+            border-left: 4px solid #2196F3;
+            border-radius: 4px;
+            padding: 16px 20px;
+            margin: 20px 0;
+        }
+
+        .info-box p {
+            margin: 0;
+            font-size: 15px;
+            color: #555;
+        }
+
+        .due-date {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2196F3;
+            margin: 4px 0;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background-color: #2196F3;
+            color: #ffffff !important;
+            text-decoration: none;
+            padding: 12px 28px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            margin: 20px 0;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #999999;
+            font-size: 12px;
+            border-top: 1px solid #eeeeee;
+        }
+
+        @media only screen and (max-width: 600px) {
+            .container {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="https://chatbu.io/wp-content/uploads/2025/03/Group-1-2.png" alt="Chatbu Logo" class="logo" />
+            <h2>Upcoming Payment Reminder</h2>
+        </div>
+
+        <div class="content">
+            <p>Dear {{name}},</p>
+
+            <div class="info-box">
+                <p>This is a friendly reminder that your next payment is due on:</p>
+                <p class="due-date">{{formattedDate}}</p>
+                <p>(3 days from now)</p>
+            </div>
+
+            <p>Please ensure your payment method is up to date to avoid any service interruption.</p>
+
+            <p style="text-align: center;">
+                <a href="{{frontend_url}}/subscription" class="cta-button">Manage Subscription</a>
+            </p>
+
+            <p>Best regards,<br />The Chatbu Team</p>
+        </div>
+
+        <div class="footer">
+            <p>&copy; 2026 Chatbu. All rights reserved.</p>
+            <p>
+                <a href="{{privacy_policy_url}}">Privacy Policy</a>
+                |
+                <a href="{{support_url}}">Support</a>
+            </p>
+        </div>
+    </div>
+</body>
+
+</html>

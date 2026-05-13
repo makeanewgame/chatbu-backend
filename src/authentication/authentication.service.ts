@@ -727,6 +727,7 @@ export class AuthenticationService {
     confirmPassword: string,
     userId: string,
     token: string,
+    lang: string = 'en',
   ) {
     const findUser = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -768,7 +769,7 @@ export class AuthenticationService {
 
     await this.cacheManager.del(`${userId}`);
 
-    await this.mail.sendPasswordChangedMail(findUser.email, findUser.email, 'en');
+    await this.mail.sendPasswordChangedMail(findUser.email, findUser.email, lang);
     return { success: true, message: 'Şifreniz başarıyla güncellendi.' };
   }
 
@@ -1275,6 +1276,7 @@ export class AuthenticationService {
     oldPassword: string,
     newPassword: string,
     confirmPassword: string,
+    lang: string = 'en',
   ) {
     try {
       // Find user
@@ -1329,7 +1331,7 @@ export class AuthenticationService {
       });
 
       // Send confirmation email
-      await this.mail.sendPasswordChangedMail(user.email, '', 'en');
+      await this.mail.sendPasswordChangedMail(user.email, '', lang);
 
       this.logger.info(`Password changed successfully for user ${userId}`);
 

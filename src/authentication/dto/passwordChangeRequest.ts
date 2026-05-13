@@ -16,4 +16,7 @@ export class PasswordRequestChange {
   @IsString()
   @IsNotEmpty()
   userId: string;
+
+  @IsString()
+  lang: string;
 }

@@ -50,7 +50,7 @@ export class BookingService {
             this.logger.warn(`Could not look up bot name for ${botCuid}: ${e}`);
         }
 
-        await this.mail.sendBookingVerificationMail(email, code, botName);
+        await this.mail.sendBookingVerificationMail(email, code, botName, 'en');
 
         return {
             verificationId: record.id,

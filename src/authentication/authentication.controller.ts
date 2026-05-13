@@ -206,6 +206,7 @@ export class AuthenticationController {
       body.confirmPassword,
       body.userId,
       body.token,
+      body.lang || 'en',
     );
   }
 
@@ -272,6 +273,7 @@ export class AuthenticationController {
       body.oldPassword,
       body.newPassword,
       body.confirmPassword,
+      body.lang || 'en',
     );
   }
 

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export enum FeedbackCategory {
     BUG_REPORT = 'BUG_REPORT',
@@ -26,4 +26,13 @@ export class CreateFeedbackDto {
     @IsNotEmpty()
     @MaxLength(1000, { message: 'Message cannot be longer than 1000 characters' })
     message: string;
+
+    @ApiProperty({
+        description: 'Language preference for email notification',
+        example: 'en',
+        required: false,
+    })
+    @IsString()
+    @IsOptional()
+    lang?: string;
 }

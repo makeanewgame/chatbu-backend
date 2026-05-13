@@ -6,6 +6,8 @@ import * as handlebars from 'handlebars';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 
+// This service is responsible for sending all types of emails in the system, including registration, password reset, team invitations, and booking verifications. It uses Handlebars templates for email content and supports multiple languages (English and Turkish). Also includes methods for sending notifications about token limits and payment issues. Language is determined by the caller and defaults to English if not specified. All email sending operations are logged for monitoring and debugging purposes.
+
 @Injectable()
 export class MailService {
   constructor(
@@ -46,7 +48,7 @@ export class MailService {
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to: email,
-      subject: 'Activate your account',
+      subject: lang === 'en' ? 'Activate your account' : 'Hesabınızı Aktifleştirin',
       html: html,
     };
 
@@ -98,6 +100,8 @@ export class MailService {
   }
   async sendPasswordChangedMail(email: string, code: string, lang: string) {
     const rootDir = process.cwd();
+
+    console.log('Sending password changed mail with code:', code, 'to email:', email, 'in language:', lang);
 
     const templatePath = path.join(
       rootDir,
@@ -161,7 +165,7 @@ export class MailService {
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to: email,
-      subject: lang === 'en' ? 'Team Invitation' : 'Takım Daveti',
+      subject: lang === 'en' ? 'Chatbu Team Invitation' : 'Chatbu Takım Daveti',
       html: html,
     };
 
@@ -178,6 +182,7 @@ export class MailService {
     email: string,
     code: string,
     botName: string,
+    lang: string,
   ) {
     const rootDir = process.cwd();
 
@@ -185,13 +190,13 @@ export class MailService {
       rootDir,
       'dist',
       'templates',
-      'booking-verification.html',
+      lang === 'en' ? 'booking-verification.html' : 'booking-verification_tr.html',
     );
     const templateSource = fs.readFileSync(templatePath, 'utf8');
     const template = handlebars.compile(templateSource);
     const html = template({
       code,
-      botName: botName || 'our team',
+      botName: botName || (lang === 'en' ? 'our team' : 'ekibimiz'),
       privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
       support_url: process.env.FRONTEND_SUPPORT_URL,
     });
@@ -199,7 +204,7 @@ export class MailService {
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to: email,
-      subject: `Verify your appointment with ${botName || 'our team'}`,
+      subject: lang === 'en' ? `Verify your appointment with ${botName || 'our team'}` : `${botName || 'Ekibimiz'} ile randevunuzu doğrulayın`,
       html,
     };
 
@@ -255,27 +260,29 @@ export class MailService {
     }
   }
 
-  async sendTokenLimitReachedEmail(email: string, name: string) {
+  async sendTokenLimitReachedEmail(email: string, name: string, lang: string = 'en') {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'token-limit-reached.html' : 'token-limit-reached_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const html = template({
+      name,
+      frontend_url: process.env.FRONTEND_URL,
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+    });
+
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to: email,
-      subject: 'Token Limit Reached - Upgrade to Premium',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>Token Limit Reached</h2>
-          <p>Dear ${name},</p>
-          <p>Your token usage has reached its limit. To continue using our services, please upgrade to a Premium membership.</p>
-          <p>Premium benefits include:</p>
-          <ul>
-            <li>Monthly token allocation</li>
-            <li>Ability to purchase additional tokens</li>
-            <li>Unlimited bots</li>
-            <li>Priority support</li>
-          </ul>
-          <p><a href="${process.env.FRONTEND_URL}/subscription" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Upgrade Now</a></p>
-          <p>Best regards,<br>Your Team</p>
-        </div>
-      `,
+      subject: lang === 'en' ? 'Token Limit Reached - Upgrade to Premium' : 'Token Limitiniz Doldu - Premium\'e Geçin',
+      html,
     };
 
     try {
@@ -287,26 +294,29 @@ export class MailService {
     }
   }
 
-  async sendPaymentFailedEmail(email: string, name: string) {
+  async sendPaymentFailedEmail(email: string, name: string, lang: string = 'en') {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'payment-failed.html' : 'payment-failed_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const html = template({
+      name,
+      frontend_url: process.env.FRONTEND_URL,
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+    });
+
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to: email,
-      subject: 'Payment Failed - Action Required',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>Payment Failed</h2>
-          <p>Dear ${name},</p>
-          <p>We were unable to process your payment for your Premium subscription. Your account has been temporarily blocked.</p>
-          <p>To restore access:</p>
-          <ol>
-            <li>Update your payment method</li>
-            <li>Retry the payment</li>
-          </ol>
-          <p><a href="${process.env.FRONTEND_URL}/subscription" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Update Payment Method</a></p>
-          <p>If you have any questions, please contact our support team.</p>
-          <p>Best regards,<br>Your Team</p>
-        </div>
-      `,
+      subject: lang === 'en' ? 'Payment Failed - Action Required' : 'Ödeme Başarısız - İşlem Gerekiyor',
+      html,
     };
 
     try {
@@ -318,27 +328,36 @@ export class MailService {
     }
   }
 
-  async sendPaymentReminderEmail(email: string, name: string, dueDate: Date) {
-    const formattedDate = dueDate.toLocaleDateString('en-US', {
+  async sendPaymentReminderEmail(email: string, name: string, dueDate: Date, lang: string = 'en') {
+    const formattedDate = dueDate.toLocaleDateString(lang === 'en' ? 'en-US' : 'tr-TR', {
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
+    });
+
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'payment-reminder.html' : 'payment-reminder_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const html = template({
+      name,
+      formattedDate,
+      frontend_url: process.env.FRONTEND_URL,
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
     });
 
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to: email,
-      subject: 'Upcoming Payment Reminder',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>Payment Reminder</h2>
-          <p>Dear ${name},</p>
-          <p>This is a friendly reminder that your next payment is due on <strong>${formattedDate}</strong> (5 days from now).</p>
-          <p>Please ensure your payment method is up to date to avoid any service interruption.</p>
-          <p><a href="${process.env.FRONTEND_URL}/subscription" style="background-color: #2196F3; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Manage Subscription</a></p>
-          <p>Best regards,<br>Your Team</p>
-        </div>
-      `,
+      subject: lang === 'en' ? 'Upcoming Payment Reminder' : 'Yaklaşan Ödeme Hatırlatması',
+      html,
     };
 
     try {
