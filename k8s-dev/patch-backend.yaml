@@ -1,0 +1,18 @@
+# Strategic-merge: env is a list keyed by `name`, so these two entries
+# override just FRONTEND_URL / CORS_ORIGIN; all other env vars (already
+# namespace-relative bare names from the Step 1 edit) are inherited.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: backend
+          env:
+            - name: FRONTEND_URL
+              value: "https://dev.chatbu.io"
+            - name: CORS_ORIGIN
+              value: "https://dev.chatbu.io"

@@ -2,7 +2,7 @@ name: Backend CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths-ignore:
       - 'README.md'
       - 'docs/**'
@@ -44,6 +44,14 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           SHORT_SHA=${GITHUB_SHA::7}
           
+          # develop → backend-dev (chatbu-dev); main → backend-latest (chatbu).
+          if [ "${GITHUB_REF}" = "refs/heads/develop" ]; then
+            echo "channel=backend-dev" >> $GITHUB_OUTPUT
+            echo "namespace=chatbu-dev" >> $GITHUB_OUTPUT
+          else
+            echo "channel=backend-latest" >> $GITHUB_OUTPUT
+            echo "namespace=chatbu" >> $GITHUB_OUTPUT
+          fi
           echo "version=backend-${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "timestamp=backend-${TIMESTAMP}" >> $GITHUB_OUTPUT
           echo "latest=backend-latest" >> $GITHUB_OUTPUT
@@ -55,7 +63,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.latest }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.channel }}
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.version }}
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.timestamp }}
           cache-from: type=gha
@@ -67,8 +75,8 @@ jobs:
       - name: Restart backend deployment on EKS
         run: |
           aws eks update-kubeconfig --name chatbu-prod --region ${{ env.AWS_REGION }}
-          kubectl rollout restart deployment/backend -n chatbu
-          kubectl rollout status deployment/backend -n chatbu --timeout=300s
+          kubectl rollout restart deployment/backend -n ${{ steps.meta.outputs.namespace }}
+          kubectl rollout status deployment/backend -n ${{ steps.meta.outputs.namespace }} --timeout=300s
 
       - name: Deployment summary
         run: |
