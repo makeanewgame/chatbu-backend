@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# chatbu-dev overlay for the NestJS backend. Lives OUTSIDE k8s/ so the prod
+# backend Application (source path `k8s`, using k8s/kustomization.yaml) is
+# completely untouched. References the prod base kustomization root `../k8s`
+# and adds a dev-local backend RBAC copy. The `namespace:` transformer
+# rewrites every metadata.namespace and the RoleBinding subject namespace.
+namespace: chatbu-dev
+
+resources:
+  - ../k8s          # prod base root (deployment + service + hpa)
+  - rbac.yaml       # dev-local SA/Role/RoleBinding (not in the base)
+
+images:
+  - name: 152100380489.dkr.ecr.eu-central-1.amazonaws.com/chatbu-repo
+    newTag: backend-dev
+
+patches:
+  # 1 replica + dev public URLs
+  - path: patch-backend.yaml
+    target:
+      kind: Deployment
+      name: backend
+
+  # delete HPA (single-pod dev)
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: backend
+    patch: |-
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: backend
+      $patch: delete
