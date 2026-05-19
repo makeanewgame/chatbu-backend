@@ -37,15 +37,15 @@ spec:
         - name: PORT
           value: "3001"
         - name: API_URL
-          value: "http://backend.chatbu.svc.cluster.local:3001"
+          value: "http://backend:3001"
         - name: FRONTEND_URL
           value: "https://app.chatbu.io"
         - name: CORS_ORIGIN
           value: "https://app.chatbu.io,https://chatbu.io"
         - name: INGEST_ENPOINT
-          value: "http://fastapi-gateway-service.chatbu.svc.cluster.local:8000"
+          value: "http://fastapi-gateway-service:8000"
         - name: MCP_API_GATEWAY_URL
-          value: "http://fastapi-gateway-service.chatbu.svc.cluster.local:8000"
+          value: "http://fastapi-gateway-service:8000"
         resources:
           requests:
             memory: "1Gi"
