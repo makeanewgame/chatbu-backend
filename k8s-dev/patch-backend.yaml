@@ -1,6 +1,14 @@
-# Strategic-merge: env is a list keyed by `name`, so these two entries
-# override just FRONTEND_URL / CORS_ORIGIN; all other env vars (already
+# Strategic-merge: env is a list keyed by `name`, so these entries
+# override just the per-env URLs; all other env vars (already
 # namespace-relative bare names from the Step 1 edit) are inherited.
+#
+# The three Google OAuth redirect URIs are seeded from prod's
+# backend-secrets (they aren't GitOps-managed in prod either), so they
+# point at app.chatbu.io by default. Without these overrides, a "Login
+# with Google" on dev.chatbu.io builds redirect_uri=app.chatbu.io/... and
+# Google sends the user back to prod. The dev callback URLs must ALSO be
+# added as Authorized redirect URIs on the Google OAuth client (or use a
+# separate dev OAuth client) for Google to accept them.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,3 +24,9 @@ spec:
               value: "https://dev.chatbu.io"
             - name: CORS_ORIGIN
               value: "https://dev.chatbu.io"
+            - name: FRONTEND_GOOGLE_REDIRECT_URI
+              value: "https://dev.chatbu.io/auth/google/redirect"
+            - name: GOOGLE_REDIRECT_URI
+              value: "https://dev.chatbu.io/api/auth/google/redirect"
+            - name: GOOGLE_CALENDAR_REDIRECT_URI
+              value: "https://dev.chatbu.io/api/integration/google-calendar/callback"
