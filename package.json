@@ -10,6 +10,7 @@
     "local": "bash ./scripts/use-local-env.sh",
     "aws": "bash ./scripts/use-aws-env.sh",
     "aws:db": "bash ./scripts/port-forward-k8s-postgres.sh postgresql chatbu-postgres-rw 5432 5432",
+    "dev-server": "bash ./scripts/port-forward-dev-server.sh",
     "start:dev:local": "npm run local && npm run start:dev",
     "start:dev:aws": "bash ./scripts/start-dev-aws.sh",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
