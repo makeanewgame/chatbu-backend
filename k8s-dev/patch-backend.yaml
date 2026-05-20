@@ -16,3 +16,7 @@ spec:
               value: "https://dev.chatbu.io"
             - name: CORS_ORIGIN
               value: "https://dev.chatbu.io"
+            - name: GOOGLE_REDIRECT_URI
+              value: "https://dev.chatbu.io/api/auth/google/redirect"
+            - name: FRONTEND_GOOGLE_REDIRECT_URI
+              value: "https://dev.chatbu.io/auth/google/redirect"
