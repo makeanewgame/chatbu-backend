@@ -159,9 +159,9 @@ export class MetaIntegrationController {
     @ApiBearerAuth()
     @Post('whatsapp/test-activate')
     @UseGuards(AccessTokenGuard, AdminGuard)
-    testActivate(@Body() body: { botId: string }) {
+    async testActivate(@Body() body: { botId: string }) {
         this.logger.log(`POST /api/integrations/meta/whatsapp/test-activate botId=${body.botId}`);
-        this.metaWhatsappService.setTestBot(body.botId);
+        await this.metaWhatsappService.setTestBot(body.botId);
         return { success: true, botId: body.botId };
     }
 
@@ -169,9 +169,9 @@ export class MetaIntegrationController {
     @ApiBearerAuth()
     @Delete('whatsapp/test-activate')
     @UseGuards(AccessTokenGuard, AdminGuard)
-    testDeactivate() {
+    async testDeactivate() {
         this.logger.log('DELETE /api/integrations/meta/whatsapp/test-activate');
-        this.metaWhatsappService.setTestBot(null);
+        await this.metaWhatsappService.setTestBot(null);
         return { success: true };
     }
 
@@ -179,7 +179,7 @@ export class MetaIntegrationController {
     @ApiBearerAuth()
     @Get('whatsapp/test-messages')
     @UseGuards(AccessTokenGuard, AdminGuard)
-    getTestMessages() {
+    async getTestMessages() {
         return this.metaWhatsappService.getTestState();
     }
 
@@ -187,9 +187,9 @@ export class MetaIntegrationController {
     @ApiBearerAuth()
     @Delete('whatsapp/test-messages')
     @UseGuards(AccessTokenGuard, AdminGuard)
-    clearTestMessages() {
+    async clearTestMessages() {
         this.logger.log('DELETE /api/integrations/meta/whatsapp/test-messages');
-        this.metaWhatsappService.clearTestMessages();
+        await this.metaWhatsappService.clearTestMessages();
         return { success: true };
     }
 }

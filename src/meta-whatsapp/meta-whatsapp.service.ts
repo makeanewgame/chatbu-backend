@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { BotService } from 'src/bot/bot.service';
 import { WhatsAppEmbeddedService } from 'src/integration/whatsapp-embedded/whatsapp-embedded.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 export interface WhatsAppWebhookEntry {
     id: string;
@@ -56,34 +57,75 @@ export interface TestMessage {
 export class MetaWhatsappService {
     private readonly logger = new Logger(MetaWhatsappService.name);
 
-    // ── Test mode state (in-memory, temporary for Meta App Review) ──────────
-    private testBotId: string | null = null;
-    private testMessages: TestMessage[] = [];
+    private static readonly KEY_TEST_BOT_ID = 'wa_test_bot_id';
+    private static readonly KEY_TEST_MESSAGES = 'wa_test_messages';
 
     constructor(
         private readonly configService: ConfigService,
         private readonly whatsAppEmbeddedService: WhatsAppEmbeddedService,
         private readonly botService: BotService,
+        private readonly prisma: PrismaService,
     ) { }
 
-    // ── Test mode management ─────────────────────────────────────────────────
+    // ── Test mode management (DB-backed so all replicas share state) ─────────
 
-    setTestBot(botId: string | null): void {
-        this.testBotId = botId;
-        if (!botId) this.testMessages = [];
+    async setTestBot(botId: string | null): Promise<void> {
+        if (botId) {
+            await this.prisma.systemSettings.upsert({
+                where: { key: MetaWhatsappService.KEY_TEST_BOT_ID },
+                update: { value: botId },
+                create: { key: MetaWhatsappService.KEY_TEST_BOT_ID, value: botId, description: 'WA App Review test bot ID (temporary)' },
+            });
+            // Clear messages when activating
+            await this.prisma.systemSettings.upsert({
+                where: { key: MetaWhatsappService.KEY_TEST_MESSAGES },
+                update: { value: '[]' },
+                create: { key: MetaWhatsappService.KEY_TEST_MESSAGES, value: '[]', description: 'WA App Review test conversation log (temporary)' },
+            });
+        } else {
+            await this.prisma.systemSettings.deleteMany({
+                where: { key: { in: [MetaWhatsappService.KEY_TEST_BOT_ID, MetaWhatsappService.KEY_TEST_MESSAGES] } },
+            });
+        }
         this.logger.log(`WA test mode: ${botId ? `activated with botId=${botId}` : 'deactivated'}`);
     }
 
-    getTestState(): { active: boolean; botId: string | null; messages: TestMessage[] } {
-        return {
-            active: !!this.testBotId,
-            botId: this.testBotId,
-            messages: [...this.testMessages],
-        };
+    async getTestState(): Promise<{ active: boolean; botId: string | null; messages: TestMessage[] }> {
+        const [botSetting, msgSetting] = await Promise.all([
+            this.prisma.systemSettings.findUnique({ where: { key: MetaWhatsappService.KEY_TEST_BOT_ID } }),
+            this.prisma.systemSettings.findUnique({ where: { key: MetaWhatsappService.KEY_TEST_MESSAGES } }),
+        ]);
+        const botId = botSetting?.value ?? null;
+        const messages: TestMessage[] = msgSetting ? JSON.parse(msgSetting.value) : [];
+        return { active: !!botId, botId, messages };
     }
 
-    clearTestMessages(): void {
-        this.testMessages = [];
+    async clearTestMessages(): Promise<void> {
+        await this.prisma.systemSettings.upsert({
+            where: { key: MetaWhatsappService.KEY_TEST_MESSAGES },
+            update: { value: '[]' },
+            create: { key: MetaWhatsappService.KEY_TEST_MESSAGES, value: '[]', description: 'WA App Review test conversation log (temporary)' },
+        });
+    }
+
+    private async getTestBotId(): Promise<string | null> {
+        const setting = await this.prisma.systemSettings.findUnique({
+            where: { key: MetaWhatsappService.KEY_TEST_BOT_ID },
+        });
+        return setting?.value ?? null;
+    }
+
+    private async appendTestMessages(newMessages: TestMessage[]): Promise<void> {
+        const setting = await this.prisma.systemSettings.findUnique({
+            where: { key: MetaWhatsappService.KEY_TEST_MESSAGES },
+        });
+        const existing: TestMessage[] = setting ? JSON.parse(setting.value) : [];
+        const updated = [...existing, ...newMessages];
+        await this.prisma.systemSettings.upsert({
+            where: { key: MetaWhatsappService.KEY_TEST_MESSAGES },
+            update: { value: JSON.stringify(updated) },
+            create: { key: MetaWhatsappService.KEY_TEST_MESSAGES, value: JSON.stringify(updated), description: 'WA App Review test conversation log (temporary)' },
+        });
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -127,10 +169,13 @@ export class MetaWhatsappService {
                     // ── Test mode fallback ────────────────────────────────
                     const testPhoneNumberId = this.configService.get<string>('META_TEST_PHONE_NUMBER_ID');
 
-                    if (phoneNumberId === testPhoneNumberId && this.testBotId) {
-                        this.logger.log(`Test mode: routing messages for phoneNumberId=${phoneNumberId} to botId=${this.testBotId}`);
-                        await this.handleTestModeMessages(value, phoneNumberId);
-                        continue;
+                    if (phoneNumberId === testPhoneNumberId) {
+                        const testBotId = await this.getTestBotId();
+                        if (testBotId) {
+                            this.logger.log(`Test mode: routing messages for phoneNumberId=${phoneNumberId} to botId=${testBotId}`);
+                            await this.handleTestModeMessages(value, phoneNumberId, testBotId);
+                            continue;
+                        }
                     }
                     // ─────────────────────────────────────────────────────
 
@@ -202,7 +247,7 @@ export class MetaWhatsappService {
         }
     }
 
-    private async handleTestModeMessages(value: WhatsAppWebhookValue, phoneNumberId: string): Promise<void> {
+    private async handleTestModeMessages(value: WhatsAppWebhookValue, phoneNumberId: string, testBotId: string): Promise<void> {
         const testAccessToken = this.configService.get<string>('META_TEST_ACCESS_TOKEN');
 
         if (!testAccessToken) {
@@ -218,21 +263,20 @@ export class MetaWhatsappService {
 
             this.logger.log(`Test mode incoming | from=${senderId} | text=${text}`);
 
-            // Store incoming user message
-            this.testMessages.push({
+            const incomingMsg: TestMessage = {
                 role: 'user',
                 from: senderId,
                 text,
                 timestamp: new Date().toISOString(),
-            });
+            };
 
             try {
                 // Look up bot teamId
-                const bot = await this.botService.botDetail(this.testBotId);
+                const bot = await this.botService.botDetail(testBotId);
 
                 const response = await this.botService.chat(
                     {
-                        botId: this.testBotId,
+                        botId: testBotId,
                         teamId: bot.teamId,
                         message: text,
                         chatId: `wa_test_${senderId}`,
@@ -260,14 +304,16 @@ export class MetaWhatsappService {
 
                 this.logger.log(`Test mode reply sent | to=${senderId} | messageId=${messageId}`);
 
-                // Store bot reply
-                this.testMessages.push({
+                const botMsg: TestMessage = {
                     role: 'bot',
                     from: 'chatbu',
                     text: replyText,
                     timestamp: new Date().toISOString(),
                     messageId,
-                });
+                };
+
+                // Persist both messages to DB (shared across all pods)
+                await this.appendTestMessages([incomingMsg, botMsg]);
             } catch (err) {
                 this.logger.error(`Test mode error for ${senderId}: ${err?.toString()}`);
             }
