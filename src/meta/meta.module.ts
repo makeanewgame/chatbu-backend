@@ -5,9 +5,10 @@ import { MetaIntegrationController } from './meta-integration.controller';
 import { MetaService } from './meta.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { BotModule } from 'src/bot/bot.module';
+import { MetaWhatsappModule } from 'src/meta-whatsapp/meta-whatsapp.module';
 
 @Module({
-    imports: [PrismaModule, BotModule, JwtModule],
+    imports: [PrismaModule, BotModule, JwtModule, MetaWhatsappModule],
     controllers: [MetaController, MetaIntegrationController],
     providers: [MetaService],
 })

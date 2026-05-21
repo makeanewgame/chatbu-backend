@@ -1,15 +1,19 @@
-import { Body, Controller, Get, HttpCode, Logger, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Logger, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { AdminGuard } from 'src/admin/guards/admin.guard';
 import { MetaService } from './meta.service';
+import { MetaWhatsappService } from 'src/meta-whatsapp/meta-whatsapp.service';
 
 @ApiTags('Meta Integration Callback')
 @Controller('integrations/meta')
 export class MetaIntegrationController {
     private readonly logger = new Logger(MetaIntegrationController.name);
 
-    constructor(private readonly metaService: MetaService) { }
+    constructor(
+        private readonly metaService: MetaService,
+        private readonly metaWhatsappService: MetaWhatsappService,
+    ) { }
 
     @ApiOperation({ summary: 'Facebook Meta callback mock endpoint (GET)' })
     @Get('callback')
@@ -149,5 +153,43 @@ export class MetaIntegrationController {
     async testChatWhatsApp(@Body() body: { botId: string; to: string; message: string }) {
         this.logger.log(`POST /api/integrations/meta/whatsapp/test-chat botId=${body.botId} to=${body.to}`);
         return this.metaService.testChatWhatsApp(body.botId, body.to, body.message);
+    }
+
+    @ApiOperation({ summary: 'Activate webhook test mode: route test phone number messages to a bot (Admin only)' })
+    @ApiBearerAuth()
+    @Post('whatsapp/test-activate')
+    @UseGuards(AccessTokenGuard, AdminGuard)
+    testActivate(@Body() body: { botId: string }) {
+        this.logger.log(`POST /api/integrations/meta/whatsapp/test-activate botId=${body.botId}`);
+        this.metaWhatsappService.setTestBot(body.botId);
+        return { success: true, botId: body.botId };
+    }
+
+    @ApiOperation({ summary: 'Deactivate webhook test mode (Admin only)' })
+    @ApiBearerAuth()
+    @Delete('whatsapp/test-activate')
+    @UseGuards(AccessTokenGuard, AdminGuard)
+    testDeactivate() {
+        this.logger.log('DELETE /api/integrations/meta/whatsapp/test-activate');
+        this.metaWhatsappService.setTestBot(null);
+        return { success: true };
+    }
+
+    @ApiOperation({ summary: 'Get live webhook test conversation messages (Admin only)' })
+    @ApiBearerAuth()
+    @Get('whatsapp/test-messages')
+    @UseGuards(AccessTokenGuard, AdminGuard)
+    getTestMessages() {
+        return this.metaWhatsappService.getTestState();
+    }
+
+    @ApiOperation({ summary: 'Clear webhook test conversation history (Admin only)' })
+    @ApiBearerAuth()
+    @Delete('whatsapp/test-messages')
+    @UseGuards(AccessTokenGuard, AdminGuard)
+    clearTestMessages() {
+        this.logger.log('DELETE /api/integrations/meta/whatsapp/test-messages');
+        this.metaWhatsappService.clearTestMessages();
+        return { success: true };
     }
 }

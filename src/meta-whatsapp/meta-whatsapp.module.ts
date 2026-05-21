@@ -9,5 +9,6 @@ import { MetaWhatsappService } from './meta-whatsapp.service';
     imports: [ConfigModule, IntegrationModule, BotModule],
     controllers: [MetaWhatsappController],
     providers: [MetaWhatsappService],
+    exports: [MetaWhatsappService],
 })
 export class MetaWhatsappModule { }
