@@ -1,5 +1,6 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, BadRequestException } from '@nestjs/common';
 import axios from 'axios';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { BotService } from 'src/bot/bot.service';
 
@@ -10,6 +11,7 @@ export class MetaService {
     constructor(
         private prisma: PrismaService,
         private botService: BotService,
+        private configService: ConfigService,
     ) { }
 
     async verifyWebhook(mode: string, verifyToken: string, challenge: string): Promise<string> {
@@ -99,5 +101,90 @@ export class MetaService {
             },
             { params: { access_token: pageAccessToken } },
         );
+    }
+
+    // ─── WhatsApp Test Methods (Temporary – Meta App Review) ──────────────────
+
+    private getTestCredentials() {
+        const phoneNumberId = this.configService.get<string>('META_TEST_PHONE_NUMBER_ID');
+        const accessToken = this.configService.get<string>('META_TEST_ACCESS_TOKEN');
+
+        if (!phoneNumberId || !accessToken) {
+            throw new BadRequestException('META_TEST_PHONE_NUMBER_ID or META_TEST_ACCESS_TOKEN is not configured');
+        }
+
+        return { phoneNumberId, accessToken };
+    }
+
+    private async sendWhatsAppMessage(to: string, message: string, phoneNumberId: string, accessToken: string) {
+        const normalizedTo = to.replace(/^\+/, '');
+
+        const response = await axios.post(
+            `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`,
+            {
+                messaging_product: 'whatsapp',
+                to: normalizedTo,
+                type: 'text',
+                text: { body: message },
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+            },
+        );
+
+        return response.data;
+    }
+
+    async testSendWhatsApp(to: string, message: string): Promise<any> {
+        const { phoneNumberId, accessToken } = this.getTestCredentials();
+
+        this.logger.log(`WA test-send to=${to}`);
+
+        const data = await this.sendWhatsAppMessage(to, message, phoneNumberId, accessToken);
+
+        return {
+            success: true,
+            messageId: data?.messages?.[0]?.id ?? null,
+        };
+    }
+
+    async testChatWhatsApp(botId: string, to: string, message: string): Promise<any> {
+        const { phoneNumberId, accessToken } = this.getTestCredentials();
+
+        // 1. Resolve bot and its teamId
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: botId, isDeleted: false },
+        });
+
+        if (!bot) {
+            throw new BadRequestException('Bot not found');
+        }
+
+        // 2. Process message through chat service
+        const chatResponse = await this.botService.chat(
+            {
+                botId,
+                teamId: bot.teamId,
+                message,
+                chatId: `wa_test_${to.replace(/\D/g, '')}`,
+                sender: to,
+                date: new Date().toISOString(),
+            } as any,
+            '0.0.0.0',
+        );
+
+        const replyText = chatResponse?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
+
+        // 3. Send bot reply via WhatsApp
+        const data = await this.sendWhatsAppMessage(to, replyText, phoneNumberId, accessToken);
+
+        return {
+            success: true,
+            botReply: replyText,
+            messageId: data?.messages?.[0]?.id ?? null,
+        };
     }
 }
