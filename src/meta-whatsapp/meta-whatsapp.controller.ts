@@ -48,9 +48,9 @@ export class MetaWhatsappController {
     @ApiOperation({ summary: 'WhatsApp webhook event receiver — always returns 200 immediately' })
     @Post()
     @HttpCode(200)
-    handleWebhook(@Body() body: WhatsAppWebhookBody) {
+    async handleWebhook(@Body() body: WhatsAppWebhookBody) {
         try {
-            this.metaWhatsappService.handleWebhook(body);
+            await this.metaWhatsappService.handleWebhook(body);
         } catch (err) {
             // Swallow errors so Meta doesn't enter a retry loop
             this.logger.error('Error processing WhatsApp webhook body', err);
