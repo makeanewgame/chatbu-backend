@@ -233,4 +233,32 @@ export class ContentController {
     }
     //#endregion
 
+    //#region reIngestContents
+    @ApiOperation({ summary: 'Re-ingest selected web page or link content items' })
+    @ApiResponse({
+        status: 200,
+        description: 'Re-ingestion started',
+    })
+    @ApiBadRequestResponse({
+        description: 'Bad request in payload',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                botId: { type: 'string' },
+                contentIds: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['botId', 'contentIds'],
+        },
+    })
+    @Post('reIngestContents')
+    @UseGuards(AccessTokenGuard)
+    async reIngestContents(@Body() body: any, @Req() req: any) {
+        const user = req.user as IUser;
+        return this.contentService.reIngestContents(user, body.contentIds, body.botId);
+    }
+    //#endregion
+
 }

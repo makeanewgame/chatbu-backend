@@ -749,6 +749,124 @@ export class ContentService {
         return { message: 'Video ingestion not yet supported' };
     }
 
+    async reIngestContents(user: IUser, contentIds: string[], botId: string) {
+        try {
+            const findUser = await this.prisma.team.findFirst({
+                where: {
+                    id: user.teamId,
+                    CustomerBots: {
+                        some: { id: botId }
+                    }
+                }
+            });
+
+            if (!findUser) {
+                return { message: "User or Bot not found" };
+            }
+
+            const contents = await this.prisma.content.findMany({
+                where: {
+                    id: { in: contentIds },
+                    teamId: user.teamId,
+                    botId: botId,
+                    isDeleted: false,
+                    type: { in: ['WEBPAGE', 'LINK'] }
+                }
+            });
+
+            if (contents.length === 0) {
+                return { message: "No eligible content found to re-ingest" };
+            }
+
+            await this.prisma.content.updateMany({
+                where: { id: { in: contents.map(c => c.id) } },
+                data: { status: 'UPLOADED', taskId: '', ingestionInfo: {}, updatedAt: new Date() }
+            });
+
+            this.processReIngest(user, contents, botId).catch(err => {
+                console.log("processReIngest background error", err);
+            });
+
+            return {
+                message: "Re-ingestion started",
+                count: contents.length,
+            };
+        } catch (err) {
+            console.log("reIngestContents error", err);
+            return { message: "Error starting re-ingestion" };
+        }
+    }
+
+    private async processReIngest(user: IUser, contents: any[], botId: string) {
+        const ingestUrl = this.configService.get('INGEST_ENPOINT');
+        const urlsToReingest: string[] = [];
+
+        for (const content of contents) {
+            try {
+                const contentData = content.content as any;
+                const sourceId = contentData?.url || '';
+                if (!sourceId) continue;
+
+                await this.deleteIngestedContent(botId, user, sourceId);
+                urlsToReingest.push(sourceId);
+            } catch (err) {
+                console.log(`Error deleting vectors for content ${content.id}:`, err);
+            }
+        }
+
+        if (urlsToReingest.length === 0) return;
+
+        try {
+            const { data } = await firstValueFrom(
+                this.httpService.post(`${ingestUrl}/ingest-webpages`, {
+                    "bot_cuid": botId,
+                    "customer_cuid": user.teamId,
+                    "page_list": urlsToReingest,
+                }).pipe(
+                    catchError((error: AxiosError) => {
+                        console.log("processReIngest ingest error", error);
+                        throw 'An error happened!';
+                    }),
+                )
+            );
+
+            console.log(`Re-ingestion response for ${urlsToReingest.length} URLs:`, data);
+
+            await this.systemLogService.createLog({
+                category: 'CONTENT',
+                action: 'UPDATE',
+                status: 'SUCCESS',
+                userId: user.sub,
+                userEmail: user.email,
+                teamId: user.teamId,
+                entityId: botId,
+                entityName: 'REINGESTION',
+                message: `Re-ingested ${urlsToReingest.length} URLs`,
+            });
+        } catch (err) {
+            console.log("processReIngest ingest error", err);
+            await this.prisma.content.updateMany({
+                where: {
+                    id: { in: contents.map(c => c.id) },
+                    teamId: user.teamId,
+                },
+                data: { status: 'INDEXED' }
+            });
+
+            await this.systemLogService.createLog({
+                category: 'CONTENT',
+                action: 'UPDATE',
+                status: 'ERROR',
+                userId: user.sub,
+                userEmail: user.email,
+                teamId: user.teamId,
+                entityId: botId,
+                entityName: 'REINGESTION',
+                message: `Re-ingestion failed for ${urlsToReingest.length} URLs`,
+            });
+        }
+    }
+
     // Helper: URL normalization
     private normalizeComparableUrl(urlString: string): string | null {
         try {
