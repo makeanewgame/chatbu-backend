@@ -98,8 +98,8 @@ export class SubscriptionService {
         };
     }
 
-    async createPaymentIntent(userId: string, billingInfo: any, planDetails: any) {
-        console.log('createPaymentItent called');
+    async createSubscription(userId: string, billingInfo: any, planDetails: any) {
+        console.log('createSubscription called');
         const subscription = await this.getOrCreateSubscription(userId);
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -107,7 +107,8 @@ export class SubscriptionService {
             throw new NotFoundException('User not found');
         }
 
-        if (subscription.tier === 'PREMIUM') {
+        // Allow re-entry if previous attempt left an incomplete subscription
+        if (subscription.tier === 'PREMIUM' && subscription.stripeSubscriptionId) {
             throw new BadRequestException('Already a premium member');
         }
 
@@ -215,183 +216,105 @@ export class SubscriptionService {
             },
         });
 
-        // Determine currency and price
-        const currency = planDetails.currency?.toLowerCase() || 'usd';
-        const totalPrice = planDetails.totalPrice || 899;
+        // Always USD — currency is not accepted from the frontend
         const isAnnual = planDetails.isAnnual || false;
-        const billingInterval = planDetails.billingInterval || (isAnnual ? 'yearly' : 'monthly');
-
-        // Create Payment Intent for subscription (supports dynamic currency)
-        const paymentIntent = await this.stripe.paymentIntents.create({
-            amount: Math.round(totalPrice * 100), // Convert to cents
-            currency: currency,
-            customer: stripeCustomerId,
-            setup_future_usage: 'off_session',
-            metadata: {
-                userId: user.id,
-                isAnnual: isAnnual.toString(),
-                billingInterval: billingInterval,
-                subscriptionType: 'premium',
-            },
-        });
-
-        return {
-            clientSecret: paymentIntent.client_secret,
-            customerId: stripeCustomerId,
-        };
-    }
-
-    async confirmPayment(userId: string, paymentIntentId: string) {
-        // Retrieve payment intent
-        const paymentIntent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
-
-        if (!paymentIntent || paymentIntent.status !== 'succeeded') {
-            throw new BadRequestException('Payment not successful');
-        }
-
-        if (paymentIntent.metadata?.userId !== userId) {
-            throw new BadRequestException('Invalid payment metadata');
-        }
-
-        const subscription = await this.prisma.subscription.findUnique({
-            where: { userId },
-        });
-
-        if (!subscription) {
-            throw new NotFoundException('Subscription not found');
-        }
-
-        // Check if already upgraded to prevent duplicate subscriptions
-        if (subscription.tier === 'PREMIUM' && subscription.stripeSubscriptionId) {
-            // Already upgraded, just return success
-            return {
-                success: true,
-                message: 'Subscription already activated',
-                subscription: {
-                    tier: 'PREMIUM',
-                    status: subscription.status,
-                    currentPeriodStart: subscription.currentPeriodStart,
-                    currentPeriodEnd: subscription.currentPeriodEnd,
-                },
-            };
-        }
-
-        // Get customer's default payment method
-        const paymentMethodId = paymentIntent.payment_method as string;
-
-        // Set as default payment method
-        await this.stripe.customers.update(paymentIntent.customer as string, {
-            invoice_settings: {
-                default_payment_method: paymentMethodId,
-            },
-        });
-
-        // Get predefined price IDs - default to monthly
-        const billingInterval = paymentIntent.metadata?.billingInterval as 'monthly' | 'yearly' || 'monthly';
+        const billingInterval: 'monthly' | 'yearly' = planDetails.billingInterval || (isAnnual ? 'yearly' : 'monthly');
         const basePriceId = await this.getBasePriceId(billingInterval);
         const meteredPriceId = await this.getMeteredPriceId();
 
-        // Calculate billing cycle anchor (next period start)
-        // User already paid for the first period via payment intent
-        const now = Math.floor(Date.now() / 1000);
-        const periodDuration = billingInterval === 'yearly' ? 365 * 24 * 60 * 60 : 30 * 24 * 60 * 60;
-        const billingCycleAnchor = now + periodDuration;
+        // If a previous attempt left an incomplete subscription, cancel it so Stripe
+        // doesn't accumulate orphaned subscriptions for the same customer.
+        if (subscription.stripeSubscriptionId) {
+            try {
+                const existing = await this.stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+                if (existing.status === 'incomplete') {
+                    await this.stripe.subscriptions.cancel(subscription.stripeSubscriptionId);
+                    await this.prisma.subscription.update({
+                        where: { userId },
+                        data: { stripeSubscriptionId: null },
+                    });
+                }
+            } catch (_) {
+                // Subscription not found in Stripe — clear stale ID
+                await this.prisma.subscription.update({
+                    where: { userId },
+                    data: { stripeSubscriptionId: null },
+                });
+            }
+        }
 
-        // Create Stripe Subscription with both base and metered prices
-        // Setting billing_cycle_anchor to prevent immediate charge since user already paid
-        const stripeSubscription = await this.stripe.subscriptions.create({
-            customer: paymentIntent.customer as string,
-            items: [
-                { price: basePriceId },      // Base fee
-                { price: meteredPriceId },   // Usage-based
-            ],
-            default_payment_method: paymentMethodId,
-            billing_cycle_anchor: billingCycleAnchor,
-            proration_behavior: 'none',
-            metadata: {
-                userId: userId,
-                billingInterval: billingInterval,
-                initialPaymentIntentId: paymentIntentId,
-            },
-        });
+        const createStripeSubscription = async (customerId: string) => {
+            return this.stripe.subscriptions.create({
+                customer: customerId,
+                items: [
+                    { price: basePriceId },
+                    { price: meteredPriceId },
+                ],
+                payment_behavior: 'default_incomplete',
+                payment_settings: {
+                    save_default_payment_method: 'on_subscription',
+                },
+                expand: ['latest_invoice.confirmation_secret'],
+                metadata: {
+                    userId: user.id,
+                    billingInterval,
+                },
+            });
+        };
 
-        const currentPeriodStart = (stripeSubscription as any).current_period_start
-            ? new Date((stripeSubscription as any).current_period_start * 1000)
-            : new Date();
-        const currentPeriodEnd = (stripeSubscription as any).current_period_end
-            ? new Date((stripeSubscription as any).current_period_end * 1000)
-            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        let stripeSubscription: Stripe.Subscription;
+        try {
+            stripeSubscription = await createStripeSubscription(stripeCustomerId);
+        } catch (err: any) {
+            // Stripe rejects mixing currencies on a customer that has existing TRY items/subscriptions.
+            // In this case we create a fresh customer in USD and retry.
+            if (err?.raw?.code === 'currency_combination_invalid' || err?.message?.includes('cannot combine currencies')) {
+                console.log(`Currency mismatch on customer ${stripeCustomerId}, creating a new USD customer`);
+                const freshCustomer = await this.stripe.customers.create({
+                    email: billingInfo.email || user.email,
+                    name: `${billingInfo.firstName} ${billingInfo.lastName || ''}`.trim(),
+                    metadata: { userId: user.id },
+                    address: {
+                        line1: billingInfo.billingAddress,
+                        city: billingInfo.city,
+                        state: billingInfo.stateRegion,
+                        postal_code: billingInfo.zipCode,
+                        country: billingInfo.country,
+                    },
+                });
+                stripeCustomerId = freshCustomer.id;
+                await this.prisma.subscription.update({
+                    where: { userId },
+                    data: { stripeCustomerId },
+                });
+                stripeSubscription = await createStripeSubscription(stripeCustomerId);
+            } else {
+                throw err;
+            }
+        }
 
-        // Update subscription to PREMIUM
-        const [activePlan, tokenPlan] = await Promise.all([
-            this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: billingInterval === 'yearly' ? 'YEARLY_BASE' : 'MONTHLY_BASE' } }),
-            this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: 'TOKEN_METERED' } }),
-        ]);
-
+        // Persist stripeSubscriptionId immediately so the webhook handler can find
+        // this record when invoice.payment_succeeded fires.
         await this.prisma.subscription.update({
             where: { userId },
             data: {
-                tier: 'PREMIUM',
-                status: 'ACTIVE',
                 stripeSubscriptionId: stripeSubscription.id,
-                stripePriceId: basePriceId,
-                currentPeriodStart,
-                currentPeriodEnd,
-                monthlyTokenAllocation: await this.getPremiumTokenLimit(),
-                tokensUsedThisMonth: 0,
+                stripeCustomerId,
                 billingInterval,
-                activePricePlanId: activePlan?.id ?? null,
-                tokenPricePlanId: tokenPlan?.id ?? null,
             },
         });
 
-        //Update user Quota for PREMIUM
-        // Update FILE, BOT
+        const latestInvoice = stripeSubscription.latest_invoice as Stripe.Invoice;
+        // Stripe v20+: client_secret is in confirmation_secret.client_secret
+        const clientSecret = latestInvoice.confirmation_secret?.client_secret;
 
-        const teamId = await this.prisma.teamMember.findFirst({
-            where: { userId },
-        }).then(member => member?.teamId);
-
-        await this.prisma.quota.updateMany({
-            where: {
-                teamId: teamId,
-                quotaType: 'FILE',
-            },
-            data: {
-                limit: 256000, // 256MB for PREMIUM users
-            },
-        })
-
-        await this.prisma.quota.updateMany({
-            where: {
-                teamId: teamId,
-                quotaType: 'BOT',
-            },
-            data: {
-                limit: 10, // 10 Bots for PREMIUM users
-            },
-        })
-
-
-        await this.systemLogService.createLog({
-            category: 'STRIPE',
-            action: 'SUBSCRIBE',
-            status: 'SUCCESS',
-            userId,
-            teamId,
-            message: `Premium subscription activated`,
-            details: { stripeSubscriptionId: stripeSubscription.id, billingInterval },
-        });
+        if (!clientSecret) {
+            throw new Error('Failed to retrieve payment client secret from Stripe');
+        }
 
         return {
-            success: true,
-            message: 'Subscription activated successfully',
-            subscription: {
-                tier: 'PREMIUM',
-                status: 'ACTIVE',
-                currentPeriodStart,
-                currentPeriodEnd,
-            },
+            clientSecret,
+            subscriptionId: stripeSubscription.id,
         };
     }
 
@@ -680,7 +603,7 @@ export class SubscriptionService {
                 }
             }
 
-            if (subscription.spendingLimit && subscription.stripeSubscriptionId) {
+            if (subscription.stripeSubscriptionId) {
                 await this.reportUsageToStripe(subscription.stripeSubscriptionId, subscription.stripeCustomerId, overageTokens, cost);
             }
         }

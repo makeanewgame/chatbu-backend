@@ -39,8 +39,22 @@ export class BillingService {
     }
 
     private async handlePaymentSucceeded(invoice: Stripe.Invoice) {
+        // Stripe v20+: subscription ID moved to invoice.parent.subscription_details.subscription.
+        // The raw webhook payload still includes it at the top-level, so we read both.
+        const subscriptionId = (
+            (invoice as any).subscription ||
+            invoice.parent?.subscription_details?.subscription
+        ) as string | undefined;
+
+        // Look up by stripeSubscriptionId first (set during createSubscription before payment),
+        // fall back to stripeCustomerId for safety.
         const subscription = await this.prisma.subscription.findFirst({
-            where: { stripeCustomerId: invoice.customer as string },
+            where: {
+                OR: [
+                    ...(subscriptionId ? [{ stripeSubscriptionId: subscriptionId }] : []),
+                    { stripeCustomerId: invoice.customer as string },
+                ],
+            },
             include: { user: true },
         });
 
@@ -60,10 +74,11 @@ export class BillingService {
             this.logger.log(`Account unblocked for user ${subscription.userId}`);
         }
 
-        // Reset monthly usage for new period
-        const stripeSubscription = await this.stripe.subscriptions.retrieve(subscription.stripeSubscriptionId, {
-            expand: ['items.data.price'],
-        });
+        const resolvedSubscriptionId = subscriptionId || subscription.stripeSubscriptionId;
+        const stripeSubscription = await this.stripe.subscriptions.retrieve(
+            resolvedSubscriptionId,
+            { expand: ['items.data.price'] },
+        );
         const currentPeriodStart = (stripeSubscription as any).current_period_start
             ? new Date((stripeSubscription as any).current_period_start * 1000)
             : new Date();
@@ -71,6 +86,60 @@ export class BillingService {
             ? new Date((stripeSubscription as any).current_period_end * 1000)
             : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+        // ── First payment: FREE → PREMIUM activation ──────────────────────────
+        if (subscription.tier === 'FREE') {
+            const billingInterval = (stripeSubscription.metadata?.billingInterval as 'monthly' | 'yearly') || 'monthly';
+
+            const [activePlan, tokenPlan] = await Promise.all([
+                this.prisma.pricePlan.findFirst({
+                    where: {
+                        status: 'ACTIVE',
+                        planType: billingInterval === 'yearly' ? 'YEARLY_BASE' : 'MONTHLY_BASE',
+                    },
+                }),
+                this.prisma.pricePlan.findFirst({ where: { status: 'ACTIVE', planType: 'TOKEN_METERED' } }),
+            ]);
+
+            const premiumTokenLimit = await this.getPremiumTokenLimit();
+
+            await this.prisma.subscription.update({
+                where: { id: subscription.id },
+                data: {
+                    tier: 'PREMIUM',
+                    status: 'ACTIVE',
+                    stripeSubscriptionId: stripeSubscription.id,
+                    currentPeriodStart,
+                    currentPeriodEnd,
+                    monthlyTokenAllocation: premiumTokenLimit,
+                    tokensUsedThisMonth: 0,
+                    billingInterval,
+                    activePricePlanId: activePlan?.id ?? null,
+                    tokenPricePlanId: tokenPlan?.id ?? null,
+                },
+            });
+
+            // Update team quotas
+            const teamMember = await this.prisma.teamMember.findFirst({
+                where: { userId: subscription.userId },
+            });
+            if (teamMember) {
+                await Promise.all([
+                    this.prisma.quota.updateMany({
+                        where: { teamId: teamMember.teamId, quotaType: 'FILE' },
+                        data: { limit: 256000 }, // 256 MB
+                    }),
+                    this.prisma.quota.updateMany({
+                        where: { teamId: teamMember.teamId, quotaType: 'BOT' },
+                        data: { limit: 10 },
+                    }),
+                ]);
+            }
+
+            this.logger.log(`User ${subscription.userId} upgraded to PREMIUM via webhook (billingInterval=${billingInterval})`);
+            return;
+        }
+
+        // ── Renewal: reset monthly usage + apply scheduled price migration ────
         await this.prisma.subscription.update({
             where: { id: subscription.id },
             data: {
@@ -82,7 +151,6 @@ export class BillingService {
             },
         });
 
-        // ── Fiyat geçiş mantığı ────────────────────────────────────────────
         await this.applyScheduledPriceMigration(subscription, stripeSubscription, currentPeriodStart, currentPeriodEnd);
     }
 
@@ -217,10 +285,15 @@ export class BillingService {
             ? new Date((stripeSubscription as any).current_period_end * 1000)
             : subscription.currentPeriodEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+        // 'trialing' and 'active' are both considered ACTIVE on our side.
+        // 'incomplete' means user hasn't paid yet — do not flip status.
+        const activeStatuses = ['active', 'trialing'];
+        const dbStatus = activeStatuses.includes(stripeSubscription.status) ? 'ACTIVE' : 'INACTIVE';
+
         await this.prisma.subscription.update({
             where: { id: subscription.id },
             data: {
-                status: stripeSubscription.status === 'active' ? 'ACTIVE' : 'INACTIVE',
+                status: dbStatus,
                 currentPeriodStart,
                 currentPeriodEnd,
                 cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end,
@@ -235,18 +308,36 @@ export class BillingService {
 
         if (!subscription) return;
 
-        // Downgrade to FREE
+        const freeTokenLimit = await this.getFreeTokenLimit();
+
         await this.prisma.subscription.update({
             where: { id: subscription.id },
             data: {
                 tier: 'FREE',
                 status: 'INACTIVE',
                 stripeSubscriptionId: null,
-                monthlyTokenAllocation: await this.getFreeTokenLimit(),
+                monthlyTokenAllocation: freeTokenLimit,
                 tokensUsedThisMonth: 0,
                 additionalTokensPurchased: 0,
             },
         });
+
+        // Reset team quotas back to FREE limits
+        const teamMember = await this.prisma.teamMember.findFirst({
+            where: { userId: subscription.userId },
+        });
+        if (teamMember) {
+            await Promise.all([
+                this.prisma.quota.updateMany({
+                    where: { teamId: teamMember.teamId, quotaType: 'FILE' },
+                    data: { limit: 50000 }, // 50 MB for FREE users
+                }),
+                this.prisma.quota.updateMany({
+                    where: { teamId: teamMember.teamId, quotaType: 'BOT' },
+                    data: { limit: 1 }, // 1 Bot for FREE users
+                }),
+            ]);
+        }
 
         this.logger.log(`Subscription deleted for user ${subscription.userId}. Downgraded to FREE.`);
     }
@@ -283,59 +374,18 @@ export class BillingService {
         }
     }
 
-    // Cron job to handle subscription renewals
-    @Cron(CronExpression.EVERY_HOUR)
-    async processSubscriptionRenewals() {
-        const now = new Date();
-        const subscriptions = await this.prisma.subscription.findMany({
-            where: {
-                tier: 'PREMIUM',
-                status: 'ACTIVE',
-                currentPeriodEnd: {
-                    lte: now,
-                },
-            },
-            include: { user: true },
-        });
-
-        for (const subscription of subscriptions) {
-            try {
-                // Stripe handles automatic renewals, we just need to check if payment succeeded
-                const stripeSubscription = await this.stripe.subscriptions.retrieve(
-                    subscription.stripeSubscriptionId,
-                );
-
-                if (stripeSubscription.status !== 'active') {
-                    // Payment failed, block account
-                    await this.prisma.user.update({
-                        where: { id: subscription.userId },
-                        data: {
-                            accountBlocked: true,
-                            blockedAt: new Date(),
-                            blockedReason: 'Subscription payment failed',
-                        },
-                    });
-
-                    await this.prisma.subscription.update({
-                        where: { id: subscription.id },
-                        data: {
-                            status: 'PAST_DUE',
-                        },
-                    });
-
-                    this.logger.warn(`Subscription renewal failed for user ${subscription.userId}`);
-                }
-            } catch (error) {
-                this.logger.error(`Error processing renewal for subscription ${subscription.id}`, error);
-            }
-        }
-    }
-
     private async getFreeTokenLimit(): Promise<number> {
         const setting = await this.prisma.systemSettings.findUnique({
             where: { key: 'FREE_TOKEN_LIMIT' },
         });
         return setting ? parseInt(setting.value) : 100000;
+    }
+
+    private async getPremiumTokenLimit(): Promise<number> {
+        const setting = await this.prisma.systemSettings.findUnique({
+            where: { key: 'PREMIUM_MONTHLY_TOKEN_LIMIT' },
+        });
+        return setting ? parseInt(setting.value) : 2000000;
     }
 
     async getUserInvoices(userId: string) {
