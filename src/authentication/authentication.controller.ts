@@ -121,6 +121,14 @@ export class AuthenticationController {
     return await this.authService.login(body.email, body.password);
   }
 
+  @Post('accept-terms')
+  @UseGuards(AccessTokenGuard)
+  async acceptTerms(@Req() req, @Body() body: { phoneNumber?: string }) {
+    const userId = req.user?.sub || req.user?.id;
+    await this.authService.acceptTerms(userId, body.phoneNumber);
+    return { success: true };
+  }
+
   @Post('register')
   async register(@Body() body: RegisterRequest, @Req() req, @Res() res) {
     await this.authService
