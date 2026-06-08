@@ -201,7 +201,7 @@ export class IntegrationService {
     }
 
     private isMcpRelevantType(type: string): boolean {
-        return this.isDatabaseType(type) || type === 'whatsapp';
+        return this.isDatabaseType(type) || type === 'whatsapp' || type === 'whatsapp_manual';
     }
 
     private buildMcpPayload(teamId: string, integrations: Array<{ type: string; config?: Prisma.JsonValue }>) {
@@ -232,7 +232,7 @@ export class IntegrationService {
                 return;
             }
 
-            if (type === 'whatsapp') {
+            if (type === 'whatsapp' || type === 'whatsapp_manual') {
                 if (config?.accessToken && config?.phoneNumberId) {
                     apiIntegrations.whatsapp = {
                         api_token: String(config.accessToken),

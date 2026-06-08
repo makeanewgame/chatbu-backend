@@ -18,7 +18,7 @@ export class WhatsAppService {
         }
 
         const integrations = await this.prisma.integrations.findMany({
-            where: { type: 'whatsapp' },
+            where: { type: { in: ['whatsapp', 'whatsapp_manual'] } },
         });
 
         const match = integrations.find(i => {
@@ -47,7 +47,7 @@ export class WhatsAppService {
                 if (!messages.length || !phoneNumberId) continue;
 
                 const integrations = await this.prisma.integrations.findMany({
-                    where: { type: 'whatsapp' },
+                    where: { type: { in: ['whatsapp', 'whatsapp_manual'] } },
                 });
 
                 const integration = integrations.find(i => {
