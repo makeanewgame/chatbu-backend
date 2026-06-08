@@ -221,14 +221,18 @@ export class WhatsAppEmbeddedService {
 
     /**
      * Internal: look up integration by phoneNumberId for webhook routing.
+     * Covers both embedded-signup (whatsapp_embedded) and manual-key (whatsapp_manual) integrations.
      */
     async findByPhoneNumberId(phoneNumberId: string) {
         const rows = await this.prisma.integrations.findMany({
-            where: { type: WHATSAPP_EMBEDDED_TYPE },
+            where: { type: { in: [WHATSAPP_EMBEDDED_TYPE, 'whatsapp_manual'] } },
         });
         return rows.find((r) => {
             const cfg = r.config as any;
-            return cfg?.phoneNumberId === phoneNumberId && cfg?.status === 'connected';
+            if (cfg?.phoneNumberId !== phoneNumberId) return false;
+            // whatsapp_embedded requires status=connected; whatsapp_manual has no status field
+            if (r.type === WHATSAPP_EMBEDDED_TYPE) return cfg?.status === 'connected';
+            return true; // whatsapp_manual — presence of phoneNumberId is sufficient
         }) ?? null;
     }
 }
