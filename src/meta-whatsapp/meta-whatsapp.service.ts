@@ -179,7 +179,7 @@ export class MetaWhatsappService {
                     }
                     // ─────────────────────────────────────────────────────
 
-                    this.logger.warn(`No active whatsapp_embedded integration for phoneNumberId=${phoneNumberId}`);
+                    this.logger.warn(`No active WhatsApp integration for phoneNumberId=${phoneNumberId}`);
 
                     // Log incoming messages for diagnostics even when unrouted
                     for (const message of value?.messages || []) {
