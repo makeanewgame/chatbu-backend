@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Body, UseGuards, Req, Headers } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { SubscriptionService } from './subscription.service';
 import { BillingService } from './billing.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -32,18 +33,12 @@ export class SubscriptionController {
         return this.subscriptionService.getOrCreateSubscription(userId);
     }
 
-    @Post('create-payment-intent')
+    @Post('create-subscription')
     @UseGuards(JwtGuard)
-    async createPaymentIntent(@Req() req, @Body() body: { billingInfo: any; planDetails: any }) {
+    @Throttle({ default: { ttl: 60000, limit: 5 } }) // max 5 attempts per minute per user
+    async createSubscription(@Req() req, @Body() body: { billingInfo: any; planDetails: any }) {
         const userId = req.user?.sub || req.user?.id;
-        return this.subscriptionService.createPaymentIntent(userId, body.billingInfo, body.planDetails);
-    }
-
-    @Post('confirm-payment')
-    @UseGuards(JwtGuard)
-    async confirmPayment(@Req() req, @Body() body: { paymentIntentId: string }) {
-        const userId = req.user?.sub || req.user?.id;
-        return this.subscriptionService.confirmPayment(userId, body.paymentIntentId);
+        return this.subscriptionService.createSubscription(userId, body.billingInfo, body.planDetails);
     }
 
     @Post('cancel')
@@ -125,15 +120,25 @@ export class SubscriptionController {
 
     @Post('billing-info')
     @UseGuards(JwtGuard)
-    async saveBillingInfo(@Req() req, @Body() billingInfo: any) {
+    async saveBillingInfo(@Req() req, @Body() body: any) {
         const userId = req.user?.sub || req.user?.id;
+        // Whitelist fields explicitly to prevent mass assignment
+        const safeData = {
+            firstName: body.firstName,
+            lastName: body.lastName || '',
+            email: body.email,
+            address: body.address,
+            city: body.city || '',
+            stateRegion: body.stateRegion,
+            zipPostalCode: body.zipPostalCode,
+            country: body.country,
+            isCompany: body.isCompany || false,
+            vatIdentificationNumber: body.vatIdentificationNumber || null,
+        };
         return this.prisma.billingInfo.upsert({
             where: { userId },
-            create: {
-                userId,
-                ...billingInfo,
-            },
-            update: billingInfo,
+            create: { userId, ...safeData },
+            update: safeData,
         });
     }
 
