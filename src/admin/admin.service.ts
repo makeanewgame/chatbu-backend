@@ -729,4 +729,58 @@ export class AdminService {
         const overall = results.every(r => r.status === 'healthy') ? 'healthy' : 'degraded';
         return { overall, checkedAt, services: results };
     }
+
+    // -------------------------------------------------------------------------
+    // Widget Visitor Management
+    // -------------------------------------------------------------------------
+
+    async getWidgetVisitors(botId: string, page = 1, limit = 20) {
+        const skip = (page - 1) * limit;
+        const where: any = { chatbotId: botId };
+
+        const [visitors, total] = await Promise.all([
+            this.prisma.widgetVisitor.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy: { lastSeenAt: 'desc' },
+                select: {
+                    id: true,
+                    visitorId: true,
+                    chatbotId: true,
+                    domain: true,
+                    messageCountToday: true,
+                    tokenUsageToday: true,
+                    riskScore: true,
+                    isBlocked: true,
+                    blockedReason: true,
+                    createdAt: true,
+                    lastSeenAt: true,
+                },
+            }),
+            this.prisma.widgetVisitor.count({ where }),
+        ]);
+
+        return { visitors, total, page, limit, totalPages: Math.ceil(total / limit) };
+    }
+
+    async blockWidgetVisitor(id: string, reason?: string) {
+        const visitor = await this.prisma.widgetVisitor.findUnique({ where: { id } });
+        if (!visitor) throw new NotFoundException('Visitor not found');
+
+        return this.prisma.widgetVisitor.update({
+            where: { id },
+            data: { isBlocked: true, blockedReason: reason || 'Manually blocked by admin' },
+        });
+    }
+
+    async unblockWidgetVisitor(id: string) {
+        const visitor = await this.prisma.widgetVisitor.findUnique({ where: { id } });
+        if (!visitor) throw new NotFoundException('Visitor not found');
+
+        return this.prisma.widgetVisitor.update({
+            where: { id },
+            data: { isBlocked: false, blockedReason: null, riskScore: 0 },
+        });
+    }
 }

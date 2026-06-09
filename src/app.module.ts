@@ -29,6 +29,7 @@ import { SystemLogModule } from './system-log/system-log.module';
 import { MetaModule } from './meta/meta.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { MetaWhatsappModule } from './meta-whatsapp/meta-whatsapp.module';
+import { WidgetModule } from './widget/widget.module';
 
 @Module({
   imports: [
@@ -55,7 +56,7 @@ import { MetaWhatsappModule } from './meta-whatsapp/meta-whatsapp.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule],
+    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule],
   controllers: [AppController],
   providers: [
     AppService,

@@ -307,4 +307,43 @@ export class AdminController {
         return this.k8sService.restartDeployment(name);
     }
     //#endregion
+
+    //#region Widget Visitor Management
+    @ApiOperation({ summary: 'List widget visitors for a bot (Admin only)' })
+    @ApiQuery({ name: 'botId', required: true, type: String })
+    @ApiQuery({ name: 'page', required: false, type: Number })
+    @ApiQuery({ name: 'limit', required: false, type: Number })
+    @ApiResponse({ status: 200, description: 'Visitors retrieved' })
+    @Get('widget/visitors')
+    async getWidgetVisitors(
+        @Query('botId') botId: string,
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.adminService.getWidgetVisitors(
+            botId,
+            page ? parseInt(page, 10) : 1,
+            limit ? parseInt(limit, 10) : 20,
+        );
+    }
+
+    @ApiOperation({ summary: 'Block a widget visitor (Admin only)' })
+    @ApiParam({ name: 'id', type: String })
+    @ApiBody({ schema: { type: 'object', properties: { reason: { type: 'string' } } } })
+    @ApiResponse({ status: 200, description: 'Visitor blocked' })
+    @Post('widget/visitors/:id/block')
+    @HttpCode(HttpStatus.OK)
+    async blockWidgetVisitor(@Param('id') id: string, @Body() body: { reason?: string }) {
+        return this.adminService.blockWidgetVisitor(id, body.reason);
+    }
+
+    @ApiOperation({ summary: 'Unblock a widget visitor (Admin only)' })
+    @ApiParam({ name: 'id', type: String })
+    @ApiResponse({ status: 200, description: 'Visitor unblocked' })
+    @Post('widget/visitors/:id/unblock')
+    @HttpCode(HttpStatus.OK)
+    async unblockWidgetVisitor(@Param('id') id: string) {
+        return this.adminService.unblockWidgetVisitor(id);
+    }
+    //#endregion
 }
