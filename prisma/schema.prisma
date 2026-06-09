@@ -505,3 +505,30 @@ model BookingVerification {
   @@index([email, botCuid])
   @@index([expiresAt])
 }
+
+// Widget visitor tracking for abuse prevention and rate limiting.
+// fingerprintHash = SHA-256(ip | userAgent | acceptLanguage | botId) — identifies
+// the same physical browser across localStorage resets, so clients cannot bypass
+// daily limits by clearing localStorage.
+model WidgetVisitor {
+  id                String   @id @default(cuid())
+  visitorId         String   @unique  // UUID returned to client; stored in localStorage
+  chatbotId         String
+  domain            String
+  fingerprintHash   String            // Server-side fingerprint; authoritative identity
+  ipHash            String            // SHA-256(ip) — GDPR-safe
+  userAgentHash     String            // SHA-256(userAgent)
+  createdAt         DateTime @default(now())
+  lastSeenAt        DateTime @updatedAt
+  messageCountToday Int      @default(0)
+  tokenUsageToday   Int      @default(0)
+  dailyResetAt      DateTime @default(now())
+  riskScore         Float    @default(0.0)
+  isBlocked         Boolean  @default(false)
+  blockedReason     String?
+
+  @@index([chatbotId])
+  @@index([fingerprintHash, chatbotId])
+  @@index([isBlocked])
+  @@index([lastSeenAt])
+}

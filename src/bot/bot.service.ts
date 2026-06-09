@@ -692,6 +692,31 @@ export class BotService {
     );
   }
 
+  /**
+   * Internal entry point for the WidgetService — bypasses JWT verification
+   * because the caller (WidgetService) has already authenticated the session token
+   * and resolved the botId/teamId from the verified payload.
+   */
+  async publicChatInternal(
+    botId: string,
+    teamId: string,
+    message: string,
+    chatId: string | undefined,
+    ip: string,
+  ) {
+    return this.chat(
+      {
+        botId,
+        teamId,
+        message,
+        chatId: chatId ?? null,
+        sender: 'user',
+        date: new Date().toISOString(),
+      } as any,
+      ip,
+    );
+  }
+
   async checkIntegration(botId: string) {
     const bot = await this.prisma.customerBots.findUnique({
       where: {
