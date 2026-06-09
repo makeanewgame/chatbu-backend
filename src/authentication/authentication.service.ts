@@ -524,6 +524,7 @@ export class AuthenticationService {
         phoneNumber: user.phoneNumber,
         emailVerified: true,
         phoneVerified: false,
+        termsAccepted: false,
         refreshToken: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -596,6 +597,12 @@ export class AuthenticationService {
 
     const { password, ...data } = findUser;
 
+    // Fetch termsAccepted separately (not in select above)
+    const userFull = await this.prisma.user.findUnique({
+      where: { id: data.id },
+      select: { termsAccepted: true },
+    });
+
     const teamId = await this.getUserPrimaryTeamId(data.id);
 
     if (!teamId) {
@@ -622,10 +629,20 @@ export class AuthenticationService {
       userName: data.name,
       teamId: teamId,
       role: findUser.role,
+      termsAccepted: userFull?.termsAccepted ?? false,
     };
   }
 
-  async registerGoogleUser(user: any) { }
+  async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+        ...(phoneNumber ? { phoneNumber } : {}),
+      },
+    });
+  }
 
   async logout(email: string) {
     const findUser = await this.prisma.user.findFirst({

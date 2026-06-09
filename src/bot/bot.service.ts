@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
@@ -381,6 +381,15 @@ export class BotService {
   async chat(body: ChatRequest, ip: string) {
 
     console.log("chat body", body);
+
+    const rawMessage = body.message ?? '';
+    if (rawMessage.length > 2000) {
+      throw new BadRequestException('Message exceeds the 2000-character limit.');
+    }
+    const wordCount = rawMessage.trim().split(/\s+/).filter(Boolean).length;
+    if (wordCount > 300) {
+      throw new BadRequestException('Message exceeds the 300-word limit.');
+    }
 
     try {
       const botUser = await this.prisma.customerBots.findFirst({
