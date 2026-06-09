@@ -8,6 +8,11 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Trust the ingress/load-balancer's X-Forwarded-For so ThrottlerGuard
+  // uses the real client IP instead of the cluster-internal ingress IP.
+  // Without this, all users share one throttle bucket → 429 → health-probe
+  // failures → K8s marks pods unhealthy → 503.
+  app.set('trust proxy', 1);
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT');
 
