@@ -5,6 +5,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import * as bodyParser from 'body-parser';
 import { join } from 'path';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -14,6 +15,11 @@ async function bootstrap() {
   // failures → K8s marks pods unhealthy → 503.
   app.set('trust proxy', 1);
   const configService = app.get(ConfigService);
+
+  // Enable global validation + automatic query-string → number/boolean coercion.
+  // Without transform:true, @Type(() => Number) in DTOs has no effect and
+  // Prisma receives string values, causing PrismaClientValidationError.
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   const port = configService.get<number>('PORT');
 
   const swaggerConfig = new DocumentBuilder()
