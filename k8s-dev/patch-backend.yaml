@@ -16,6 +16,16 @@ metadata:
 spec:
   replicas: 1
   template:
+    metadata:
+      annotations:
+        # Stop Karpenter from draining the dev backend during consolidation.
+        # chatbu-dev pods land on the shared spot node group and have no PDB
+        # (single-replica dev), so Karpenter was free to evict them every
+        # 15-20 minutes, producing intermittent 503s at the ingress while
+        # the backend Service had no available endpoint. `do-not-disrupt`
+        # disables Karpenter consolidation for the pod. Spot interruption
+        # from AWS is unaffected (less frequent, unavoidable).
+        karpenter.sh/do-not-disrupt: "true"
     spec:
       containers:
         - name: backend

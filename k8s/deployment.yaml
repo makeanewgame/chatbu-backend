@@ -19,6 +19,15 @@ spec:
       labels:
         app: backend
         component: api
+      annotations:
+        # Karpenter consolidation was evicting prod backend pods during
+        # cluster-wide rebalancing — observed 2026-06-12 prod outage when
+        # all stateless pods were drained at once, the cluster ended up
+        # with zero Karpenter nodes, CoreDNS couldn't schedule, EC2 API
+        # DNS resolution broke for Karpenter, and a chicken-and-egg
+        # deadlock kept the cluster down ~20min. Voluntary disruption
+        # off; spot interruption (AWS-driven) is unaffected.
+        karpenter.sh/do-not-disrupt: "true"
     spec:
       serviceAccountName: backend-sa
       containers:
