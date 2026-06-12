@@ -9,23 +9,56 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
 import { InternalApiKeyGuard } from '../google-calendar/internal-api-key.guard';
 import { BookingService } from './booking.service';
 
+// main.ts registers a global ValidationPipe with `whitelist: true`. With
+// that flag any property NOT declared via class-validator decorators is
+// silently stripped from @Body() before the controller runs — so without
+// these decorators every booking call arrived with body={}, the controller
+// rejected it as "email and botCuid are required" (400), MCP mapped that
+// to BOOKING_TOOL_ARGUMENT_ERROR, and the bot told the user calendar was
+// down even though MCP, agent and Google Calendar were all fine. Observed
+// 2026-06-12 on Veri Bilimi Okulu dev with curl-from-MCP-pod repro.
 class RequestVerificationDto {
+    @IsString()
+    @IsNotEmpty()
+    @IsEmail()
     email!: string;
+
+    @IsString()
+    @IsNotEmpty()
     botCuid!: string;
 }
 
 class VerifyDto {
+    @IsString()
+    @IsNotEmpty()
+    @IsEmail()
     email!: string;
+
+    @IsString()
+    @IsNotEmpty()
     code!: string;
+
+    @IsString()
+    @IsNotEmpty()
     botCuid!: string;
 }
 
 class CheckTokenDto {
+    @IsString()
+    @IsNotEmpty()
     token!: string;
+
+    @IsString()
+    @IsNotEmpty()
+    @IsEmail()
     email!: string;
+
+    @IsString()
+    @IsNotEmpty()
     botCuid!: string;
 }
 
