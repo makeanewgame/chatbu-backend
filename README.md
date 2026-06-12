@@ -26,3 +26,17 @@ Son 200 satır (takip etmeden): kubectl logs -n chatbu deploy/backend --tail=200
 Önceki crash logu (restart olduysa): kubectl logs -n chatbu deploy/backend --previous --tail=200
 Belirli poddan log al: kubectl logs -n chatbu <POD_ADI> --tail=200 -f
 Hata satırlarını filtrele: kubectl logs -n chatbu deploy/backend --tail=500 | egrep -i "error|exception|failed|timeout"
+
+## Postgres Port Forwarding
+# prod
+kubectl port-forward -n postgresql svc/chatbu-postgres-rw 5432:5432
+# dev
+kubectl port-forward -n chatbu-dev svc/chatbu-postgres-rw 5432:5432      
+
+
+
+Backenddeki envler çekme:
+# prod
+bash scripts/sync-k8s-env.sh chatbu backend-secrets
+# dev
+bash scripts/sync-k8s-env.sh chatbu-dev backend-secrets
