@@ -81,12 +81,15 @@ export class SubscriptionService {
             // Fetch upcoming invoice amount from Stripe
             try {
                 if (subscription.stripeSubscriptionId) {
-                    const upcomingInvoice = await this.stripe.invoices.createPreview({
-                        customer: subscription.stripeCustomerId,
-                        subscription: subscription.stripeSubscriptionId,
-                    });
-                    nextBillingAmount = upcomingInvoice.amount_due / 100;
-                    nextBillingCurrency = upcomingInvoice.currency;
+                    const stripeSub = await this.stripe.subscriptions.retrieve(subscription.stripeSubscriptionId);
+                    if (stripeSub.status !== 'canceled') {
+                        const upcomingInvoice = await this.stripe.invoices.createPreview({
+                            customer: subscription.stripeCustomerId,
+                            subscription: subscription.stripeSubscriptionId,
+                        });
+                        nextBillingAmount = upcomingInvoice.amount_due / 100;
+                        nextBillingCurrency = upcomingInvoice.currency;
+                    }
                 }
             } catch (error) {
                 // No upcoming invoice (e.g. no active Stripe subscription) — ignore
