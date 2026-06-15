@@ -80,9 +80,10 @@ export class ContentService {
         // Quota check for URL-based content types
         if (isUrlBasedType && !existingUrlContent) {
             const quota = await this.getQuota(user.teamId);
-            if (quota.remaining < 1) {
+            if (quota.remainingKb <= 0) {
                 return {
-                    message: `Insufficient quota. You have used ${quota.used} of ${quota.limit} pages.`
+                    message: `Depolama kotanız doldu. ${quota.usedMb} MB / ${quota.limitMb} MB kullanıldı.`,
+                    quotaExceeded: true,
                 };
             }
         }
@@ -135,17 +136,7 @@ export class ContentService {
         if (isUrlBasedType) {
             console.log(`${body.type} content ingest started`);
             await this.ingestWebPage(body, user, body.content.url);
-
-            // Increment quota for URL-based types
-            const currentQuota = await this.prisma.quota.findFirst({
-                where: { teamId: user.teamId, quotaType: 'FILE' }
-            });
-            if (currentQuota) {
-                await this.prisma.quota.update({
-                    where: { id: currentQuota.id },
-                    data: { used: currentQuota.used + 1 }
-                });
-            }
+            // KB quota is updated by ML service after ingestion completes
         } else if (body.type === 'Q&A') {
             console.log("Q&A content ingest started");
             await this.ingestQA(body, user);
@@ -215,24 +206,7 @@ export class ContentService {
                 }
             })
 
-            // Decrease quota if content type is WEBPAGE
-            if (content && content.type === 'WEBPAGE') {
-                const currentQuota = await this.prisma.quota.findFirst({
-                    where: {
-                        teamId: user.teamId,
-                        quotaType: 'FILE'
-                    }
-                });
-
-                if (currentQuota && currentQuota.used > 0) {
-                    await this.prisma.quota.update({
-                        where: { id: currentQuota.id },
-                        data: { used: currentQuota.used - 1 }
-                    });
-                }
-            }
-
-            // Delete ingested vectors
+            // Delete ingested vectors (ML service will decrement quota via its own tracking)
             const data = await this.deleteIngestedContent(botId, user, sourceId);
 
             console.log("deleted Vectors response", data);
@@ -327,8 +301,6 @@ export class ContentService {
     }
 
     private async processDeleteAll(user: IUser, contents: any[], botId: string) {
-        let webpageCount = 0;
-
         for (const content of contents) {
             try {
                 // Determine sourceId based on content type
@@ -337,7 +309,6 @@ export class ContentService {
 
                 if (content.type === 'WEBPAGE' || content.type === 'VIDEO' || content.type === 'LINK') {
                     sourceId = contentData?.url || '';
-                    webpageCount++;
                 } else if (content.type === 'Q&A') {
                     sourceId = contentData?.meta?.source || '';
                 } else if (content.type === 'CONTENT') {
@@ -367,24 +338,7 @@ export class ContentService {
             }
         }
 
-        // Decrease quota for WEBPAGE type content
-        if (webpageCount > 0) {
-            const currentQuota = await this.prisma.quota.findFirst({
-                where: {
-                    teamId: user.teamId,
-                    quotaType: 'FILE'
-                }
-            });
-
-            if (currentQuota && currentQuota.used > 0) {
-                const newUsed = Math.max(0, currentQuota.used - webpageCount);
-                await this.prisma.quota.update({
-                    where: { id: currentQuota.id },
-                    data: { used: newUsed }
-                });
-            }
-        }
-
+        // KB quota is decremented by ML service when vectors are deleted
         console.log(`Bulk delete completed: ${contents.length} items processed`);
     }
 
@@ -591,12 +545,14 @@ export class ContentService {
                 };
             }
 
-            // Check quota
+            // Check quota — estimate ~300 KB per web page as a conservative guard
             const quota = await this.getQuota(user.teamId);
-            if (quota.remaining < newUrls.length) {
+            const estimatedKb = newUrls.length * 300;
+            if (quota.remainingKb < estimatedKb) {
                 return {
                     success: false,
-                    message: `Insufficient quota. You can add ${quota.remaining} more pages, but you're trying to add ${newUrls.length}.`
+                    quotaExceeded: true,
+                    message: `Depolama kotanız dolmak üzere. ${newUrls.length} sayfa için yaklaşık ${Math.round(estimatedKb / 1024 * 10) / 10} MB gerekiyor, kalan: ${quota.remainingMb} MB.`,
                 };
             }
 
@@ -654,17 +610,7 @@ export class ContentService {
                 }
             }
 
-            // Update quota after successful ingest + DB writes
-            const currentQuota = await this.prisma.quota.findFirst({
-                where: { teamId: user.teamId, quotaType: 'FILE' }
-            });
-
-            if (currentQuota) {
-                await this.prisma.quota.update({
-                    where: { id: currentQuota.id },
-                    data: { used: currentQuota.used + newUrls.length }
-                });
-            }
+            // KB quota is updated by ML service after ingestion completes (via pg_notify trigger)
 
             return {
                 success: true,
@@ -1139,65 +1085,31 @@ export class ContentService {
         try {
             const quotas = await this.quotaService.list(teamId);
             const fileQuota = quotas.find(q => q.quotaType === 'FILE');
-            const [activeDocuments, activeContents] = await Promise.all([
-                this.prisma.storage.count({
-                    where: {
-                        teamId,
-                        isDeleted: false,
-                    },
-                }),
-                this.prisma.content.findMany({
-                    where: {
-                        teamId,
-                        isDeleted: false,
-                    },
-                    select: {
-                        type: true,
-                        content: true,
-                    },
-                }),
-            ]);
-
-            // URL-based vault items are counted by distinct URL across WEBPAGE/LINK variants.
-            const urlTypeSet = new Set(['webpage', 'link']);
-            const distinctUrlSet = new Set<string>();
-            let nonUrlContentCount = 0;
-
-            for (const item of activeContents) {
-                const contentType = (item.type || '').toLowerCase();
-                if (urlTypeSet.has(contentType)) {
-                    const normalizedUrl = this.normalizeComparableUrl((item.content as any)?.url);
-                    if (normalizedUrl) {
-                        distinctUrlSet.add(normalizedUrl);
-                        continue;
-                    }
-                }
-                nonUrlContentCount += 1;
-            }
-
-            const used = activeDocuments + nonUrlContentCount + distinctUrlSet.size;
 
             if (!fileQuota) {
                 return {
-                    limit: 0,
-                    used,
-                    remaining: 0
+                    limitKb: 0, usedKb: 0, remainingKb: 0,
+                    limitMb: 0, usedMb: 0, remainingMb: 0,
                 };
             }
 
-            const remaining = Math.max(fileQuota.limit - used, 0);
+            const usedKb = fileQuota.used;
+            const limitKb = fileQuota.limit;
+            const remainingKb = Math.max(limitKb - usedKb, 0);
 
             return {
-                limit: fileQuota.limit,
-                used,
-                remaining
+                limitKb,
+                usedKb,
+                remainingKb,
+                limitMb: Math.round((limitKb / 1024) * 100) / 100,
+                usedMb: Math.round((usedKb / 1024) * 100) / 100,
+                remainingMb: Math.round((remainingKb / 1024) * 100) / 100,
             };
         } catch (error) {
             console.error('Error fetching quota:', error);
             return {
-                limit: 0,
-                used: 0,
-                remaining: 0
+                limitKb: 0, usedKb: 0, remainingKb: 0,
+                limitMb: 0, usedMb: 0, remainingMb: 0,
             };
         }
     }

@@ -64,15 +64,21 @@ export class FileService {
                 }
             }
 
-            if (existingQuota.Quota[0].used + files.length > existingQuota.Quota[0].limit) {
+            // KB-based quota check
+            const totalUploadKb = files.reduce((sum, f) => sum + Math.ceil(f.size / 1024), 0);
+            if (existingQuota.Quota[0].used + totalUploadKb > existingQuota.Quota[0].limit) {
+                const limitMb = (existingQuota.Quota[0].limit / 1024).toFixed(1);
+                const usedMb = (existingQuota.Quota[0].used / 1024).toFixed(1);
+                const remainingKb = Math.max(existingQuota.Quota[0].limit - existingQuota.Quota[0].used, 0);
                 return {
-                    message: "Quota exceeded",
-                    limit: existingQuota.Quota[0].limit,
-                    used: existingQuota.Quota[0].used,
-                    remaining: existingQuota.Quota[0].limit - existingQuota.Quota[0].used
+                    message: `Depolama kotanız doldu. ${usedMb} MB / ${limitMb} MB kullanıldı.`,
+                    quotaExceeded: true,
+                    limitKb: existingQuota.Quota[0].limit,
+                    usedKb: existingQuota.Quota[0].used,
+                    remainingKb,
                 }
             }
-            console.log("filesLength", files.length, " used..:", existingQuota.Quota[0].used)
+            console.log("filesLength", files.length, " totalUploadKb:", totalUploadKb, " used..:", existingQuota.Quota[0].used)
             //async function to upload files
             for (const file of files) {
                 const uploaded_file = await this.minioClientService.upload(file, this.configService.get('S3_BUCKET_NAME'), user.teamId, body.botId)
@@ -121,7 +127,7 @@ export class FileService {
                                 }
                             },
                             data: {
-                                used: (existingQuota.Quota[0].used + files.length)
+                                used: existingQuota.Quota[0].used + totalUploadKb
                             }
                         }
                     }
@@ -221,6 +227,8 @@ export class FileService {
 
                     console.log("existingQuota", existingQuota);
 
+                    // KB-based quota decrease on single file delete
+                    const fileKb = Math.ceil(parseInt(file.size || '0') / 1024);
                     const decreaseQuota = await this.prisma.team.update({
                         where: {
                             id: user.teamId,
@@ -240,7 +248,7 @@ export class FileService {
                                         }
                                     },
                                     data: {
-                                        used: existingQuota.Quota[0].used - 1
+                                        used: Math.max(0, existingQuota.Quota[0].used - fileKb)
                                     }
                                 }
                             }
@@ -379,8 +387,9 @@ export class FileService {
             }
         }
 
-        // Decrease quota
+        // KB-based quota decrease on bulk file delete
         if (deletedCount > 0) {
+            const totalDeletedKb = files.reduce((sum, f) => sum + Math.ceil(parseInt(f.size || '0') / 1024), 0);
             const existingQuota = await this.prisma.team.findFirst({
                 where: {
                     id: user.teamId,
@@ -392,7 +401,7 @@ export class FileService {
             });
 
             if (existingQuota?.Quota?.[0]) {
-                const newUsed = Math.max(0, existingQuota.Quota[0].used - deletedCount);
+                const newUsed = Math.max(0, existingQuota.Quota[0].used - totalDeletedKb);
                 await this.prisma.quota.update({
                     where: {
                         teamId_quotaType: {
