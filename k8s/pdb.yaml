@@ -1,0 +1,23 @@
+# PodDisruptionBudget for backend.
+#
+# `karpenter.sh/do-not-disrupt: "true"` (set on the pod template in
+# deployment.yaml) prevents Karpenter from *voluntarily* consolidating
+# the node a backend pod is on. However it does NOT cover:
+#   - AWS Spot interruptions (2-min warning, node drain initiated by AWS)
+#   - Node expiry drains (Karpenter expires nodes at 720h / 30 days)
+#   - `kubectl drain` during manual maintenance / EKS addon upgrades
+#
+# A PDB with minAvailable=1 ensures that during any of those drain
+# scenarios the Kubernetes eviction API blocks on the second pod until
+# the first replacement is Ready, keeping at least one backend replica
+# serving traffic at all times.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: chatbu
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
