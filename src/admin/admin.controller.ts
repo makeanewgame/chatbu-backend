@@ -262,6 +262,80 @@ export class AdminController {
     }
     //#endregion
 
+    //#region getAdminFileDownloadUrl
+    @ApiOperation({ summary: 'Get presigned download URL for a storage file (Admin only)' })
+    @ApiQuery({ name: 'fileId', required: true, type: String, description: 'Storage record ID' })
+    @ApiResponse({ status: 200, description: 'Presigned URL generated' })
+    @Get('files/download-url')
+    async getAdminFileDownloadUrl(@Query('fileId') fileId: string) {
+        return this.adminService.getAdminFileDownloadUrl(fileId);
+    }
+    //#endregion
+
+    //#region getBotDetail
+    @ApiOperation({ summary: 'Get bot detail including systemPrompt (Admin only)' })
+    @ApiParam({ name: 'id', type: String, description: 'Bot ID' })
+    @ApiResponse({ status: 200, description: 'Bot detail retrieved' })
+    @Get('chatbots/:id')
+    async getBotDetail(@Param('id') id: string) {
+        return this.adminService.getBotDetail(id);
+    }
+    //#endregion
+
+    //#region updateBotSystemPrompt
+    @ApiOperation({ summary: 'Update bot system prompt (Admin only)' })
+    @ApiParam({ name: 'id', type: String, description: 'Bot ID' })
+    @ApiBody({ schema: { properties: { systemPrompt: { type: 'string' } } } })
+    @ApiResponse({ status: 200, description: 'System prompt updated' })
+    @Patch('chatbots/:id/system-prompt')
+    async updateBotSystemPrompt(
+        @Param('id') id: string,
+        @Body('systemPrompt') systemPrompt: string,
+    ) {
+        return this.adminService.updateBotSystemPrompt(id, systemPrompt);
+    }
+    //#endregion
+
+    //#region getBotIngestedData
+    @ApiOperation({ summary: 'Get ingested data (Storage + Content) for a bot (Admin only)' })
+    @ApiParam({ name: 'id', type: String, description: 'Bot ID' })
+    @ApiQuery({ name: 'page', required: false, type: Number })
+    @ApiQuery({ name: 'limit', required: false, type: Number })
+    @ApiResponse({ status: 200, description: 'Ingested data retrieved' })
+    @Get('chatbots/:id/ingested-data')
+    async getBotIngestedData(
+        @Param('id') id: string,
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.adminService.getBotIngestedData(
+            id,
+            page ? parseInt(page, 10) : 1,
+            limit ? parseInt(limit, 10) : 20,
+        );
+    }
+    //#endregion
+
+    //#region getBotVectorData
+    @ApiOperation({ summary: 'Get vector DB documents for a bot (Admin only)' })
+    @ApiParam({ name: 'id', type: String, description: 'Bot ID' })
+    @ApiQuery({ name: 'page', required: false, type: Number })
+    @ApiQuery({ name: 'limit', required: false, type: Number })
+    @ApiResponse({ status: 200, description: 'Vector documents retrieved' })
+    @Get('chatbots/:id/vector-data')
+    async getBotVectorData(
+        @Param('id') id: string,
+        @Query('page') page?: string,
+        @Query('limit') limit?: string,
+    ) {
+        return this.adminService.getBotVectorData(
+            id,
+            page ? parseInt(page, 10) : 1,
+            limit ? parseInt(limit, 10) : 20,
+        );
+    }
+    //#endregion
+
     //#region hardDeleteBot
     @ApiOperation({ summary: 'Permanently delete a soft-deleted bot and all its data (Admin only)' })
     @ApiResponse({ status: 200, description: 'Bot permanently deleted' })

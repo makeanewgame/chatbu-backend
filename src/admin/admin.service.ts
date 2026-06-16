@@ -635,6 +635,114 @@ export class AdminService {
         return { message: 'Bot permanently deleted' };
     }
 
+    async getAdminFileDownloadUrl(fileId: string) {        const bucket = this.configService.get('S3_BUCKET_NAME');
+
+        const storage = await this.prisma.storage.findUnique({ where: { id: fileId } });
+
+        if (!storage) {
+            throw new NotFoundException('File not found');
+        }
+
+        const url = await this.minioClientService.getPresignedUrl(storage.fileUrl, bucket);
+        return { url, fileName: storage.fileName };
+    }
+
+    async getBotVectorData(botId: string, page = 1, limit = 20) {
+        const bot = await this.prisma.customerBots.findUnique({ where: { id: botId } });
+
+        if (!bot) {
+            throw new NotFoundException('Bot not found');
+        }
+
+        const ingestUrl = this.configService.get('INGEST_ENPOINT');
+
+        try {
+            const response = await firstValueFrom(
+                this.httpService.get(`${ingestUrl}/list-documents/`, {
+                    params: {
+                        customer_cuid: bot.teamId,
+                        bot_cuid: botId,
+                        page,
+                        limit,
+                    },
+                    timeout: 15000,
+                }),
+            );
+            return { botName: bot.botName, ...response.data };
+        } catch (err: any) {
+            throw new NotFoundException(`Vector data could not be retrieved: ${err?.message}`);
+        }
+    }
+
+    async getBotDetail(botId: string) {
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: botId },
+            include: {
+                team: {
+                    include: {
+                        owner: { select: { id: true, name: true, email: true } },
+                    },
+                },
+            },
+        });
+
+        if (!bot) {
+            throw new NotFoundException('Bot not found');
+        }
+
+        return bot;
+    }
+
+    async updateBotSystemPrompt(botId: string, systemPrompt: string) {
+        const bot = await this.prisma.customerBots.findUnique({ where: { id: botId } });
+
+        if (!bot) {
+            throw new NotFoundException('Bot not found');
+        }
+
+        const updated = await this.prisma.customerBots.update({
+            where: { id: botId },
+            data: { systemPrompt },
+        });
+
+        return { message: 'System prompt updated', bot: updated };
+    }
+
+    async getBotIngestedData(botId: string, page = 1, limit = 20) {
+        const bot = await this.prisma.customerBots.findUnique({ where: { id: botId } });
+
+        if (!bot) {
+            throw new NotFoundException('Bot not found');
+        }
+
+        const skip = (page - 1) * limit;
+
+        const [storageRecords, storageTotal, contentRecords, contentTotal] = await Promise.all([
+            this.prisma.storage.findMany({
+                where: { botId, isDeleted: false },
+                skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' },
+            }),
+            this.prisma.storage.count({ where: { botId, isDeleted: false } }),
+            this.prisma.content.findMany({
+                where: { botId, isDeleted: false },
+                skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' },
+            }),
+            this.prisma.content.count({ where: { botId, isDeleted: false } }),
+        ]);
+
+        return {
+            botName: bot.botName,
+            storage: { data: storageRecords, total: storageTotal },
+            content: { data: contentRecords, total: contentTotal },
+            page,
+            limit,
+        };
+    }
+
     async getServicesHealth() {
         const ingestUrl = this.configService.get('INGEST_ENPOINT');
         const results: any[] = [];
