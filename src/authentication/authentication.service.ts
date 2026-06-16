@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma/client';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -158,19 +159,40 @@ export class AuthenticationService {
         });
       }
 
-      const createdUser = await this.prisma.user.create({
-        data: {
-          name: user.name,
-          email: user.email,
-          password: user.password,
-          phoneNumber: user.phoneNumber || null,
-          emailVerified: false,
-          phoneVerified: false,
-          activationCode: code,
-          termsAccepted: true,
-          termsAcceptedAt: new Date(),
-        },
-      });
+      console.log('Pending team member:', user); // DEBUG
+
+      let createdUser;
+      try {
+        createdUser = await this.prisma.user.create({
+          data: {
+            name: user.name,
+            email: user.email,
+            password: user.password,
+            phoneNumber: hasValidPhoneNumber ? user.phoneNumber : null,
+            emailVerified: false,
+            phoneVerified: false,
+            activationCode: code,
+            termsAccepted: true,
+            termsAcceptedAt: new Date(),
+          },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          // pg adapter exposes fields under driverAdapterError.cause.constraint.fields
+          // fallback to err.meta.target for the standard engine
+          const adapterFields: string[] = (err.meta as any)?.driverAdapterError?.cause?.constraint?.fields || [];
+          const targetFields: string[] = (err.meta?.target as string[]) || [];
+          const fields = [...adapterFields, ...targetFields].map((f) => f.toLowerCase());
+          if (fields.includes('phonenumber')) {
+            throw new ConflictException('User with this phone number already exists');
+          }
+          if (fields.includes('email')) {
+            throw new ConflictException('User with this email already exists');
+          }
+          throw new ConflictException('User already exists');
+        }
+        throw err;
+      }
 
       // Handle team invitation
       if (pendingTeamMember) {
