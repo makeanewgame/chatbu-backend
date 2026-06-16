@@ -635,7 +635,8 @@ export class AdminService {
         return { message: 'Bot permanently deleted' };
     }
 
-    async getAdminFileDownloadUrl(fileId: string) {        const bucket = this.configService.get('S3_BUCKET_NAME');
+    async getAdminFileDownloadUrl(fileId: string) {
+        const bucket = this.configService.get('S3_BUCKET_NAME');
 
         const storage = await this.prisma.storage.findUnique({ where: { id: fileId } });
 
