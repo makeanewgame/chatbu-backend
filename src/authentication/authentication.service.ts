@@ -656,14 +656,52 @@ export class AuthenticationService {
   }
 
   async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        termsAccepted: true,
-        termsAcceptedAt: new Date(),
-        ...(phoneNumber ? { phoneNumber } : {}),
-      },
-    });
+    const sanitizedPhoneNumber = phoneNumber?.trim();
+
+    const updateData: { termsAccepted: boolean; termsAcceptedAt: Date; phoneNumber?: string } = {
+      termsAccepted: true,
+      termsAcceptedAt: new Date(),
+    };
+
+    if (sanitizedPhoneNumber) {
+      const phoneOwner = await this.prisma.user.findFirst({
+        where: {
+          phoneNumber: sanitizedPhoneNumber,
+          id: {
+            not: userId,
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!phoneOwner) {
+        updateData.phoneNumber = sanitizedPhoneNumber;
+      }
+    }
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+      });
+    } catch (error) {
+      // Handle race condition where the same phone is claimed by another user after the pre-check.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            termsAccepted: true,
+            termsAcceptedAt: new Date(),
+          },
+        });
+        return;
+      }
+
+      throw error;
+    }
   }
 
   async logout(email: string) {
