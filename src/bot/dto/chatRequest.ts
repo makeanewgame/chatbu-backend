@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsString } from '@nestjs/class-validator';
+import { IsNotEmpty, IsOptional, IsString } from '@nestjs/class-validator';
+
+export interface ChatAttachment {
+  storageId: string;
+  objectPath: string;
+  fileName: string;
+  fileType: string;
+  size: number;
+}
 
 export class ChatRequest {
   @IsString()
@@ -24,4 +32,7 @@ export class ChatRequest {
   @IsString()
   @IsNotEmpty()
   date: string;
+
+  @IsOptional()
+  attachments?: ChatAttachment[];
 }

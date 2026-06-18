@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { MinioClientService } from 'src/minio-client/minio-client.service';
 
 @Injectable()
 export class ReportService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private minioClientService: MinioClientService,
+        private configService: ConfigService,
+    ) { }
 
     async getChatHistory(teamId: string) {
 
@@ -68,6 +74,7 @@ export class ReportService {
                         createdAt: true,
                         sender: true,
                         id: true,
+                        attachments: true,
                     }
                 }
             },
@@ -81,7 +88,51 @@ export class ReportService {
             }
         }
 
-        return chatHistoryList;
+        const bucket = this.configService.get('S3_BUCKET_NAME');
+
+        // Enrich attachments with fresh presigned URLs
+        const enrichedDetails = await Promise.all(
+            chatHistoryList.CustomerChatDetails.map(async (detail) => {
+                if (!detail.attachments || !Array.isArray(detail.attachments)) {
+                    return detail;
+                }
+
+                const enrichedAttachments = await Promise.all(
+                    (detail.attachments as any[]).map(async (att) => {
+                        if (!att.objectPath) return att;
+
+                        // Check if the storage record is deleted
+                        const storageRecord = att.storageId
+                            ? await this.prisma.storage.findFirst({
+                                where: { id: att.storageId },
+                                select: { isDeleted: true },
+                            })
+                            : null;
+
+                        if (storageRecord?.isDeleted) {
+                            return {
+                                storageId: att.storageId,
+                                fileName: att.fileName,
+                                fileType: att.fileType,
+                                size: att.size,
+                                deleted: true,
+                            };
+                        }
+
+                        try {
+                            const presignedUrl = await this.minioClientService.getPresignedUrl(att.objectPath, bucket);
+                            return { ...att, presignedUrl, deleted: false };
+                        } catch {
+                            return { ...att, deleted: true };
+                        }
+                    }),
+                );
+
+                return { ...detail, attachments: enrichedAttachments };
+            }),
+        );
+
+        return { ...chatHistoryList, CustomerChatDetails: enrichedDetails };
     }
 
     async getUserUsage(teamId: string) {

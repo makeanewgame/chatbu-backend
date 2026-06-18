@@ -55,3 +55,32 @@ export class CustomFileTypeValidator extends FileValidator {
         return `File '${file.originalname}' has invalid type. Only txt, pdf, docx, doc, csv, xls, xlsx files are allowed. Detected type: ${file.mimetype}`;
     }
 }
+
+export class ChatAttachmentFileTypeValidator extends FileValidator {
+    private allowedMimeTypes: string[];
+    private allowedExtensions: string[];
+
+    constructor() {
+        super({ validationOptions: {} });
+        this.allowedMimeTypes = [
+            'image/png',
+            'image/jpeg',
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ];
+        this.allowedExtensions = ['.png', '.jpg', '.jpeg', '.pdf', '.doc', '.docx', '.xls', '.xlsx'];
+    }
+
+    isValid(file: Express.Multer.File): boolean {
+        if (!file) return false;
+        const fileExtension = file.originalname.toLowerCase().substring(file.originalname.lastIndexOf('.'));
+        return this.allowedExtensions.includes(fileExtension) || this.allowedMimeTypes.includes(file.mimetype);
+    }
+
+    buildErrorMessage(file: Express.Multer.File): string {
+        return `File '${file.originalname}' has invalid type. Allowed: png, jpg, jpeg, pdf, doc, docx, xls, xlsx. Detected: ${file.mimetype}`;
+    }
+}

@@ -520,6 +520,7 @@ export class BotService {
                 {
                   sender: body.sender,
                   message: body.message,
+                  attachments: body.attachments ? (body.attachments as any) : undefined,
                   createdAt: new Date(body.date),
                 },
                 {
@@ -555,6 +556,7 @@ export class BotService {
               chatId: activeChat.id,
               sender: body.sender,
               message: body.message,
+              attachments: body.attachments ? (body.attachments as any) : undefined,
               createdAt: new Date(body.date),
             },
             {

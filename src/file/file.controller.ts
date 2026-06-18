@@ -1,9 +1,9 @@
-import { Controller, UseInterceptors, Post, Body, ParseFilePipe, FileTypeValidator, UploadedFiles, Get, UseGuards, Req, Query } from '@nestjs/common';
+import { Controller, UseInterceptors, Post, Body, ParseFilePipe, FileTypeValidator, UploadedFiles, Get, UseGuards, Req, Query, UploadedFile } from '@nestjs/common';
 import { FileService } from './file.service';
-import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import { AnyFilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { Request } from 'express';
-import { CustomMaxFileSizeValidator, CustomFileTypeValidator } from './customFileValidator';
+import { ChatAttachmentFileTypeValidator, CustomMaxFileSizeValidator, CustomFileTypeValidator } from './customFileValidator';
 import { IngestRequest } from './dto/ingestRequest';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { UploadSingleFileRequest } from './dto/uploadfile.request';
@@ -251,4 +251,55 @@ export class FileController {
 
         return await this.fileService.fileCheck(user, body.fileName, body.fileHash, body.botId)
     }
+
+    //#region uploadChatAttachment
+    @ApiOperation({ summary: 'Upload a single file/image as a chat attachment. Allowed: png, jpg, jpeg, pdf, doc, docx, xls, xlsx. Max 20MB.' })
+    @ApiResponse({ status: 200, description: 'Attachment uploaded successfully' })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                botId: { type: 'string' },
+                file: { type: 'string', format: 'binary' },
+            },
+            required: ['botId', 'file'],
+        },
+    })
+    @Post('uploadChatAttachment')
+    @UseGuards(AccessTokenGuard)
+    @UseInterceptors(FileInterceptor('file', {
+        fileFilter: (_, file, cb) => {
+            file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+            cb(null, true);
+        },
+    }))
+    async uploadChatAttachment(
+        @Req() req: Request,
+        @Body() body: { botId: string },
+        @UploadedFile(
+            new ParseFilePipe({
+                validators: [
+                    new CustomMaxFileSizeValidator({ maxSize: 20000000 }),
+                    new ChatAttachmentFileTypeValidator(),
+                ],
+            }),
+        ) file: Express.Multer.File,
+    ) {
+        const user = req.user as IUser;
+        return await this.fileService.uploadChatAttachment(file, user, body.botId);
+    }
+    //#endregion
+
+    //#region deleteChatAttachment
+    @ApiOperation({ summary: 'Delete a chat attachment by storageId and reclaim quota' })
+    @ApiResponse({ status: 200, description: 'Attachment deleted successfully' })
+    @ApiBearerAuth()
+    @Post('deleteChatAttachment')
+    @UseGuards(AccessTokenGuard)
+    async deleteChatAttachment(@Req() req: Request, @Body() body: { storageId: string }) {
+        const user = req.user as IUser;
+        return await this.fileService.deleteChatAttachment(body.storageId, user);
+    }
+    //#endregion
 }   
