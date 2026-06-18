@@ -64,6 +64,31 @@ export class MinioClientService {
         })
     }
 
+    public async uploadChatAttachment(
+        file: Express.Multer.File,
+        baseBucket: string,
+        botId: string,
+    ): Promise<{ objectPath: string; presignedUrl: string }> {
+        const temp_filename = Date.now().toString();
+        const hashedFileName = crypto.createHash('md5').update(temp_filename).digest('hex');
+        const ext = file.originalname.substring(file.originalname.lastIndexOf('.'), file.originalname.length);
+        const metaData = { 'Content-Type': file.mimetype };
+        const objectPath = `users_upload/${botId}/${hashedFileName}${ext}`;
+
+        await new Promise<void>((resolve, reject) => {
+            this.client.putObject(baseBucket, objectPath, file.buffer, metaData, function (err) {
+                if (err) {
+                    reject(new HttpException('Upload failed', HttpStatus.BAD_REQUEST));
+                } else {
+                    resolve();
+                }
+            });
+        });
+
+        const presignedUrl = await this.getPresignedUrl(objectPath, baseBucket);
+        return { objectPath, presignedUrl };
+    }
+
     async getPresignedUrl(objectName: string, baseBucket: string, expirySeconds: number = 3600): Promise<string> {
         return new Promise((resolve, reject) => {
             this.client.presignedGetObject(baseBucket, objectName, expirySeconds, (err: Error, url: string) => {

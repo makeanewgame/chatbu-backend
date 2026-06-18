@@ -16,15 +16,20 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS storage_update_trigger ON "Storage";
 DROP TRIGGER IF EXISTS storage_delete_trigger ON "Storage";
 
+-- Only notify for knowledge_base files; chat_upload attachments must NOT be ingested
 CREATE TRIGGER storage_update_trigger
 AFTER UPDATE ON "Storage"
 FOR EACH ROW
-WHEN (OLD IS DISTINCT FROM NEW)
+WHEN (
+  OLD IS DISTINCT FROM NEW
+  AND COALESCE(NEW.source, 'knowledge_base') = 'knowledge_base'
+)
 EXECUTE FUNCTION notify_storage_update();
 
 CREATE TRIGGER storage_delete_trigger
 AFTER DELETE ON "Storage"
 FOR EACH ROW
+WHEN (COALESCE(OLD.source, 'knowledge_base') = 'knowledge_base')
 EXECUTE FUNCTION notify_storage_update();
 
 -- Content table notification trigger

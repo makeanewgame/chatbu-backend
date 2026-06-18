@@ -1,6 +1,7 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, Post, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { WidgetService } from './widget.service';
 
@@ -53,5 +54,26 @@ export class WidgetController {
             body.chatId,
             ip,
         );
+    }
+
+    /**
+     * Uploads a chat attachment (image or document).
+     * Authenticated via sessionToken (2-hour JWT from /widget/session).
+     * Throttled to 10 uploads/min per IP.
+     */
+    @ApiOperation({ summary: 'Upload a chat attachment through the widget' })
+    @Post('uploadAttachment')
+    @Throttle({ default: { ttl: 60000, limit: 10 } })
+    @UseInterceptors(FileInterceptor('file', {
+        fileFilter: (_, file, cb) => {
+            file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+            cb(null, true);
+        },
+    }))
+    async uploadAttachment(
+        @Body('sessionToken') sessionToken: string,
+        @UploadedFile() file: Express.Multer.File,
+    ) {
+        return this.widgetService.uploadAttachment(sessionToken, file);
     }
 }

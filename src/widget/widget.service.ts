@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
+import { MinioClientService } from '../minio-client/minio-client.service';
 
 @Injectable()
 export class WidgetService {
@@ -17,6 +18,7 @@ export class WidgetService {
         private jwtService: JwtService,
         private configService: ConfigService,
         private botService: BotService,
+        private minioClientService: MinioClientService,
     ) { }
 
     // ---------------------------------------------------------------------------
@@ -261,5 +263,100 @@ export class WidgetService {
                 dailyResetAt: new Date(),
             },
         });
+    }
+
+    // ---------------------------------------------------------------------------
+    // POST /widget/uploadAttachment
+    // ---------------------------------------------------------------------------
+
+    async uploadAttachment(
+        sessionToken: string,
+        file: Express.Multer.File,
+    ) {
+        // 1. Verify session token
+        let payload: any;
+        try {
+            payload = await this.jwtService.verifyAsync(sessionToken, {
+                secret: this.configService.get('JWT_SECRET'),
+            });
+        } catch {
+            throw new UnauthorizedException('Session expired');
+        }
+        if (payload.type !== 'widget-session') {
+            throw new UnauthorizedException('Invalid session token type');
+        }
+
+        const { botId, teamId } = payload;
+
+        // 2. Verify visitor exists and is not blocked
+        const visitor = await this.prisma.widgetVisitor.findUnique({
+            where: { visitorId: payload.visitorId },
+        });
+        if (!visitor) throw new UnauthorizedException('Visitor not found');
+        if (visitor.isBlocked) throw new ForbiddenException('Access denied');
+
+        // 3. Quota check against team's file quota
+        const existingQuota = await this.prisma.team.findFirst({
+            where: {
+                id: teamId,
+                Quota: { some: { quotaType: 'FILE' } },
+            },
+            include: {
+                Quota: { where: { quotaType: 'FILE' } },
+            },
+        });
+
+        if (!existingQuota || !existingQuota.Quota[0]) {
+            throw new ForbiddenException('Storage quota not configured');
+        }
+
+        const fileKb = Math.ceil(file.size / 1024);
+        if (existingQuota.Quota[0].used + fileKb > existingQuota.Quota[0].limit) {
+            const limitMb = (existingQuota.Quota[0].limit / 1024).toFixed(1);
+            const usedMb = (existingQuota.Quota[0].used / 1024).toFixed(1);
+            return {
+                message: `Storage quota exceeded. ${usedMb} MB / ${limitMb} MB used.`,
+                quotaExceeded: true,
+            };
+        }
+
+        // 4. Upload to MinIO under users_upload/
+        const bucket = this.configService.get('S3_BUCKET_NAME');
+        const { objectPath, presignedUrl } = await this.minioClientService.uploadChatAttachment(file, bucket, botId);
+
+        const { createHash: nodeCreateHash } = await import('crypto');
+        const fileHash = nodeCreateHash('sha256').update(file.buffer).digest('hex');
+
+        // 5. Save to Storage with source='chat_upload'
+        const storage = await this.prisma.storage.create({
+            data: {
+                teamId,
+                botId,
+                fileUrl: objectPath,
+                type: file.mimetype,
+                size: file.size.toString(),
+                status: 'UPLOADED',
+                ingestionInfo: {},
+                taskId: '',
+                fileName: file.originalname,
+                fileHash,
+                source: 'chat_upload',
+            },
+        });
+
+        // 6. Deduct quota
+        await this.prisma.quota.update({
+            where: { teamId_quotaType: { teamId, quotaType: 'FILE' } },
+            data: { used: { increment: fileKb } },
+        });
+
+        return {
+            storageId: storage.id,
+            objectPath,
+            presignedUrl,
+            fileName: file.originalname,
+            fileType: file.mimetype,
+            size: file.size,
+        };
     }
 }

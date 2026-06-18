@@ -608,4 +608,173 @@ export class FileService {
         return "1test"
     }
 
+    async uploadChatAttachment(file: Express.Multer.File, user: IUser, botId: string) {
+        const lockKey = `quota-lock:${user.teamId}`;
+        const existingLock = await this.cacheManager.get(lockKey);
+        if (existingLock) {
+            throw new ConflictException('Quota check is already in progress. Please try again later.');
+        }
+        await this.cacheManager.set(lockKey, true, 60);
+
+        try {
+            const existingQuota = await this.prisma.team.findFirst({
+                where: {
+                    id: user.teamId,
+                    Quota: { some: { quotaType: 'FILE' } },
+                },
+                include: {
+                    Quota: { where: { quotaType: 'FILE' } },
+                },
+            });
+
+            if (!existingQuota) {
+                return { message: 'User not found' };
+            }
+
+            const fileKb = Math.ceil(file.size / 1024);
+            if (existingQuota.Quota[0].used + fileKb > existingQuota.Quota[0].limit) {
+                const limitMb = (existingQuota.Quota[0].limit / 1024).toFixed(1);
+                const usedMb = (existingQuota.Quota[0].used / 1024).toFixed(1);
+                return {
+                    message: `Depolama kotanız doldu. ${usedMb} MB / ${limitMb} MB kullanıldı.`,
+                    quotaExceeded: true,
+                };
+            }
+
+            const bucket = this.configService.get('S3_BUCKET_NAME');
+            const { objectPath, presignedUrl } = await this.minioClientService.uploadChatAttachment(file, bucket, botId);
+
+            const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
+            const storage = await this.prisma.storage.create({
+                data: {
+                    teamId: user.teamId,
+                    botId: botId,
+                    fileUrl: objectPath,
+                    type: file.mimetype,
+                    size: file.size.toString(),
+                    status: 'UPLOADED',
+                    ingestionInfo: {},
+                    taskId: '',
+                    fileName: file.originalname,
+                    fileHash: fileHash,
+                    source: 'chat_upload',
+                },
+            });
+
+            await this.prisma.quota.update({
+                where: { teamId_quotaType: { teamId: user.teamId, quotaType: 'FILE' } },
+                data: { used: { increment: fileKb } },
+            });
+
+            return {
+                storageId: storage.id,
+                objectPath,
+                presignedUrl,
+                fileName: file.originalname,
+                fileType: file.mimetype,
+                size: file.size,
+            };
+        } finally {
+            await this.cacheManager.del(lockKey);
+        }
+    }
+
+    async uploadChatAttachmentForWidget(file: Express.Multer.File, teamId: string, botId: string) {
+        const bucket = this.configService.get('S3_BUCKET_NAME');
+
+        const existingQuota = await this.prisma.team.findFirst({
+            where: {
+                id: teamId,
+                Quota: { some: { quotaType: 'FILE' } },
+            },
+            include: {
+                Quota: { where: { quotaType: 'FILE' } },
+            },
+        });
+
+        if (!existingQuota) {
+            return { message: 'Team not found' };
+        }
+
+        const fileKb = Math.ceil(file.size / 1024);
+        if (existingQuota.Quota[0].used + fileKb > existingQuota.Quota[0].limit) {
+            const limitMb = (existingQuota.Quota[0].limit / 1024).toFixed(1);
+            const usedMb = (existingQuota.Quota[0].used / 1024).toFixed(1);
+            return {
+                message: `Storage quota exceeded. ${usedMb} MB / ${limitMb} MB used.`,
+                quotaExceeded: true,
+            };
+        }
+
+        const { objectPath, presignedUrl } = await this.minioClientService.uploadChatAttachment(file, bucket, botId);
+        const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex');
+
+        const storage = await this.prisma.storage.create({
+            data: {
+                teamId: teamId,
+                botId: botId,
+                fileUrl: objectPath,
+                type: file.mimetype,
+                size: file.size.toString(),
+                status: 'UPLOADED',
+                ingestionInfo: {},
+                taskId: '',
+                fileName: file.originalname,
+                fileHash: fileHash,
+                source: 'chat_upload',
+            },
+        });
+
+        await this.prisma.quota.update({
+            where: { teamId_quotaType: { teamId, quotaType: 'FILE' } },
+            data: { used: { increment: fileKb } },
+        });
+
+        return {
+            storageId: storage.id,
+            objectPath,
+            presignedUrl,
+            fileName: file.originalname,
+            fileType: file.mimetype,
+            size: file.size,
+        };
+    }
+
+    async deleteChatAttachment(storageId: string, user: IUser) {
+        const storage = await this.prisma.storage.findFirst({
+            where: {
+                id: storageId,
+                teamId: user.teamId,
+                source: 'chat_upload',
+                isDeleted: false,
+            },
+        });
+
+        if (!storage) {
+            return { message: 'Attachment not found' };
+        }
+
+        const bucket = this.configService.get('S3_BUCKET_NAME');
+
+        try {
+            await this.minioClientService.delete(storage.fileUrl, bucket);
+        } catch (err) {
+            console.log('MinIO delete error (continuing):', err);
+        }
+
+        await this.prisma.storage.update({
+            where: { id: storageId },
+            data: { isDeleted: true, deletedAt: new Date() },
+        });
+
+        const fileKb = Math.ceil(parseInt(storage.size || '0') / 1024);
+        await this.prisma.quota.update({
+            where: { teamId_quotaType: { teamId: user.teamId, quotaType: 'FILE' } },
+            data: { used: { decrement: fileKb } },
+        });
+
+        return { message: 'Attachment deleted successfully' };
+    }
+
 }

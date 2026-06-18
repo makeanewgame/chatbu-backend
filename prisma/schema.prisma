@@ -97,6 +97,7 @@ model Storage {
   taskId        String
   ingestionInfo Json?
   fileHash      String
+  source        String?   @default("knowledge_base")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
@@ -156,6 +157,7 @@ model CustomerChatDetails {
   message      String
   sender       String
   tokenDetails Json?
+  attachments  Json?
   createdAt    DateTime      @default(now())
   chat         CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
 }
