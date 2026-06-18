@@ -37,7 +37,7 @@ spec:
         # onto a single node and one node-drain cascaded into a full
         # tier outage. maxSkew=1 forces Karpenter to provision a new
         # node rather than letting two replicas co-locate.
-        - maxSkew: 1
+        - maxSkew: 2
           topologyKey: topology.kubernetes.io/zone
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
