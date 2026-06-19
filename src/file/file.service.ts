@@ -423,7 +423,12 @@ export class FileService {
         const fileList = await this.prisma.storage.findMany({
             where: {
                 teamId: user.teamId ? user.teamId : '',
-                botId: botId ? botId : ''
+                botId: botId ? botId : '',
+                isDeleted: false,
+                OR: [
+                    { source: null },
+                    { source: { not: 'chat_upload' } },
+                ],
             }
         })
         return fileList

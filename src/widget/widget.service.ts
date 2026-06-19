@@ -160,6 +160,7 @@ export class WidgetService {
         message: string,
         chatId: string | undefined,
         ip: string,
+        attachments?: any[],
     ) {
         // 1. Verify session token
         let payload: any;
@@ -216,6 +217,7 @@ export class WidgetService {
             message,
             chatId,
             normalizedIp,
+            attachments,
         );
 
         // 6. Update visitor counters and risk score

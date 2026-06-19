@@ -705,6 +705,7 @@ export class BotService {
     message: string,
     chatId: string | undefined,
     ip: string,
+    attachments?: any[],
   ) {
     return this.chat(
       {
@@ -714,6 +715,7 @@ export class BotService {
         chatId: chatId ?? null,
         sender: 'user',
         date: new Date().toISOString(),
+        attachments,
       } as any,
       ip,
     );
