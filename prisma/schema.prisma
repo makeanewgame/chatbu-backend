@@ -8,38 +8,39 @@ datasource db {
 }
 
 model User {
-  id                   String          @id @default(cuid())
-  name                 String
-  email                String          @unique
-  phoneNumber          String?         @unique @map("phonenumber")
-  password             String
-  refreshToken         String?
-  emailVerified        Boolean         @default(false)
-  phoneVerified        Boolean         @default(false)
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  activationCode       String?
-  verifiedAt           DateTime?
-  resetCode            String?
-  isDeleted            Boolean         @default(false)
-  deletedAt            DateTime?
-  deletionScheduledFor DateTime?
-  role                 String          @default("USER")
-  googleId             String?         @unique
-  googleEmail          String?
-  accountBlocked       Boolean         @default(false)
-  blockedAt            DateTime?
-  blockedReason        String?
-  termsAccepted        Boolean         @default(false)
-  termsAcceptedAt      DateTime?
-  BillingInfo          BillingInfo?
-  Feedback             Feedback[]
-  Notification         Notification[]
-  Subscription         Subscription?
-  Team                 Team[]
-  User                 TeamMember[]
-  Ticket               Ticket[]
-  TicketMessage        TicketMessage[]
+  id                    String          @id @default(cuid())
+  name                  String
+  email                 String          @unique
+  phoneNumber           String?         @unique @map("phonenumber")
+  password              String
+  refreshToken          String?
+  emailVerified         Boolean         @default(false)
+  phoneVerified         Boolean         @default(false)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  activationCode        String?
+  verifiedAt            DateTime?
+  resetCode             String?
+  isDeleted             Boolean         @default(false)
+  deletedAt             DateTime?
+  deletionScheduledFor  DateTime?
+  role                  String          @default("USER")
+  googleId              String?         @unique
+  googleEmail           String?
+  accountBlocked        Boolean         @default(false)
+  blockedAt             DateTime?
+  blockedReason         String?
+  termsAccepted         Boolean         @default(false)
+  termsAcceptedAt       DateTime?
+  Team                  Team[]
+  User                  TeamMember[]
+  Subscription          Subscription?
+  BillingInfo           BillingInfo?
+  Feedback              Feedback[]
+  Ticket                Ticket[]
+  TicketMessage         TicketMessage[]
+  Notification          Notification[]
+  AssignedChats         CustomerChats[]  @relation("AssignedAgent")
 }
 
 model Team {
@@ -148,6 +149,11 @@ model CustomerChats {
   isDeleted           Boolean               @default(false)
   deletedAt           DateTime?
   totalTokens         Int?
+  chatStatus          ChatStatus            @default(BOT_ACTIVE)
+  agentUserId         String?
+  channel             ChatChannel           @default(WIDGET)
+  externalContactId   String?               // WhatsApp: wa_id (phone number), Messenger: PSID
+  agent               User?                 @relation("AssignedAgent", fields: [agentUserId], references: [id])
   CustomerChatDetails CustomerChatDetails[]
   team                Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
   GeoLocation         GeoLocation[]
@@ -481,6 +487,20 @@ model checkpoints {
 
   @@id([thread_id, checkpoint_ns, checkpoint_id])
   @@index([thread_id])
+}
+
+enum ChatStatus {
+  BOT_ACTIVE
+  HUMAN_REQUESTED
+  HUMAN_ASSIGNED
+  HUMAN_ACTIVE
+  CLOSED
+}
+
+enum ChatChannel {
+  WIDGET
+  WHATSAPP
+  META_MESSENGER
 }
 
 enum QuotaType {

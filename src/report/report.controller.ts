@@ -1,9 +1,11 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ReportService } from './report.service';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { Request } from 'express';
 import { IUser } from 'src/util/interfaces';
+import { HandoverChatDto } from './dto/handover-chat.dto';
+import { AgentMessageDto } from './dto/agent-message.dto';
 
 @ApiTags('Repots Services')
 @Controller('report')
@@ -128,6 +130,70 @@ export class ReportController {
     ) {
         const user = req.user as IUser;
         return this.reportService.getTokenUsageDetails(user.teamId, startDate, endDate, botId, operationType);
+    }
+    //#endregion
+
+    //#region handover-chat
+    @ApiOperation({ summary: 'Transfer a chat to a human agent' })
+    @ApiResponse({ status: 200, description: 'Chat transferred to agent' })
+    @ApiBadRequestResponse({ description: 'Bad request in payload' })
+    @ApiBearerAuth()
+    @ApiParam({ name: 'chatId', description: 'Chat ID', required: true, type: String })
+    @ApiBody({ type: HandoverChatDto })
+    @Post('handover/:chatId')
+    @UseGuards(AccessTokenGuard)
+    async handoverChat(@Req() req: Request, @Param('chatId') chatId: string, @Body() body: HandoverChatDto) {
+        const user = req.user as IUser;
+        const agentUserId = body?.agentUserId ?? (body as any)?.userId ?? (body as any)?.agentId;
+
+        if (!agentUserId || agentUserId === 'undefined') {
+            throw new BadRequestException('agentUserId is required');
+        }
+
+        return this.reportService.handoverChat(user.teamId, chatId, agentUserId);
+    }
+    //#endregion
+
+    //#region live-chats
+    @ApiOperation({ summary: 'Get live chats assigned to the current agent' })
+    @ApiResponse({ status: 200, description: 'List of live chats assigned to agent' })
+    @ApiBearerAuth()
+    @Get('live-chats')
+    @UseGuards(AccessTokenGuard)
+    async getLiveChats(@Req() req: Request) {
+        const user = req.user as IUser;
+        return this.reportService.getLiveChats(user.sub);
+    }
+    //#endregion
+
+    //#region agent-message
+    @ApiOperation({ summary: 'Send a message from agent to customer' })
+    @ApiResponse({ status: 200, description: 'Message sent' })
+    @ApiBadRequestResponse({ description: 'Bad request in payload' })
+    @ApiBearerAuth()
+    @ApiParam({ name: 'chatId', description: 'Chat ID', required: true, type: String })
+    @ApiBody({ type: AgentMessageDto })
+    @Post('agent-message/:chatId')
+    @UseGuards(AccessTokenGuard)
+    async sendAgentMessage(@Req() req: Request, @Param('chatId') chatId: string, @Body() body: AgentMessageDto) {
+        const user = req.user as IUser;
+
+        console.log(req.body, "body.message");
+
+        return this.reportService.sendAgentMessage(user.teamId, chatId, user.sub, req.body.message);
+    }
+    //#endregion
+
+    //#region close-chat
+    @ApiOperation({ summary: 'Close a live chat (sets status to CLOSED)' })
+    @ApiResponse({ status: 200, description: 'Chat closed' })
+    @ApiBearerAuth()
+    @ApiParam({ name: 'chatId', description: 'Chat ID', required: true, type: String })
+    @Post('close-chat/:chatId')
+    @UseGuards(AccessTokenGuard)
+    async closeChat(@Req() req: Request, @Param('chatId') chatId: string) {
+        const user = req.user as IUser;
+        return this.reportService.closeChat(user.teamId, chatId, user.sub);
     }
     //#endregion
 }
