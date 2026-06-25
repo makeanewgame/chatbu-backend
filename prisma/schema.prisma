@@ -40,23 +40,24 @@ model User {
   Ticket                Ticket[]
   TicketMessage         TicketMessage[]
   Notification          Notification[]
+  AssignedChats         CustomerChats[]  @relation("AssignedAgent")
 }
 
 model Team {
-  id        String   @id @default(cuid())
-  name      String?
-  ownerId   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  members   TeamMember[]
+  id            String          @id @default(cuid())
+  name          String?
+  ownerId       String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   Content       Content[]
   CustomerBots  CustomerBots[]
   CustomerChats CustomerChats[]
+  Integrations  Integrations[]
   Quota         Quota[]
   Storage       Storage[]
+  owner         User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members       TeamMember[]
   Ticket        Ticket[]
-  Integrations  Integrations[]
 }
 
 model TeamMember {
@@ -71,6 +72,7 @@ model TeamMember {
   updatedAt       DateTime @updatedAt
   team            Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([teamId, userId])
   @@unique([teamId, email])
 }
@@ -82,6 +84,7 @@ model Quota {
   limit     Int        @default(0)
   used      Int        @default(0)
   team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
   @@unique([teamId, quotaType])
 }
 
@@ -97,11 +100,11 @@ model Storage {
   taskId        String
   ingestionInfo Json?
   fileHash      String
-  source        String?   @default("knowledge_base")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   deletedAt     DateTime?
   isDeleted     Boolean   @default(false)
+  source        String?   @default("knowledge_base")
   team          Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
 }
 
@@ -146,6 +149,11 @@ model CustomerChats {
   isDeleted           Boolean               @default(false)
   deletedAt           DateTime?
   totalTokens         Int?
+  chatStatus          ChatStatus            @default(BOT_ACTIVE)
+  agentUserId         String?
+  channel             ChatChannel           @default(WIDGET)
+  externalContactId   String?               // WhatsApp: wa_id (phone number), Messenger: PSID
+  agent               User?                 @relation("AssignedAgent", fields: [agentUserId], references: [id])
   CustomerChatDetails CustomerChatDetails[]
   team                Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
   GeoLocation         GeoLocation[]
@@ -157,8 +165,8 @@ model CustomerChatDetails {
   message      String
   sender       String
   tokenDetails Json?
-  attachments  Json?
   createdAt    DateTime      @default(now())
+  attachments  Json?
   chat         CustomerChats @relation(fields: [chatId], references: [id], onDelete: Cascade)
 }
 
@@ -199,6 +207,300 @@ model fastapi_ingestiontask {
 
   @@index([bot_cuid], map: "ix_fastapi_ingestiontask_bot_cuid")
   @@index([customer_cuid], map: "ix_fastapi_ingestiontask_customer_cuid")
+}
+
+model Subscription {
+  id                        String             @id @default(cuid())
+  userId                    String             @unique
+  tier                      SubscriptionTier   @default(FREE)
+  status                    SubscriptionStatus @default(INACTIVE)
+  stripeCustomerId          String?            @unique
+  stripeSubscriptionId      String?            @unique
+  stripePriceId             String?
+  currentPeriodStart        DateTime?
+  currentPeriodEnd          DateTime?
+  cancelAtPeriodEnd         Boolean            @default(false)
+  monthlyTokenAllocation    Int                @default(0)
+  tokensUsedThisMonth       Int                @default(0)
+  additionalTokensPurchased Int                @default(0)
+  spendingLimit             Float?
+  activePricePlanId         String?
+  tokenPricePlanId          String?
+  scheduledPricePlanId      String?
+  scheduledTokenPlanId      String?
+  billingInterval           String?
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+  activePricePlan           PricePlan?         @relation("ActivePricePlan", fields: [activePricePlanId], references: [id])
+  scheduledPricePlan        PricePlan?         @relation("ScheduledPricePlan", fields: [scheduledPricePlanId], references: [id])
+  scheduledTokenPlan        PricePlan?         @relation("ScheduledTokenPlan", fields: [scheduledTokenPlanId], references: [id])
+  tokenPricePlan            PricePlan?         @relation("TokenPricePlan", fields: [tokenPricePlanId], references: [id])
+  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenUsageLogs            TokenUsageLog[]
+}
+
+model StripeProduct {
+  id              String            @id @default(cuid())
+  productType     StripeProductType @unique
+  stripeProductId String            @unique
+  lookupKey       String            @unique
+  name            String
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  pricePlans      PricePlan[]
+}
+
+model PricePlan {
+  id                     String          @id @default(cuid())
+  stripeProductId        String
+  planType               PricePlanType
+  stripePriceId          String?         @unique
+  lookupKey              String?         @unique
+  amountUsd              Float
+  status                 PricePlanStatus @default(DRAFT)
+  createdByAdminId       String?
+  activatedAt            DateTime?
+  archivedAt             DateTime?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  stripeProduct          StripeProduct   @relation(fields: [stripeProductId], references: [id])
+  activeSubscriptions    Subscription[]  @relation("ActivePricePlan")
+  scheduledSubscriptions Subscription[]  @relation("ScheduledPricePlan")
+  scheduledTokenSubs     Subscription[]  @relation("ScheduledTokenPlan")
+  tokenSubscriptions     Subscription[]  @relation("TokenPricePlan")
+
+  @@index([status])
+  @@index([planType])
+}
+
+model BillingInfo {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  firstName               String
+  lastName                String
+  email                   String
+  address                 String
+  country                 String
+  stateRegion             String
+  city                    String
+  zipPostalCode           String
+  isCompany               Boolean  @default(false)
+  vatIdentificationNumber String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TokenUsageLog {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  teamId         String?
+  botId          String?
+  chatId         String?
+  taskId         String?
+  operationType  String       @default("chat")
+  tokensUsed     Int
+  cost           Float
+  createdAt      DateTime     @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, operationType], name: "TokenUsageLog_taskId_operationType_key")
+  @@index([operationType])
+  @@index([teamId])
+  @@index([createdAt])
+}
+
+model SystemSettings {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Integrations {
+  id        String   @id @default(cuid())
+  teamId    String
+  type      String
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+}
+
+model Feedback {
+  id        String           @id @default(cuid())
+  userId    String
+  userName  String
+  userEmail String
+  category  FeedbackCategory
+  message   String
+  status    FeedbackStatus   @default(PENDING)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Ticket {
+  id            String          @id @default(cuid())
+  ticketNumber  String          @unique @default(cuid())
+  userId        String
+  teamId        String
+  title         String
+  description   String
+  category      TicketCategory
+  status        TicketStatus    @default(OPEN)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  resolvedAt    DateTime?
+  notifications Notification[]
+  team          Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages      TicketMessage[]
+}
+
+model TicketMessage {
+  id           String   @id @default(cuid())
+  ticketId     String
+  userId       String
+  message      String
+  isAdminReply Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  ticketId  String?
+  userId    String
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ticket    Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SystemLog {
+  id         String      @id @default(cuid())
+  category   LogCategory
+  action     LogAction
+  status     LogStatus
+  userId     String?
+  userName   String?
+  userEmail  String?
+  teamId     String?
+  entityId   String?
+  entityName String?
+  message    String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime    @default(now())
+
+  @@index([category])
+  @@index([userId])
+  @@index([teamId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model BookingVerification {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  botCuid   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email, botCuid])
+  @@index([expiresAt])
+}
+
+model WidgetVisitor {
+  id                String   @id @default(cuid())
+  visitorId         String   @unique
+  chatbotId         String
+  domain            String
+  fingerprintHash   String
+  ipHash            String
+  userAgentHash     String
+  createdAt         DateTime @default(now())
+  lastSeenAt        DateTime @updatedAt
+  messageCountToday Int      @default(0)
+  tokenUsageToday   Int      @default(0)
+  dailyResetAt      DateTime @default(now())
+  riskScore         Float    @default(0.0)
+  isBlocked         Boolean  @default(false)
+  blockedReason     String?
+
+  @@index([chatbotId])
+  @@index([fingerprintHash, chatbotId])
+  @@index([isBlocked])
+  @@index([lastSeenAt])
+}
+
+model checkpoint_blobs {
+  thread_id     String
+  checkpoint_ns String @default("")
+  channel       String
+  version       String
+  type          String
+  blob          Bytes?
+
+  @@id([thread_id, checkpoint_ns, channel, version])
+  @@index([thread_id])
+}
+
+model checkpoint_migrations {
+  v Int @id
+}
+
+model checkpoint_writes {
+  thread_id     String
+  checkpoint_ns String  @default("")
+  checkpoint_id String
+  task_id       String
+  idx           Int
+  channel       String
+  type          String?
+  blob          Bytes
+  task_path     String  @default("")
+
+  @@id([thread_id, checkpoint_ns, checkpoint_id, task_id, idx])
+  @@index([thread_id])
+}
+
+model checkpoints {
+  thread_id            String
+  checkpoint_ns        String  @default("")
+  checkpoint_id        String
+  parent_checkpoint_id String?
+  type                 String?
+  checkpoint           Json
+  metadata             Json    @default("{}")
+
+  @@id([thread_id, checkpoint_ns, checkpoint_id])
+  @@index([thread_id])
+}
+
+enum ChatStatus {
+  BOT_ACTIVE
+  HUMAN_REQUESTED
+  HUMAN_ASSIGNED
+  HUMAN_ACTIVE
+  CLOSED
+}
+
+enum ChatChannel {
+  WIDGET
+  WHATSAPP
+  META_MESSENGER
 }
 
 enum QuotaType {
@@ -263,186 +565,6 @@ enum TicketStatus {
   CLOSED
 }
 
-model Subscription {
-  id                        String             @id @default(cuid())
-  userId                    String             @unique
-  tier                      SubscriptionTier   @default(FREE)
-  status                    SubscriptionStatus @default(INACTIVE)
-  stripeCustomerId          String?            @unique
-  stripeSubscriptionId      String?            @unique
-  stripePriceId             String?
-  currentPeriodStart        DateTime?
-  currentPeriodEnd          DateTime?
-  cancelAtPeriodEnd         Boolean            @default(false)
-  monthlyTokenAllocation    Int                @default(0)
-  tokensUsedThisMonth       Int                @default(0)
-  additionalTokensPurchased Int                @default(0)
-  spendingLimit             Float?
-  activePricePlanId         String?
-  tokenPricePlanId          String?
-  scheduledPricePlanId      String?
-  scheduledTokenPlanId      String?
-  billingInterval           String?
-  createdAt                 DateTime           @default(now())
-  updatedAt                 DateTime           @updatedAt
-  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenUsageLogs            TokenUsageLog[]
-  activePricePlan           PricePlan?         @relation("ActivePricePlan", fields: [activePricePlanId], references: [id])
-  tokenPricePlan            PricePlan?         @relation("TokenPricePlan", fields: [tokenPricePlanId], references: [id])
-  scheduledPricePlan        PricePlan?         @relation("ScheduledPricePlan", fields: [scheduledPricePlanId], references: [id])
-  scheduledTokenPlan        PricePlan?         @relation("ScheduledTokenPlan", fields: [scheduledTokenPlanId], references: [id])
-}
-
-model StripeProduct {
-  id               String            @id @default(cuid())
-  productType      StripeProductType @unique
-  stripeProductId  String            @unique
-  lookupKey        String            @unique
-  name             String
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  pricePlans       PricePlan[]
-}
-
-model PricePlan {
-  id                   String          @id @default(cuid())
-  stripeProductId      String
-  planType             PricePlanType
-  stripePriceId        String?         @unique
-  lookupKey            String?         @unique
-  amountUsd            Float
-  status               PricePlanStatus @default(DRAFT)
-  createdByAdminId     String?
-  activatedAt          DateTime?
-  archivedAt           DateTime?
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  stripeProduct        StripeProduct   @relation(fields: [stripeProductId], references: [id])
-  activeSubscriptions  Subscription[]  @relation("ActivePricePlan")
-  tokenSubscriptions   Subscription[]  @relation("TokenPricePlan")
-  scheduledSubscriptions Subscription[] @relation("ScheduledPricePlan")
-  scheduledTokenSubs   Subscription[]  @relation("ScheduledTokenPlan")
-
-  @@index([status])
-  @@index([planType])
-}
-
-model BillingInfo {
-  id                      String   @id @default(cuid())
-  userId                  String   @unique
-  firstName               String
-  lastName                String
-  email                   String
-  address                 String
-  country                 String
-  stateRegion             String
-  city                    String
-  zipPostalCode           String
-  isCompany               Boolean  @default(false)
-  vatIdentificationNumber String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
-  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model TokenUsageLog {
-  id             String       @id @default(cuid())
-  subscriptionId String
-  teamId         String?
-  botId          String?
-  chatId         String?
-  taskId         String?
-  operationType  String       @default("chat")
-  tokensUsed     Int
-  cost           Float
-  createdAt      DateTime     @default(now())
-  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
-  // DB-level dedup for ingestion (and any future taskId-scoped operations).
-  // Postgres treats NULL as distinct in unique indexes, so chat rows
-  // (taskId=NULL) are not affected — multiple NULL-taskId rows are allowed.
-  @@unique([taskId, operationType], name: "TokenUsageLog_taskId_operationType_key")
-  @@index([operationType])
-  @@index([teamId])
-  @@index([createdAt])
-}
-
-model SystemSettings {
-  id                         String   @id @default(cuid())
-  key                        String   @unique
-  value                      String
-  description                String?
-  createdAt                  DateTime @default(now())
-  updatedAt                  DateTime @updatedAt
-}
-
-model Integrations {
-  id        String   @id @default(cuid())
-  teamId    String
-  type      String
-  config    Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-}
-
-model Feedback {
-  id        String           @id @default(cuid())
-  userId    String
-  userName  String
-  userEmail String
-  category  FeedbackCategory
-  message   String
-  status    FeedbackStatus   @default(PENDING)
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Ticket {
-  id          String         @id @default(cuid())
-  ticketNumber String        @unique @default(cuid())
-  userId      String
-  teamId      String
-  title       String
-  description String
-  category    TicketCategory
-  status      TicketStatus   @default(OPEN)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  resolvedAt  DateTime?
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  team        Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  messages    TicketMessage[]
-  notifications Notification[]
-}
-
-model TicketMessage {
-  id        String   @id @default(cuid())
-  ticketId  String
-  userId    String
-  message   String
-  isAdminReply Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model Notification {
-  id        String   @id @default(cuid())
-  ticketId  String?
-  userId    String
-  type      String   // "NEW_TICKET", "TICKET_REPLY", "TEAM_INVITE_ACCEPTED"
-  title     String
-  message   String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ticket    Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
 enum LogCategory {
   CONTENT
   INGEST
@@ -470,67 +592,4 @@ enum LogAction {
 enum LogStatus {
   SUCCESS
   ERROR
-}
-
-model SystemLog {
-  id          String      @id @default(cuid())
-  category    LogCategory
-  action      LogAction
-  status      LogStatus
-  userId      String?
-  userName    String?
-  userEmail   String?
-  teamId      String?
-  entityId    String?
-  entityName  String?
-  message     String?
-  details     Json?
-  ipAddress   String?
-  createdAt   DateTime    @default(now())
-
-  @@index([category])
-  @@index([userId])
-  @@index([teamId])
-  @@index([createdAt])
-  @@index([status])
-}
-
-model BookingVerification {
-  id        String   @id @default(cuid())
-  email     String
-  code      String   // 6-digit OTP, plaintext (matches existing User.activationCode pattern; row is short-lived and single-use)
-  botCuid   String
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([email, botCuid])
-  @@index([expiresAt])
-}
-
-// Widget visitor tracking for abuse prevention and rate limiting.
-// fingerprintHash = SHA-256(ip | userAgent | acceptLanguage | botId) — identifies
-// the same physical browser across localStorage resets, so clients cannot bypass
-// daily limits by clearing localStorage.
-model WidgetVisitor {
-  id                String   @id @default(cuid())
-  visitorId         String   @unique  // UUID returned to client; stored in localStorage
-  chatbotId         String
-  domain            String
-  fingerprintHash   String            // Server-side fingerprint; authoritative identity
-  ipHash            String            // SHA-256(ip) — GDPR-safe
-  userAgentHash     String            // SHA-256(userAgent)
-  createdAt         DateTime @default(now())
-  lastSeenAt        DateTime @updatedAt
-  messageCountToday Int      @default(0)
-  tokenUsageToday   Int      @default(0)
-  dailyResetAt      DateTime @default(now())
-  riskScore         Float    @default(0.0)
-  isBlocked         Boolean  @default(false)
-  blockedReason     String?
-
-  @@index([chatbotId])
-  @@index([fingerprintHash, chatbotId])
-  @@index([isBlocked])
-  @@index([lastSeenAt])
 }

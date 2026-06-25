@@ -15,6 +15,7 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { MailService } from '../mail/mail.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { EventsGateway } from 'src/events/events.gateway';
 
 @Injectable()
 export class BotService {
@@ -27,6 +28,7 @@ export class BotService {
     private mailService: MailService,
     private minioClientService: MinioClientService,
     private systemLogService: SystemLogService,
+    private eventsGateway: EventsGateway,
   ) { }
 
   async createBot(body: CreateBotRequest) {
@@ -418,7 +420,34 @@ export class BotService {
         });
       }
 
-      // Yeni chat ise geolocation bilgisini al
+      // ── LLM Bypass: sohbet bir insan ajana aktarıldıysa bot cevap vermez ──
+      if (activeChat && activeChat.chatStatus === 'HUMAN_ACTIVE') {
+        // Kullanıcı mesajını kaydet
+        await this.prisma.customerChatDetails.create({
+          data: {
+            chatId: activeChat.id,
+            sender: body.sender,
+            message: body.message,
+            attachments: body.attachments ? (body.attachments as any) : undefined,
+            createdAt: new Date(body.date),
+          },
+        });
+        await this.prisma.customerChats.update({
+          where: { id: activeChat.id },
+          data: { updatedAt: new Date() },
+        });
+        // Ajanı bilgilendir (WebSocket)
+        if (activeChat.agentUserId) {
+          this.eventsGateway.notifyAgent(activeChat.agentUserId, {
+            chatId: activeChat.id,
+            sender: body.sender,
+            message: body.message,
+            createdAt: new Date().toISOString(),
+          });
+        }
+        return { agent_active: true, session_id: body.chatId };
+      }
+      // ───────────────────────────────────────────────────────────────
       if (!activeChat) {
         isNewChat = true;
         let ipAddress = ip === "::1" ? "176.40.241.220" : ip;
@@ -505,6 +534,12 @@ export class BotService {
       );
 
       // Yeni chat ise oluştur, mevcut ise güncelle
+      // Kanal tespiti: chatId prefix'inden otomatik belirle
+      const chatChannel = body.chatId?.startsWith('wa_') ? 'WHATSAPP'
+        : body.chatId?.startsWith('fb_') ? 'META_MESSENGER'
+        : 'WIDGET';
+      const externalContactId = (chatChannel !== 'WIDGET') ? body.sender : null;
+
       if (isNewChat) {
         activeChat = await this.prisma.customerChats.create({
           data: {
@@ -513,6 +548,8 @@ export class BotService {
             chatId: sessionId, // FastAPI'den gelen session_id
             isDeleted: false,
             totalTokens: tokenCount,
+            channel: chatChannel,
+            externalContactId: externalContactId,
             createdAt: new Date(),
             updatedAt: new Date(),
             CustomerChatDetails: {
@@ -705,6 +742,7 @@ export class BotService {
     message: string,
     chatId: string | undefined,
     ip: string,
+    attachments?: any[],
   ) {
     return this.chat(
       {
@@ -714,6 +752,7 @@ export class BotService {
         chatId: chatId ?? null,
         sender: 'user',
         date: new Date().toISOString(),
+        attachments,
       } as any,
       ip,
     );

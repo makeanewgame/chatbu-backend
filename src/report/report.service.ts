@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
+import { EventsGateway } from 'src/events/events.gateway';
+import axios from 'axios';
 
 @Injectable()
 export class ReportService {
@@ -9,6 +11,7 @@ export class ReportService {
         private prisma: PrismaService,
         private minioClientService: MinioClientService,
         private configService: ConfigService,
+        private eventsGateway: EventsGateway,
     ) { }
 
     async getChatHistory(teamId: string) {
@@ -24,6 +27,16 @@ export class ReportService {
                 createdAt: true,
                 updatedAt: true,
                 totalTokens: true,
+                chatStatus: true,
+                channel: true,
+                agentUserId: true,
+                agent: {
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                    },
+                },
                 botId: true,
                 CustomerChatDetails: {
                     where: {
@@ -296,5 +309,217 @@ export class ReportService {
         });
 
         return { logs, summary };
+    }
+
+    // ── Handover: sohbeti bir ajana aktar ────────────────────────────────────
+    async handoverChat(teamId: string, chatId: string, agentUserId: string) {
+        if (!agentUserId || agentUserId === 'undefined') {
+            throw new BadRequestException('agentUserId is required');
+        }
+
+        const chat = await this.prisma.customerChats.findFirst({
+            where: { id: chatId, teamId, isDeleted: false },
+        });
+
+        if (!chat) {
+            throw new NotFoundException('Chat not found');
+        }
+
+        const agent = await this.prisma.user.findUnique({
+            where: { id: agentUserId },
+            select: { id: true },
+        });
+
+        if (!agent) {
+            throw new NotFoundException('Agent user not found');
+        }
+
+        const team = await this.prisma.team.findUnique({
+            where: { id: teamId },
+            select: { ownerId: true },
+        });
+
+        const isTeamOwner = team?.ownerId === agentUserId;
+
+        // Ajana ait kullanıcı aynı takımda mı kontrol et
+        const agentMembership = await this.prisma.teamMember.findFirst({
+            where: { teamId, userId: agentUserId, status: 'active' },
+        });
+
+        if (!isTeamOwner && !agentMembership) {
+            throw new ForbiddenException('Agent is not a member of this team');
+        }
+
+        const updated = await this.prisma.customerChats.update({
+            where: { id: chat.id },
+            data: {
+                chatStatus: 'HUMAN_ACTIVE',
+                agentUserId,
+            },
+        });
+
+        return { success: true, chat: updated };
+    }
+
+    // ── Live chats: ajana atanmış aktif sohbetler ────────────────────────────
+    async getLiveChats(agentUserId: string) {
+        const chats = await this.prisma.customerChats.findMany({
+            where: {
+                agentUserId,
+                chatStatus: 'HUMAN_ACTIVE',
+                isDeleted: false,
+            },
+            select: {
+                id: true,
+                botId: true,
+                teamId: true,
+                chatId: true,
+                channel: true,
+                externalContactId: true,
+                createdAt: true,
+                updatedAt: true,
+                CustomerChatDetails: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    select: { message: true, sender: true, createdAt: true },
+                },
+                GeoLocation: {
+                    take: 1,
+                    select: { country: true, city: true },
+                },
+            },
+            orderBy: { updatedAt: 'desc' },
+        });
+
+        return chats;
+    }
+
+    // ── Agent message: ajandan müşteriye mesaj gönder ────────────────────────
+    async sendAgentMessage(teamId: string, chatId: string, agentUserId: string, message: string) {
+        const chat = await this.prisma.customerChats.findFirst({
+            where: { id: chatId, teamId, isDeleted: false },
+        });
+
+        if (!chat) {
+            throw new NotFoundException('Chat not found');
+        }
+
+        if (chat.agentUserId !== agentUserId) {
+            throw new ForbiddenException('You are not assigned to this chat');
+        }
+
+        if (chat.chatStatus !== 'HUMAN_ACTIVE') {
+            throw new BadRequestException('Chat is not in human-active state');
+        }
+
+        // Mesajı veritabanına kaydet
+        await this.prisma.customerChatDetails.create({
+            data: {
+                chatId: chat.id,
+                sender: 'agent',
+                message,
+                createdAt: new Date(),
+            },
+        });
+
+        await this.prisma.customerChats.update({
+            where: { id: chat.id },
+            data: { updatedAt: new Date() },
+        });
+
+        // Kanala göre yönlendir
+        if (chat.channel === 'WHATSAPP' || chat.channel === 'META_MESSENGER') {
+            await this.deliverToExternalChannel(chat, message);
+        } else {
+            // Widget: WebSocket üzerinden müşteriye ilet
+            this.eventsGateway.notifyCustomer(chat.id, {
+                chatId: chat.id,
+                sender: 'agent',
+                message,
+                createdAt: new Date().toISOString(),
+            });
+            this.eventsGateway.notifyCustomer(chat.chatId, {
+                chatId: chat.chatId,
+                sender: 'agent',
+                message,
+                createdAt: new Date().toISOString(),
+            });
+        }
+
+        return { success: true };
+    }
+
+    // ── Close chat ───────────────────────────────────────────────────────────
+    async closeChat(teamId: string, chatId: string, agentUserId: string) {
+        const chat = await this.prisma.customerChats.findFirst({
+            where: { id: chatId, teamId, isDeleted: false },
+        });
+
+        if (!chat) {
+            throw new NotFoundException('Chat not found');
+        }
+
+        if (chat.agentUserId !== agentUserId) {
+            throw new ForbiddenException('You are not assigned to this chat');
+        }
+
+        await this.prisma.customerChats.update({
+            where: { id: chat.id },
+            data: { chatStatus: 'CLOSED', updatedAt: new Date() },
+        });
+
+        return { success: true };
+    }
+
+    // ── Harici kanal teslimi (WhatsApp / Meta Messenger) ────────────────────
+    private async deliverToExternalChannel(chat: any, message: string) {
+        // Integration'ı botId + teamId üzerinden bul
+        const integration = await this.prisma.integrations.findFirst({
+            where: {
+                teamId: chat.teamId,
+                config: { path: ['botId'], equals: chat.botId },
+            },
+        });
+
+        if (!integration) {
+            throw new NotFoundException('No integration found for this bot');
+        }
+
+        const cfg = integration.config as any;
+
+        if (chat.channel === 'WHATSAPP') {
+            const phoneNumberId: string = cfg?.phoneNumberId;
+            const accessToken: string = cfg?.accessToken;
+
+            if (!phoneNumberId || !accessToken || !chat.externalContactId) {
+                throw new BadRequestException('Missing WhatsApp config or contact ID');
+            }
+
+            await axios.post(
+                `https://graph.facebook.com/v23.0/${phoneNumberId}/messages`,
+                {
+                    messaging_product: 'whatsapp',
+                    to: chat.externalContactId,
+                    type: 'text',
+                    text: { body: message },
+                },
+                { headers: { Authorization: `Bearer ${accessToken}` } },
+            );
+        } else if (chat.channel === 'META_MESSENGER') {
+            const pageAccessToken: string = cfg?.pageAccessToken;
+
+            if (!pageAccessToken || !chat.externalContactId) {
+                throw new BadRequestException('Missing Messenger config or contact ID');
+            }
+
+            await axios.post(
+                `https://graph.facebook.com/v21.0/me/messages`,
+                {
+                    recipient: { id: chat.externalContactId },
+                    message: { text: message },
+                },
+                { params: { access_token: pageAccessToken } },
+            );
+        }
     }
 }

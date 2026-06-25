@@ -22,7 +22,7 @@ export class WhatsAppEmbeddedController {
     @Post('complete')
     async complete(@Req() req, @Body() body: CompleteWhatsAppSignupDto) {
         const user = req.user as IUser;
-        return this.service.completeSignup(user.teamId, body.chatbotId, body.authorizationCode);
+        return this.service.completeSignup(user.teamId, body);
     }
 
     /**

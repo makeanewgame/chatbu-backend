@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { randomInt } from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { CompleteWhatsAppSignupDto } from './dto/complete-whatsapp-signup.dto';
 
 export const WHATSAPP_EMBEDDED_TYPE = 'whatsapp_embedded';
-const GRAPH_BASE = 'https://graph.facebook.com/v23.0';
+const GRAPH_BASE = 'https://graph.facebook.com/v25.0';
 
 @Injectable()
 export class WhatsAppEmbeddedService {
@@ -16,10 +18,21 @@ export class WhatsAppEmbeddedService {
     ) { }
 
     /**
-     * Exchange the Meta authorization code for tokens, retrieve WABA and phone number
-     * details, then upsert the integration record for the given chatbot.
+     * Tech Provider onboarding flow:
+     *   1. Exchange the Embedded Signup code for a business integration system user token
+     *   2. Subscribe our app to webhooks on the customer's WABA
+     *   3. Register the customer's phone number for Cloud API messaging
+     *   4. Persist the integration
      */
-    async completeSignup(teamId: string, chatbotId: string, authorizationCode: string) {
+    async completeSignup(teamId: string, dto: CompleteWhatsAppSignupDto) {
+        const { chatbotId, authorizationCode, wabaId, phoneNumberId } = dto;
+
+        if (!wabaId || !phoneNumberId) {
+            throw new BadRequestException(
+                'wabaId and phoneNumberId are required — they are returned by the Embedded Signup message event',
+            );
+        }
+
         const appId = this.configService.get<string>('META_APP_ID');
         const appSecret = this.configService.get<string>('META_APP_SECRET');
 
@@ -27,118 +40,94 @@ export class WhatsAppEmbeddedService {
             throw new BadRequestException('META_APP_ID and META_APP_SECRET must be configured on the server');
         }
 
-        // 1. Exchange authorization code for a short-lived user access token
-        let accessToken: string;
+        // ── Step 1: Exchange authorization code → business integration system user token ──
+        // Tech Provider docs: GET /oauth/access_token?client_id=&client_secret=&code=
+        // No redirect_uri, no grant_type — this is specific to the Embedded Signup code exchange.
+        let businessToken: string;
         try {
-            const tokenRes = await axios.get<{ access_token: string }>(`${GRAPH_BASE}/oauth/access_token`, {
-                params: {
-                    client_id: appId,
-                    client_secret: appSecret,
-                    code: authorizationCode,
+            const tokenRes = await axios.get<{ access_token: string }>(
+                `${GRAPH_BASE}/oauth/access_token`,
+                {
+                    params: {
+                        client_id: appId,
+                        client_secret: appSecret,
+                        code: authorizationCode,
+                    },
                 },
-            });
-            accessToken = tokenRes.data.access_token;
-        } catch (err) {
+            );
+            businessToken = tokenRes.data.access_token;
+        } catch (err: any) {
             this.logger.error('Meta code exchange failed', err?.response?.data ?? err?.message);
             throw new BadRequestException('Failed to exchange Meta authorization code');
         }
 
-        // 2. Upgrade to a long-lived user access token (60 days)
+        // ── Step 2: Subscribe our app to webhooks on the customer's WABA ──
+        // This enables incoming message webhooks to reach our server.
         try {
-            const llRes = await axios.get<{ access_token: string }>(`${GRAPH_BASE}/oauth/access_token`, {
-                params: {
-                    grant_type: 'fb_exchange_token',
-                    client_id: appId,
-                    client_secret: appSecret,
-                    fb_exchange_token: accessToken,
-                },
-            });
-            accessToken = llRes.data.access_token;
-        } catch {
-            this.logger.warn('Could not upgrade to long-lived token — using short-lived token');
-        }
-
-        // 3. Fetch WhatsApp Business Accounts associated with this user
-        let wabaId: string;
-        let businessName: string;
-        try {
-            const wabaRes = await axios.get<{ data: Array<{ id: string; name: string }> }>(
-                `${GRAPH_BASE}/me/whatsapp_business_accounts`,
-                {
-                    params: {
-                        access_token: accessToken,
-                        fields: 'id,name,currency,timezone_id',
-                    },
-                },
+            await axios.post(
+                `${GRAPH_BASE}/${wabaId}/subscribed_apps`,
+                null,
+                { headers: { Authorization: `Bearer ${businessToken}` } },
             );
-            const wabaList = wabaRes.data.data ?? [];
-            if (!wabaList.length) {
-                throw new BadRequestException('No WhatsApp Business Account found for this user');
-            }
-            wabaId = wabaList[0].id;
-            businessName = wabaList[0].name;
-        } catch (err) {
-            if (err instanceof BadRequestException) throw err;
-            this.logger.error('Failed to retrieve WABA accounts', err?.response?.data ?? err?.message);
-            throw new BadRequestException('Failed to retrieve WhatsApp Business Account');
+            this.logger.log(`Subscribed to WABA webhooks | wabaId=${wabaId}`);
+        } catch (err: any) {
+            // Non-fatal: log and continue — webhook subscription can be retried later.
+            this.logger.warn('Failed to subscribe to WABA webhooks', err?.response?.data ?? err?.message);
         }
 
-        // 4. Fetch phone numbers for the WABA
-        let phoneNumberId: string;
-        let displayPhoneNumber: string;
+        // ── Step 3: Register the phone number for Cloud API messaging ──
+        // Generates a 6-digit two-step verification PIN for the number.
+        const pin = randomInt(100000, 999999).toString();
         try {
-            const phoneRes = await axios.get<{
-                data: Array<{ id: string; display_phone_number: string; verified_name: string }>;
-            }>(`${GRAPH_BASE}/${wabaId}/phone_numbers`, {
-                params: {
-                    access_token: accessToken,
-                    fields: 'id,display_phone_number,verified_name,quality_rating',
-                },
-            });
-            const phoneList = phoneRes.data.data ?? [];
-            if (!phoneList.length) {
-                throw new BadRequestException('No phone number found for this WhatsApp Business Account');
-            }
-            phoneNumberId = phoneList[0].id;
-            displayPhoneNumber = phoneList[0].display_phone_number;
-        } catch (err) {
-            if (err instanceof BadRequestException) throw err;
-            this.logger.error('Failed to retrieve phone numbers', err?.response?.data ?? err?.message);
-            throw new BadRequestException('Failed to retrieve WhatsApp phone number');
-        }
-
-        // 5. Optionally retrieve the Business Portfolio (Meta Business) ID
-        let businessAccountId: string = wabaId;
-        try {
-            const bizRes = await axios.get<{ data: Array<{ id: string; name: string }> }>(
-                `${GRAPH_BASE}/me/businesses`,
-                {
-                    params: { access_token: accessToken, fields: 'id,name' },
-                },
+            await axios.post(
+                `${GRAPH_BASE}/${phoneNumberId}/register`,
+                { messaging_product: 'whatsapp', pin },
+                { headers: { Authorization: `Bearer ${businessToken}`, 'Content-Type': 'application/json' } },
             );
-            if (bizRes.data.data?.length) {
-                businessAccountId = bizRes.data.data[0].id;
-            }
-        } catch {
-            this.logger.warn('Could not retrieve Business Portfolio ID — using WABA ID as fallback');
+            this.logger.log(`Phone number registered for Cloud API | phoneNumberId=${phoneNumberId}`);
+        } catch (err: any) {
+            // Non-fatal: the number may already be registered with Cloud API.
+            this.logger.warn('Phone registration failed (may already be registered)', err?.response?.data ?? err?.message);
         }
 
+        // ── Step 4: Fetch display info for the UI ──
+        let businessName = wabaId;
+        let displayPhoneNumber = phoneNumberId;
+
+        try {
+            const wabaRes = await axios.get<{ name: string }>(
+                `${GRAPH_BASE}/${wabaId}`,
+                { params: { access_token: businessToken, fields: 'name' } },
+            );
+            businessName = wabaRes.data.name || wabaId;
+        } catch {
+            this.logger.warn(`Could not fetch WABA name for ${wabaId}`);
+        }
+
+        try {
+            const phoneRes = await axios.get<{ display_phone_number: string }>(
+                `${GRAPH_BASE}/${phoneNumberId}`,
+                { params: { access_token: businessToken, fields: 'display_phone_number' } },
+            );
+            displayPhoneNumber = phoneRes.data.display_phone_number || phoneNumberId;
+        } catch {
+            this.logger.warn(`Could not fetch display phone number for ${phoneNumberId}`);
+        }
+
+        // ── Step 5: Persist the integration ──
         const config = {
             botId: chatbotId,
             connectionType: 'embedded_signup',
             wabaId,
             phoneNumberId,
-            businessAccountId,
-            accessToken,
-            tokenType: 'user',
-            expiresAt: null,
+            businessToken,
+            pin,
             status: 'connected',
             displayPhoneNumber,
-            businessName: businessName || displayPhoneNumber,
+            businessName,
             connectedAt: new Date().toISOString(),
         };
 
-        // Upsert: find existing integration for this team + chatbot
         const existing = await this.prisma.integrations.findFirst({
             where: {
                 teamId,
@@ -166,7 +155,7 @@ export class WhatsAppEmbeddedService {
         return {
             success: true,
             displayPhoneNumber,
-            businessName: config.businessName,
+            businessName,
             wabaId,
             phoneNumberId,
         };
@@ -230,9 +219,8 @@ export class WhatsAppEmbeddedService {
         return rows.find((r) => {
             const cfg = r.config as any;
             if (cfg?.phoneNumberId !== phoneNumberId) return false;
-            // whatsapp_embedded requires status=connected; whatsapp_manual has no status field
             if (r.type === WHATSAPP_EMBEDDED_TYPE) return cfg?.status === 'connected';
-            return true; // whatsapp_manual — presence of phoneNumberId is sufficient
+            return true;
         }) ?? null;
     }
 }

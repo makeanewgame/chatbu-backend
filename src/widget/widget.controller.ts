@@ -53,6 +53,7 @@ export class WidgetController {
             body.message,
             body.chatId,
             ip,
+            body.attachments,
         );
     }
 
