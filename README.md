@@ -40,3 +40,22 @@ Backenddeki envler çekme:
 bash scripts/sync-k8s-env.sh chatbu backend-secrets
 # dev
 bash scripts/sync-k8s-env.sh chatbu-dev backend-secrets
+
+Backend env eklemek
+# prod
+
+# dev
+kubectl patch secret backend-secrets -n chatbu-dev --type=merge -p '{"stringData":{"KEY":"VALUE"}}'
+
+
+
+kubectl patch secret backend-secrets -n chatbu-dev --type=merge -p '{"stringData":{"META_APP_ID":"875538805559401"}}'
+kubectl patch secret backend-secrets -n chatbu-dev --type=merge -p '{"stringData":{"META_APP_SECRET":"27900f120ebe431cfd4aaaf0a83498ca"}}'
+
+
+
+kubectl patch secret frontend -n chatbu-dev --type=merge -p '{"stringData":{"VITE_META_APP_ID":"875538805559401"}}'
+kubectl patch secret frontend-secrets -n chatbu-dev --type=merge -p '{"stringData":{"VITE_META_CONFIGURATION_ID":"1918351102207106"}}'
+
+
+https://developers.facebook.com/es/oauth/callback/?use_case_enum=WHATSAPP_BUSINESS_MESSAGING&selected_tab=overview&product_route=whatsapp-business&business_id=849401607555217&nonce=...

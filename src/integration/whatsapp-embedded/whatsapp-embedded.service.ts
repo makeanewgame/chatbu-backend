@@ -2,9 +2,10 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { CompleteWhatsAppSignupDto } from './dto/complete-whatsapp-signup.dto';
 
 export const WHATSAPP_EMBEDDED_TYPE = 'whatsapp_embedded';
-const GRAPH_BASE = 'https://graph.facebook.com/v23.0';
+const GRAPH_BASE = 'https://graph.facebook.com/v25.0';
 
 @Injectable()
 export class WhatsAppEmbeddedService {
@@ -19,9 +20,12 @@ export class WhatsAppEmbeddedService {
      * Exchange the Meta authorization code for tokens, retrieve WABA and phone number
      * details, then upsert the integration record for the given chatbot.
      */
-    async completeSignup(teamId: string, chatbotId: string, authorizationCode: string) {
+    async completeSignup(teamId: string, dto: CompleteWhatsAppSignupDto) {
+        const { chatbotId, authorizationCode, wabaId: wabaIdHint, phoneNumberId: phoneNumberIdHint } = dto;
+
         const appId = this.configService.get<string>('META_APP_ID');
         const appSecret = this.configService.get<string>('META_APP_SECRET');
+        const redirectUri = this.configService.get<string>('META_OAUTH_REDIRECT_URI'); // optional
 
         if (!appId || !appSecret) {
             throw new BadRequestException('META_APP_ID and META_APP_SECRET must be configured on the server');
@@ -30,15 +34,23 @@ export class WhatsAppEmbeddedService {
         // 1. Exchange authorization code for a short-lived user access token
         let accessToken: string;
         try {
-            const tokenRes = await axios.get<{ access_token: string }>(`${GRAPH_BASE}/oauth/access_token`, {
-                params: {
-                    client_id: appId,
-                    client_secret: appSecret,
-                    code: authorizationCode,
-                },
-            });
+            const params: Record<string, string> = {
+                client_id: appId,
+                client_secret: appSecret,
+                grant_type: 'authorization_code',
+                code: authorizationCode,
+            };
+            // redirect_uri is not required for JS SDK Embedded Signup flows
+            if (redirectUri) {
+                params.redirect_uri = redirectUri;
+            }
+
+            const tokenRes = await axios.get<{ access_token: string }>(
+                `${GRAPH_BASE}/oauth/access_token`,
+                { params },
+            );
             accessToken = tokenRes.data.access_token;
-        } catch (err) {
+        } catch (err: any) {
             this.logger.error('Meta code exchange failed', err?.response?.data ?? err?.message);
             throw new BadRequestException('Failed to exchange Meta authorization code');
         }
@@ -58,53 +70,85 @@ export class WhatsAppEmbeddedService {
             this.logger.warn('Could not upgrade to long-lived token — using short-lived token');
         }
 
-        // 3. Fetch WhatsApp Business Accounts associated with this user
+        // 3. Resolve WABA ID and business name
+        // Prefer the ID returned by the Embedded Signup message event (wabaIdHint)
         let wabaId: string;
         let businessName: string;
-        try {
-            const wabaRes = await axios.get<{ data: Array<{ id: string; name: string }> }>(
-                `${GRAPH_BASE}/me/whatsapp_business_accounts`,
-                {
-                    params: {
-                        access_token: accessToken,
-                        fields: 'id,name,currency,timezone_id',
-                    },
-                },
-            );
-            const wabaList = wabaRes.data.data ?? [];
-            if (!wabaList.length) {
-                throw new BadRequestException('No WhatsApp Business Account found for this user');
+
+        if (wabaIdHint) {
+            wabaId = wabaIdHint;
+            try {
+                const wabaRes = await axios.get<{ name: string }>(
+                    `${GRAPH_BASE}/${wabaId}`,
+                    { params: { access_token: accessToken, fields: 'name' } },
+                );
+                businessName = wabaRes.data.name || wabaId;
+            } catch {
+                this.logger.warn(`Could not fetch WABA name for ${wabaId} — using WABA ID as fallback`);
+                businessName = wabaId;
             }
-            wabaId = wabaList[0].id;
-            businessName = wabaList[0].name;
-        } catch (err) {
-            if (err instanceof BadRequestException) throw err;
-            this.logger.error('Failed to retrieve WABA accounts', err?.response?.data ?? err?.message);
-            throw new BadRequestException('Failed to retrieve WhatsApp Business Account');
+        } else {
+            try {
+                const wabaRes = await axios.get<{ data: Array<{ id: string; name: string }> }>(
+                    `${GRAPH_BASE}/me/whatsapp_business_accounts`,
+                    {
+                        params: {
+                            access_token: accessToken,
+                            fields: 'id,name,currency,timezone_id',
+                        },
+                    },
+                );
+                const wabaList = wabaRes.data.data ?? [];
+                if (!wabaList.length) {
+                    throw new BadRequestException('No WhatsApp Business Account found for this user');
+                }
+                wabaId = wabaList[0].id;
+                businessName = wabaList[0].name;
+            } catch (err: any) {
+                if (err instanceof BadRequestException) throw err;
+                this.logger.error('Failed to retrieve WABA accounts', err?.response?.data ?? err?.message);
+                throw new BadRequestException('Failed to retrieve WhatsApp Business Account');
+            }
         }
 
-        // 4. Fetch phone numbers for the WABA
+        // 4. Resolve phone number ID and display number
+        // Prefer the ID returned by the Embedded Signup message event (phoneNumberIdHint)
         let phoneNumberId: string;
         let displayPhoneNumber: string;
-        try {
-            const phoneRes = await axios.get<{
-                data: Array<{ id: string; display_phone_number: string; verified_name: string }>;
-            }>(`${GRAPH_BASE}/${wabaId}/phone_numbers`, {
-                params: {
-                    access_token: accessToken,
-                    fields: 'id,display_phone_number,verified_name,quality_rating',
-                },
-            });
-            const phoneList = phoneRes.data.data ?? [];
-            if (!phoneList.length) {
-                throw new BadRequestException('No phone number found for this WhatsApp Business Account');
+
+        if (phoneNumberIdHint) {
+            phoneNumberId = phoneNumberIdHint;
+            try {
+                const phoneRes = await axios.get<{ display_phone_number: string }>(
+                    `${GRAPH_BASE}/${phoneNumberId}`,
+                    { params: { access_token: accessToken, fields: 'display_phone_number' } },
+                );
+                displayPhoneNumber = phoneRes.data.display_phone_number || phoneNumberId;
+            } catch {
+                this.logger.warn(`Could not fetch display phone number for ${phoneNumberId}`);
+                displayPhoneNumber = phoneNumberId;
             }
-            phoneNumberId = phoneList[0].id;
-            displayPhoneNumber = phoneList[0].display_phone_number;
-        } catch (err) {
-            if (err instanceof BadRequestException) throw err;
-            this.logger.error('Failed to retrieve phone numbers', err?.response?.data ?? err?.message);
-            throw new BadRequestException('Failed to retrieve WhatsApp phone number');
+        } else {
+            try {
+                const phoneRes = await axios.get<{
+                    data: Array<{ id: string; display_phone_number: string; verified_name: string }>;
+                }>(`${GRAPH_BASE}/${wabaId}/phone_numbers`, {
+                    params: {
+                        access_token: accessToken,
+                        fields: 'id,display_phone_number,verified_name,quality_rating',
+                    },
+                });
+                const phoneList = phoneRes.data.data ?? [];
+                if (!phoneList.length) {
+                    throw new BadRequestException('No phone number found for this WhatsApp Business Account');
+                }
+                phoneNumberId = phoneList[0].id;
+                displayPhoneNumber = phoneList[0].display_phone_number;
+            } catch (err: any) {
+                if (err instanceof BadRequestException) throw err;
+                this.logger.error('Failed to retrieve phone numbers', err?.response?.data ?? err?.message);
+                throw new BadRequestException('Failed to retrieve WhatsApp phone number');
+            }
         }
 
         // 5. Optionally retrieve the Business Portfolio (Meta Business) ID
