@@ -215,8 +215,8 @@ export class AdminService {
         await this.prisma.quota.createMany({
             data: [
                 { teamId: defaultTeam.id, quotaType: 'BOT', limit: botLimit, used: 0 },
-                { teamId: defaultTeam.id, quotaType: 'FILE', limit: 100, used: 0 },
-                { teamId: defaultTeam.id, quotaType: 'TOKEN', limit: 0, used: 0 },
+                { teamId: defaultTeam.id, quotaType: 'FILE', limit: 10240, used: 0 },
+                { teamId: defaultTeam.id, quotaType: 'TOKEN', limit: 0, used: 1000000 },
             ],
         });
 
