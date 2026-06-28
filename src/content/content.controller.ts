@@ -1,9 +1,18 @@
 import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { ContentService } from './content.service';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { IUser } from 'src/util/interfaces';
 
+// Every route here sits behind AccessTokenGuard — these are authenticated
+// admin operations (a bot owner managing their content), not abuse-prone
+// public surface. The global 100-req/60s throttle was meant to cap anonymous
+// chat traffic, but it kicks in when a bot owner deletes/re-ingests their
+// content list (a 313-URL Eot Klinik delete on chatbu-dev 2026-06-27 hit
+// ThrottlerException after ~100 URLs). The auth gate already prevents abuse;
+// skip the throttle for the whole controller.
+@SkipThrottle()
 @Controller('content')
 export class ContentController {
     constructor(
