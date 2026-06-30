@@ -52,6 +52,29 @@ export class EventsService implements OnModuleInit {
                 console.log('Received notification on ingestion_task_updates:', payload);
                 await this.eventGateWay.notifyUser(payload.customer_cuid, tempPayload);
 
+                // Cascade per-URL Content rows to 'failed' when the parent task
+                // fails. Without this, fastapi_ingestiontask.status flips to
+                // 'failed' but Content rows stay in Uploading/Processing/Uploaded
+                // and the UI shows an infinite spinner. Both backend pods receive
+                // every NOTIFY; PG row-level locks make the updateMany idempotent
+                // (loser just updates 0 rows).
+                if (payload.status === 'failed') {
+                    try {
+                        const result = await this.prisma.content.updateMany({
+                            where: {
+                                taskId: payload.task_id,
+                                status: { in: ['Uploading', 'Processing', 'Uploaded'] },
+                            },
+                            data: { status: 'failed' },
+                        });
+                        if (result.count > 0) {
+                            console.log(`Cascaded ${result.count} Content rows to 'failed' for task ${payload.task_id}`);
+                        }
+                    } catch (e) {
+                        console.error(`Failed to cascade Content statuses for task ${payload.task_id}:`, e);
+                    }
+                }
+
                 // Track ingestion tokens when the task completes. Dedup is enforced
                 // at the DB level via TokenUsageLog's unique (taskId, operationType)
                 // index — both backend pods receive every NOTIFY (LISTEN broadcasts),
