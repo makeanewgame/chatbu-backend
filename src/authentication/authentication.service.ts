@@ -305,6 +305,11 @@ export class AuthenticationService {
 
       // Create JWT and Refresh Token and redirect user to dashboard
 
+      const team = await this.prisma.team.findUnique({
+        where: { id: teamId },
+        select: { onboardingCompletedAt: true },
+      });
+
       return {
         success: true,
         accessToken: tokens.accessToken,
@@ -314,6 +319,7 @@ export class AuthenticationService {
         userName: user.name,
         role: user.role,
         teamId: teamId,
+        onboardingCompleted: !!team?.onboardingCompletedAt,
       };
     }
     return { success: false };
@@ -498,6 +504,11 @@ export class AuthenticationService {
           },
         });
 
+        const team = await this.prisma.team.findUnique({
+          where: { id: teamId },
+          select: { onboardingCompletedAt: true },
+        });
+
         return {
           success: true,
           accessToken: tokens.accessToken,
@@ -507,6 +518,7 @@ export class AuthenticationService {
           userName: data.name,
           teamId: teamId,
           role: findUser.role,
+          onboardingCompleted: !!team?.onboardingCompletedAt,
         };
       }
 
@@ -642,6 +654,11 @@ export class AuthenticationService {
       },
     });
 
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { onboardingCompletedAt: true },
+    });
+
     return {
       success: true,
       accessToken: tokens.accessToken,
@@ -652,6 +669,7 @@ export class AuthenticationService {
       teamId: teamId,
       role: findUser.role,
       termsAccepted: userFull?.termsAccepted ?? false,
+      onboardingCompleted: !!team?.onboardingCompletedAt,
     };
   }
 

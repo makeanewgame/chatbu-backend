@@ -1081,6 +1081,67 @@ export class ContentService {
         }
     }
 
+    classifySitemapPages(urls: string[]) {
+        const CATEGORY_KEYWORDS: Record<string, string[]> = {
+            Home: [''],
+            About: ['about', 'about-us', 'who-we-are', 'company', 'hakkimizda'],
+            Services: ['service', 'services', 'solutions', 'products', 'hizmetler', 'urunler'],
+            Contact: ['contact', 'contact-us', 'iletisim'],
+            Pricing: ['pricing', 'plans', 'fiyat'],
+            FAQ: ['faq', 'help', 'support', 'sss'],
+            Blog: ['blog', 'news', 'articles'],
+        };
+
+        const classified = urls.map((url) => {
+            let path = '';
+            try {
+                path = new URL(url).pathname.toLowerCase();
+            } catch {
+                path = url.toLowerCase();
+            }
+            const segments = path.split('/').filter(Boolean);
+
+            if (segments.length === 0) {
+                return { url, category: 'Home' };
+            }
+
+            for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+                if (category === 'Home') continue;
+                if (segments.some((segment) => keywords.some((keyword) => segment.includes(keyword)))) {
+                    return { url, category };
+                }
+            }
+
+            return { url, category: 'Other' };
+        });
+
+        return { pages: classified };
+    }
+
+    async extractBrandTheme(url: string): Promise<{ primaryColor: string | null; logoUrl: string | null }> {
+        try {
+            const ingestUrl = this.configService.get('INGEST_ENPOINT');
+
+            const { data } = await firstValueFrom(
+                this.httpService.post(`${ingestUrl}/extract-brand-theme`, { url })
+                    .pipe(
+                        catchError((error: AxiosError) => {
+                            console.log('extractBrandTheme error', error.message);
+                            throw error;
+                        }),
+                    ));
+
+            return {
+                primaryColor: data?.primary_color ?? null,
+                logoUrl: data?.logo_url ?? null,
+            };
+        } catch (error) {
+            // Best-effort step, wizard must be able to continue without a theme.
+            console.error('Error extracting brand theme:', error);
+            return { primaryColor: null, logoUrl: null };
+        }
+    }
+
     async getQuota(teamId: string) {
         try {
             const quotas = await this.quotaService.list(teamId);

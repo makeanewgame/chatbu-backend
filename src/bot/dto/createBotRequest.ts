@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString } from "@nestjs/class-validator";
+import { IsNotEmpty, IsOptional, IsString } from "@nestjs/class-validator";
 
 export class CreateBotRequest {
 
@@ -20,5 +20,9 @@ export class CreateBotRequest {
 
     @IsNotEmpty()
     settings: object;
+
+    @IsOptional()
+    @IsString()
+    purpose?: string;
 
 }

@@ -6,6 +6,7 @@ import { UpdateSettingsRequest } from './dto/updateSettingsRequest';
 import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
 import { ChatRequest } from './dto/chatRequest';
+import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -76,6 +77,7 @@ export class BotService {
             botAvatar: body.botAvatar.toString(),
             systemPrompt: body.systemPrompt,
             settings: body.settings,
+            purpose: body.purpose,
             team: {
               connect: {
                 id: body.user,
@@ -104,12 +106,41 @@ export class BotService {
             message: `Bot created: ${body.botName}`,
           });
 
-          return { message: 'Bot created' };
+          return { message: 'Bot created', botId: bot.id };
         }
         throw new Error('Error creating bot');
       }
     }
     throw new ForbiddenException('Error creating bot');
+  }
+
+  async generateSystemPrompt(body: GenerateSystemPromptRequest) {
+    const ingestUrl = this.configService.get('INGEST_ENPOINT');
+
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(`${ingestUrl}/generate-system-prompt`, {
+          business_name: body.businessName,
+          company_size: body.companySize,
+          industry: body.industry,
+          website: body.website,
+          purpose: body.purpose,
+          page_summaries: body.pageSummaries,
+        }).pipe(
+          catchError((error: AxiosError) => {
+            console.log('generateSystemPrompt error', error.message);
+            throw error;
+          }),
+        ));
+
+      return {
+        systemPrompt: data.system_prompt,
+        tone: data.tone,
+        guidelines: data.guidelines,
+      };
+    } catch (error) {
+      throw new BadRequestException('Could not generate a system prompt right now, please try again');
+    }
   }
 
   async deleteBot(body: DeleteBotRequest) {

@@ -196,6 +196,52 @@ export class ContentController {
     }
     //#endregion
 
+    //#region classifySitemapPages
+    @ApiOperation({ summary: 'Classify sitemap URLs into page categories (Home/About/Services/...)' })
+    @ApiResponse({
+        status: 200,
+        description: 'URLs classified successfully',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                urls: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['urls'],
+        },
+    })
+    @Post('classifySitemapPages')
+    @UseGuards(AccessTokenGuard)
+    async classifySitemapPages(@Body() body: any) {
+        return this.contentService.classifySitemapPages(body.urls ?? []);
+    }
+    //#endregion
+
+    //#region extractBrandTheme
+    @ApiOperation({ summary: "Best-effort extraction of a website's primary brand color and logo" })
+    @ApiResponse({
+        status: 200,
+        description: 'Brand theme extracted (fields may be null if not detected)',
+    })
+    @ApiBearerAuth()
+    @ApiBody({
+        schema: {
+            type: 'object',
+            properties: {
+                url: { type: 'string' },
+            },
+            required: ['url'],
+        },
+    })
+    @Post('extractBrandTheme')
+    @UseGuards(AccessTokenGuard)
+    async extractBrandTheme(@Body() body: any) {
+        return this.contentService.extractBrandTheme(body.url);
+    }
+    //#endregion
+
     //#region ingestWebPages
     @ApiOperation({ summary: 'Ingest multiple web pages' })
     @ApiResponse({

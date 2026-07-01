@@ -13,6 +13,7 @@ import {
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { Request, Response } from 'express';
 import { CreateBotRequest } from './dto/createBotRequest';
+import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
 import { FetchSingleBotRequest } from './dto/fetchSingleBot';
 import { UpdateSettingsRequest } from './dto/updateSettingsRequest';
 import { BotService } from './bot.service';
@@ -65,6 +66,20 @@ export class BotController {
   @UseGuards(AccessTokenGuard)
   async createBot(@Body() body: CreateBotRequest) {
     return this.botService.createBot(body);
+  }
+  //#endregion
+
+  //#region generateSystemPrompt
+  @ApiOperation({ summary: 'Generate a draft chatbot system prompt via LLM, for the user to review before creating the bot' })
+  @ApiResponse({
+    status: 200,
+    description: 'System prompt generated successfully',
+  })
+  @ApiBearerAuth()
+  @Post('generateSystemPrompt')
+  @UseGuards(AccessTokenGuard)
+  async generateSystemPrompt(@Body() body: GenerateSystemPromptRequest) {
+    return this.botService.generateSystemPrompt(body);
   }
   //#endregion
 

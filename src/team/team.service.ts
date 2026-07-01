@@ -14,7 +14,10 @@ import {
     TeamMemberResponse,
     InvitationResponse,
     RemoveMemberResponse,
+    BusinessProfileResponse,
+    CompleteOnboardingResponse,
 } from './dto/team-responses.dto';
+import { SaveBusinessProfileDto } from './dto/save-business-profile.dto';
 
 @Injectable()
 export class TeamService {
@@ -284,6 +287,66 @@ export class TeamService {
         return {
             success: true,
             message: 'Member removed successfully',
+        };
+    }
+
+    async getBusinessProfile(teamId: string): Promise<BusinessProfileResponse> {
+        const team = await this.prisma.team.findUnique({
+            where: { id: teamId },
+            select: {
+                businessName: true,
+                companySize: true,
+                industry: true,
+                website: true,
+                onboardingCompletedAt: true,
+            },
+        });
+
+        if (!team) {
+            throw new NotFoundException('Team not found');
+        }
+
+        return team;
+    }
+
+    async saveBusinessProfile(
+        teamId: string,
+        dto: SaveBusinessProfileDto,
+    ): Promise<BusinessProfileResponse> {
+        const team = await this.prisma.team.update({
+            where: { id: teamId },
+            data: {
+                ...(dto.businessName !== undefined && { businessName: dto.businessName }),
+                ...(dto.companySize !== undefined && { companySize: dto.companySize }),
+                ...(dto.industry !== undefined && { industry: dto.industry }),
+                ...(dto.website !== undefined && { website: dto.website }),
+            },
+            select: {
+                businessName: true,
+                companySize: true,
+                industry: true,
+                website: true,
+                onboardingCompletedAt: true,
+            },
+        });
+
+        this.logger.info(`Business profile saved for team ${teamId}`);
+
+        return team;
+    }
+
+    async completeOnboarding(teamId: string): Promise<CompleteOnboardingResponse> {
+        const team = await this.prisma.team.update({
+            where: { id: teamId },
+            data: { onboardingCompletedAt: new Date() },
+            select: { onboardingCompletedAt: true },
+        });
+
+        this.logger.info(`Onboarding completed for team ${teamId}`);
+
+        return {
+            success: true,
+            onboardingCompletedAt: team.onboardingCompletedAt as Date,
         };
     }
 }

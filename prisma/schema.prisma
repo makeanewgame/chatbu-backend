@@ -44,20 +44,25 @@ model User {
 }
 
 model Team {
-  id            String          @id @default(cuid())
-  name          String?
-  ownerId       String
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  Content       Content[]
-  CustomerBots  CustomerBots[]
-  CustomerChats CustomerChats[]
-  Integrations  Integrations[]
-  Quota         Quota[]
-  Storage       Storage[]
-  owner         User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  members       TeamMember[]
-  Ticket        Ticket[]
+  id                    String          @id @default(cuid())
+  name                  String?
+  ownerId               String
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  businessName          String?
+  companySize           CompanySize?
+  industry              String?
+  website               String?
+  onboardingCompletedAt DateTime?
+  Content               Content[]
+  CustomerBots          CustomerBots[]
+  CustomerChats         CustomerChats[]
+  Integrations          Integrations[]
+  Quota                 Quota[]
+  Storage               Storage[]
+  owner                 User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members               TeamMember[]
+  Ticket                Ticket[]
 }
 
 model TeamMember {
@@ -131,6 +136,7 @@ model CustomerBots {
   botAvatar    String
   systemPrompt String    @default("")
   settings     Json?
+  purpose      String?
   active       Boolean   @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -507,6 +513,13 @@ enum QuotaType {
   BOT
   FILE
   TOKEN
+}
+
+enum CompanySize {
+  STARTUP
+  SMALL_BUSINESS
+  MID_MARKET
+  ENTERPRISE
 }
 
 enum SubscriptionTier {
