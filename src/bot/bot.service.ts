@@ -78,6 +78,7 @@ export class BotService {
             systemPrompt: body.systemPrompt,
             settings: body.settings,
             purpose: body.purpose,
+            active: true,
             team: {
               connect: {
                 id: body.user,
@@ -569,7 +570,7 @@ export class BotService {
       // Kanal tespiti: chatId prefix'inden otomatik belirle
       const chatChannel = body.chatId?.startsWith('wa_') ? 'WHATSAPP'
         : body.chatId?.startsWith('fb_') ? 'META_MESSENGER'
-        : 'WIDGET';
+          : 'WIDGET';
       const externalContactId = (chatChannel !== 'WIDGET') ? body.sender : null;
 
       if (isNewChat) {

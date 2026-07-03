@@ -307,8 +307,15 @@ export class AuthenticationService {
 
       const team = await this.prisma.team.findUnique({
         where: { id: teamId },
-        select: { onboardingCompletedAt: true },
+        select: { onboardingCompletedAt: true, ownerId: true },
       });
+
+      // Use TeamMember role to correctly identify TEAM_OWNER vs regular member
+      const teamMember = await this.prisma.teamMember.findFirst({
+        where: { teamId, userId: user.id },
+        select: { role: true },
+      });
+      const teamRole = teamMember?.role ?? user.role;
 
       return {
         success: true,
@@ -317,7 +324,7 @@ export class AuthenticationService {
         userEmail: user.email,
         userId: user.id,
         userName: user.name,
-        role: user.role,
+        role: teamRole,
         teamId: teamId,
         onboardingCompleted: !!team?.onboardingCompletedAt,
       };
