@@ -125,6 +125,7 @@ export class BotService {
           industry: body.industry,
           website: body.website,
           purpose: body.purpose,
+          language: body.language,
           page_summaries: body.pageSummaries,
         }).pipe(
           catchError((error: AxiosError) => {

@@ -23,6 +23,10 @@ export class GenerateSystemPromptRequest {
     purpose: string;
 
     @IsOptional()
+    @IsIn(['en', 'tr'])
+    language?: string;
+
+    @IsOptional()
     pageSummaries?: { url: string; category: string; summary?: string }[];
 
 }
