@@ -159,6 +159,7 @@ model CustomerChats {
   agentUserId         String?
   channel             ChatChannel           @default(WIDGET)
   externalContactId   String?               // WhatsApp: wa_id (phone number), Messenger: PSID
+  feedbackRating      Int?                  // 1-5 star rating submitted by the visitor after chat closes
   agent               User?                 @relation("AssignedAgent", fields: [agentUserId], references: [id])
   CustomerChatDetails CustomerChatDetails[]
   team                Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)

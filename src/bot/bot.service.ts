@@ -453,6 +453,15 @@ export class BotService {
         });
       }
 
+      // ── Auto-closed bot chat: reopen when customer sends a new message ──
+      if (activeChat && activeChat.chatStatus === 'CLOSED') {
+        await this.prisma.customerChats.update({
+          where: { id: activeChat.id },
+          data: { chatStatus: 'BOT_ACTIVE', updatedAt: new Date() },
+        });
+        activeChat = { ...activeChat, chatStatus: 'BOT_ACTIVE' };
+      }
+
       // ── LLM Bypass: sohbet bir insan ajana aktarıldıysa bot cevap vermez ──
       if (activeChat && activeChat.chatStatus === 'HUMAN_ACTIVE') {
         // Kullanıcı mesajını kaydet

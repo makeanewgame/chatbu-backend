@@ -251,6 +251,70 @@ export class WidgetService {
     }
 
     // ---------------------------------------------------------------------------
+    // Auto-close inactive bot chats — runs every minute
+    // Closes BOT_ACTIVE chats that have had no activity for 10+ minutes.
+    // Agent-assigned chats (HUMAN_ASSIGNED, HUMAN_ACTIVE) are excluded and
+    // must be closed manually by the agent.
+    // ---------------------------------------------------------------------------
+
+    @Cron('* * * * *')
+    async autoCloseInactiveBotChats() {
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        await this.prisma.customerChats.updateMany({
+            where: {
+                chatStatus: 'BOT_ACTIVE',
+                isDeleted: false,
+                updatedAt: { lt: tenMinutesAgo },
+            },
+            data: {
+                chatStatus: 'CLOSED',
+            },
+        });
+    }
+
+    // ---------------------------------------------------------------------------
+    // POST /widget/feedback
+    // Saves the visitor's 1-5 star rating for a completed chat session.
+    // ---------------------------------------------------------------------------
+
+    async submitFeedback(
+        sessionToken: string,
+        chatId: string,
+        rating: number,
+    ) {
+        // 1. Verify session token
+        let payload: any;
+        try {
+            payload = await this.jwtService.verifyAsync(sessionToken, {
+                secret: this.configService.get('JWT_SECRET'),
+            });
+        } catch {
+            throw new UnauthorizedException('Session expired');
+        }
+        if (payload.type !== 'widget-session') {
+            throw new UnauthorizedException('Invalid session token type');
+        }
+
+        // 2. Validate rating value
+        const validRating = Math.round(rating);
+        if (validRating < 1 || validRating > 5) {
+            throw new UnauthorizedException('Rating must be between 1 and 5');
+        }
+
+        // 3. Update the chat record — only if it belongs to the verified bot/team
+        await this.prisma.customerChats.updateMany({
+            where: {
+                chatId,
+                teamId: payload.teamId,
+                isDeleted: false,
+            },
+            data: { feedbackRating: validRating },
+        });
+
+        return { ok: true };
+    }
+
+    // ---------------------------------------------------------------------------
     // Scheduled reset — runs at 00:00 UTC every day
     // The inline per-request reset handles cases where the cron was missed.
     // ---------------------------------------------------------------------------

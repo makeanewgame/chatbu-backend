@@ -38,6 +38,7 @@ export class ReportService {
                     },
                 },
                 botId: true,
+                feedbackRating: true,
                 CustomerChatDetails: {
                     where: {
                         sender: "user",
@@ -428,6 +429,12 @@ export class ReportService {
         });
 
         // Kanala göre yönlendir
+        const agentUser = await this.prisma.user.findUnique({
+            where: { id: agentUserId },
+            select: { name: true },
+        });
+        const agentName = agentUser?.name ? agentUser.name.trim().split(' ')[0] : undefined;
+
         if (chat.channel === 'WHATSAPP' || chat.channel === 'META_MESSENGER') {
             await this.deliverToExternalChannel(chat, message);
         } else {
@@ -436,12 +443,14 @@ export class ReportService {
                 chatId: chat.id,
                 sender: 'agent',
                 message,
+                agentName,
                 createdAt: new Date().toISOString(),
             });
             this.eventsGateway.notifyCustomer(chat.chatId, {
                 chatId: chat.chatId,
                 sender: 'agent',
                 message,
+                agentName,
                 createdAt: new Date().toISOString(),
             });
         }
