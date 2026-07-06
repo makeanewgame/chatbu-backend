@@ -28,3 +28,16 @@ export interface RemoveMemberResponse {
     success: boolean;
     message: string;
 }
+
+export interface BusinessProfileResponse {
+    businessName: string | null;
+    companySize: string | null;
+    industry: string | null;
+    website: string | null;
+    onboardingCompletedAt: Date | null;
+}
+
+export interface CompleteOnboardingResponse {
+    success: boolean;
+    onboardingCompletedAt: Date;
+}

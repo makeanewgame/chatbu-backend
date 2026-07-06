@@ -305,6 +305,18 @@ export class AuthenticationService {
 
       // Create JWT and Refresh Token and redirect user to dashboard
 
+      const team = await this.prisma.team.findUnique({
+        where: { id: teamId },
+        select: { onboardingCompletedAt: true, ownerId: true },
+      });
+
+      // Use TeamMember role to correctly identify TEAM_OWNER vs regular member
+      const teamMember = await this.prisma.teamMember.findFirst({
+        where: { teamId, userId: user.id },
+        select: { role: true },
+      });
+      const teamRole = teamMember?.role ?? user.role;
+
       return {
         success: true,
         accessToken: tokens.accessToken,
@@ -312,8 +324,9 @@ export class AuthenticationService {
         userEmail: user.email,
         userId: user.id,
         userName: user.name,
-        role: user.role,
+        role: teamRole,
         teamId: teamId,
+        onboardingCompleted: !!team?.onboardingCompletedAt,
       };
     }
     return { success: false };
@@ -498,6 +511,11 @@ export class AuthenticationService {
           },
         });
 
+        const team = await this.prisma.team.findUnique({
+          where: { id: teamId },
+          select: { onboardingCompletedAt: true },
+        });
+
         return {
           success: true,
           accessToken: tokens.accessToken,
@@ -507,6 +525,7 @@ export class AuthenticationService {
           userName: data.name,
           teamId: teamId,
           role: findUser.role,
+          onboardingCompleted: !!team?.onboardingCompletedAt,
         };
       }
 
@@ -642,6 +661,11 @@ export class AuthenticationService {
       },
     });
 
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { onboardingCompletedAt: true },
+    });
+
     return {
       success: true,
       accessToken: tokens.accessToken,
@@ -652,6 +676,7 @@ export class AuthenticationService {
       teamId: teamId,
       role: findUser.role,
       termsAccepted: userFull?.termsAccepted ?? false,
+      onboardingCompleted: !!team?.onboardingCompletedAt,
     };
   }
 

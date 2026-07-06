@@ -13,10 +13,13 @@ import { TeamService } from './team.service';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { ResendInvitationDto } from './dto/resend-invitation.dto';
+import { SaveBusinessProfileDto } from './dto/save-business-profile.dto';
 import {
     TeamMemberResponse,
     InvitationResponse,
     RemoveMemberResponse,
+    BusinessProfileResponse,
+    CompleteOnboardingResponse,
 } from './dto/team-responses.dto';
 import { IUser } from 'src/util/interfaces';
 
@@ -77,5 +80,26 @@ export class TeamController {
         const userId = req.user.sub;
         const teamId = req.user.teamId;
         return this.teamService.removeMember(userId, teamId, targetUserId);
+    }
+
+    @Get('profile')
+    async getBusinessProfile(@Req() req): Promise<BusinessProfileResponse> {
+        const user = req.user as IUser;
+        return this.teamService.getBusinessProfile(user.teamId);
+    }
+
+    @Post('profile')
+    async saveBusinessProfile(
+        @Req() req,
+        @Body() saveBusinessProfileDto: SaveBusinessProfileDto,
+    ): Promise<BusinessProfileResponse> {
+        const user = req.user as IUser;
+        return this.teamService.saveBusinessProfile(user.teamId, saveBusinessProfileDto);
+    }
+
+    @Post('completeOnboarding')
+    async completeOnboarding(@Req() req): Promise<CompleteOnboardingResponse> {
+        const user = req.user as IUser;
+        return this.teamService.completeOnboarding(user.teamId);
     }
 }

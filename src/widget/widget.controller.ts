@@ -77,4 +77,19 @@ export class WidgetController {
     ) {
         return this.widgetService.uploadAttachment(sessionToken, file);
     }
+
+    /**
+     * Submits a 1-5 star feedback rating for a completed chat session.
+     * Throttled to 5 req/min per IP to prevent spam.
+     */
+    @ApiOperation({ summary: 'Submit visitor feedback rating for a chat' })
+    @Post('feedback')
+    @Throttle({ default: { ttl: 60000, limit: 5 } })
+    async feedback(@Body() body: any) {
+        return this.widgetService.submitFeedback(
+            body.sessionToken,
+            body.chatId,
+            body.rating,
+        );
+    }
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
@@ -6,6 +6,9 @@ import { UpdateSettingsRequest } from './dto/updateSettingsRequest';
 import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
 import { ChatRequest } from './dto/chatRequest';
+import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
+import { MODEL_TIERS, DEFAULT_MODEL_TIER } from './model-tier.constants';
+import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -76,6 +79,8 @@ export class BotService {
             botAvatar: body.botAvatar.toString(),
             systemPrompt: body.systemPrompt,
             settings: body.settings,
+            purpose: body.purpose,
+            active: true,
             team: {
               connect: {
                 id: body.user,
@@ -104,12 +109,42 @@ export class BotService {
             message: `Bot created: ${body.botName}`,
           });
 
-          return { message: 'Bot created' };
+          return { message: 'Bot created', botId: bot.id };
         }
         throw new Error('Error creating bot');
       }
     }
     throw new ForbiddenException('Error creating bot');
+  }
+
+  async generateSystemPrompt(body: GenerateSystemPromptRequest) {
+    const ingestUrl = this.configService.get('INGEST_ENPOINT');
+
+    try {
+      const { data } = await firstValueFrom(
+        this.httpService.post(`${ingestUrl}/generate-system-prompt`, {
+          business_name: body.businessName,
+          company_size: body.companySize,
+          industry: body.industry,
+          website: body.website,
+          purpose: body.purpose,
+          language: body.language,
+          page_summaries: body.pageSummaries,
+        }).pipe(
+          catchError((error: AxiosError) => {
+            console.log('generateSystemPrompt error', error.message);
+            throw error;
+          }),
+        ));
+
+      return {
+        systemPrompt: data.system_prompt,
+        tone: data.tone,
+        guidelines: data.guidelines,
+      };
+    } catch (error) {
+      throw new BadRequestException('Could not generate a system prompt right now, please try again');
+    }
   }
 
   async deleteBot(body: DeleteBotRequest) {
@@ -420,6 +455,15 @@ export class BotService {
         });
       }
 
+      // ── Auto-closed bot chat: reopen when customer sends a new message ──
+      if (activeChat && activeChat.chatStatus === 'CLOSED') {
+        await this.prisma.customerChats.update({
+          where: { id: activeChat.id },
+          data: { chatStatus: 'BOT_ACTIVE', updatedAt: new Date() },
+        });
+        activeChat = { ...activeChat, chatStatus: 'BOT_ACTIVE' };
+      }
+
       // ── LLM Bypass: sohbet bir insan ajana aktarıldıysa bot cevap vermez ──
       if (activeChat && activeChat.chatStatus === 'HUMAN_ACTIVE') {
         // Kullanıcı mesajını kaydet
@@ -537,7 +581,7 @@ export class BotService {
       // Kanal tespiti: chatId prefix'inden otomatik belirle
       const chatChannel = body.chatId?.startsWith('wa_') ? 'WHATSAPP'
         : body.chatId?.startsWith('fb_') ? 'META_MESSENGER'
-        : 'WIDGET';
+          : 'WIDGET';
       const externalContactId = (chatChannel !== 'WIDGET') ? body.sender : null;
 
       if (isNewChat) {
@@ -620,6 +664,37 @@ export class BotService {
       }
 
       console.log("return data", data)
+
+      // ── Auto-handover: if LLM signals human_handover and bot has a defaultAgentId ──
+      if (data.human_handover && activeChat) {
+        const settings = botUser.settings as any;
+        const defaultAgentId = settings?.defaultAgentId;
+        if (defaultAgentId) {
+          try {
+            const team = await this.prisma.team.findUnique({
+              where: { id: body.teamId },
+              select: { ownerId: true },
+            });
+            const isOwner = team?.ownerId === defaultAgentId;
+            const isMember = isOwner ? true : !!(await this.prisma.teamMember.findFirst({
+              where: { teamId: body.teamId, userId: defaultAgentId, status: 'active' },
+            }));
+            if (isMember) {
+              await this.prisma.customerChats.update({
+                where: { id: activeChat.id },
+                data: { chatStatus: 'HUMAN_ACTIVE', agentUserId: defaultAgentId },
+              });
+              this.eventsGateway.notifyAgent(defaultAgentId, {
+                chatId: activeChat.id,
+                type: 'auto_handover',
+                message: 'New live chat conversation assigned to you.',
+              });
+            }
+          } catch (e) {
+            console.log('Auto-handover failed:', e);
+          }
+        }
+      }
 
       return {
         ...data,
@@ -817,4 +892,71 @@ export class BotService {
 
   //   return token;
   // }
+
+  async updateModelTier(body: UpdateModelTierRequest, teamId: string) {
+    if (!MODEL_TIERS.includes(body.modelTier as any)) {
+      throw new BadRequestException('Invalid model tier');
+    }
+
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    // Plan-tier gate: 'sonnet' requires PREMIUM subscription
+    if (body.modelTier !== DEFAULT_MODEL_TIER) {
+      const team = await this.prisma.team.findUnique({
+        where: { id: teamId },
+        select: { ownerId: true },
+      });
+
+      const subscription = await this.prisma.subscription.findFirst({
+        where: { userId: team.ownerId },
+        select: { tier: true },
+      });
+
+      if (!subscription || subscription.tier !== 'PREMIUM') {
+        await this.systemLogService.createLog({
+          category: 'BOT',
+          action: 'UPDATE_MODEL_TIER',
+          status: 'REJECTED_PLAN',
+          teamId,
+          entityId: bot.id,
+          entityName: bot.botName,
+          message: `Bot model tier change rejected (plan): ${bot.modelTier} -> ${body.modelTier}`,
+        });
+
+        throw new HttpException(
+          { message: 'This model is only available on Premium plans', code: 'PLAN_UPGRADE_REQUIRED' },
+          402,
+        );
+      }
+    }
+
+    const oldTier = bot.modelTier;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { modelTier: body.modelTier },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_MODEL_TIER',
+      status: 'SUCCESS',
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot model tier: ${oldTier} -> ${body.modelTier}`,
+    });
+
+    return { message: 'Model tier updated', bot: updated };
+  }
 }
