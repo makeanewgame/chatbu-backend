@@ -23,6 +23,7 @@ import {
   ChageStatusBotResponse,
 } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
+import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -418,5 +419,27 @@ export class BotController {
   //     user.sub,
   //   );
   // }
+  //#endregion
+  //#region updateModelTier
+  @ApiOperation({ summary: 'Update bot model tier' })
+  @ApiResponse({ status: 200, description: 'Model tier updated' })
+  @ApiBadRequestResponse({ description: 'Invalid model tier or plan upgrade required' })
+  @ApiBearerAuth()
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        botId: { type: 'string' },
+        modelTier: { type: 'string', enum: ['haiku', 'sonnet'] },
+      },
+      required: ['botId', 'modelTier'],
+    },
+  })
+  @Post('updateModelTier')
+  @UseGuards(AccessTokenGuard)
+  async updateModelTier(@Body() body: UpdateModelTierRequest, @Req() req: Request) {
+    const user = req.user as IUser;
+    return this.botService.updateModelTier(body, user.teamId);
+  }
   //#endregion
 }

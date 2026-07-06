@@ -138,6 +138,7 @@ model CustomerBots {
   settings     Json?
   purpose      String?
   active       Boolean   @default(false)
+  modelTier    String    @default("haiku")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   isDeleted    Boolean   @default(false)
@@ -601,9 +602,11 @@ enum LogAction {
   QUOTA_EXCEEDED
   LOGIN
   REGISTER
+  UPDATE_MODEL_TIER
 }
 
 enum LogStatus {
   SUCCESS
   ERROR
+  REJECTED_PLAN
 }

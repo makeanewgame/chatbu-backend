@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
@@ -7,6 +7,8 @@ import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
 import { ChatRequest } from './dto/chatRequest';
 import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
+import { MODEL_TIERS, DEFAULT_MODEL_TIER } from './model-tier.constants';
+import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -859,4 +861,71 @@ export class BotService {
 
   //   return token;
   // }
+
+  async updateModelTier(body: UpdateModelTierRequest, teamId: string) {
+    if (!MODEL_TIERS.includes(body.modelTier as any)) {
+      throw new BadRequestException('Invalid model tier');
+    }
+
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    // Plan-tier gate: 'sonnet' requires PREMIUM subscription
+    if (body.modelTier !== DEFAULT_MODEL_TIER) {
+      const team = await this.prisma.team.findUnique({
+        where: { id: teamId },
+        select: { ownerId: true },
+      });
+
+      const subscription = await this.prisma.subscription.findFirst({
+        where: { userId: team.ownerId },
+        select: { tier: true },
+      });
+
+      if (!subscription || subscription.tier !== 'PREMIUM') {
+        await this.systemLogService.createLog({
+          category: 'BOT',
+          action: 'UPDATE_MODEL_TIER',
+          status: 'REJECTED_PLAN',
+          teamId,
+          entityId: bot.id,
+          entityName: bot.botName,
+          message: `Bot model tier change rejected (plan): ${bot.modelTier} -> ${body.modelTier}`,
+        });
+
+        throw new HttpException(
+          { message: 'This model is only available on Premium plans', code: 'PLAN_UPGRADE_REQUIRED' },
+          402,
+        );
+      }
+    }
+
+    const oldTier = bot.modelTier;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { modelTier: body.modelTier },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_MODEL_TIER',
+      status: 'SUCCESS',
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot model tier: ${oldTier} -> ${body.modelTier}`,
+    });
+
+    return { message: 'Model tier updated', bot: updated };
+  }
 }
