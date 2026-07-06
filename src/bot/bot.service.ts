@@ -544,6 +544,12 @@ export class BotService {
             customer_cuid: botUser.teamId,
             messages: [body.message],
             system_prompt: botUser.systemPrompt,
+            // Per-bot Bedrock model tier ('haiku' | 'sonnet'). The
+            // plan-tier gate lives in updateModelTier — by the time
+            // this value is persisted, the team already has the plan
+            // that unlocks it. Older gateway pods that don't know
+            // about model_tier silently ignore it (Pydantic Optional).
+            model_tier: botUser.modelTier,
             session_id: body.chatId, // null veya mevcut session_id
           })
         );
