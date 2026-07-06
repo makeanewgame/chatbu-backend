@@ -665,6 +665,37 @@ export class BotService {
 
       console.log("return data", data)
 
+      // ── Auto-handover: if LLM signals human_handover and bot has a defaultAgentId ──
+      if (data.human_handover && activeChat) {
+        const settings = botUser.settings as any;
+        const defaultAgentId = settings?.defaultAgentId;
+        if (defaultAgentId) {
+          try {
+            const team = await this.prisma.team.findUnique({
+              where: { id: body.teamId },
+              select: { ownerId: true },
+            });
+            const isOwner = team?.ownerId === defaultAgentId;
+            const isMember = isOwner ? true : !!(await this.prisma.teamMember.findFirst({
+              where: { teamId: body.teamId, userId: defaultAgentId, status: 'active' },
+            }));
+            if (isMember) {
+              await this.prisma.customerChats.update({
+                where: { id: activeChat.id },
+                data: { chatStatus: 'HUMAN_ACTIVE', agentUserId: defaultAgentId },
+              });
+              this.eventsGateway.notifyAgent(defaultAgentId, {
+                chatId: activeChat.id,
+                type: 'auto_handover',
+                message: 'New live chat conversation assigned to you.',
+              });
+            }
+          } catch (e) {
+            console.log('Auto-handover failed:', e);
+          }
+        }
+      }
+
       return {
         ...data,
         session_id: sessionId
