@@ -24,6 +24,7 @@ import {
 } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
 import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
+import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -440,6 +441,22 @@ export class BotController {
   async updateModelTier(@Body() body: UpdateModelTierRequest, @Req() req: Request) {
     const user = req.user as IUser;
     return this.botService.updateModelTier(body, user.teamId);
+  }
+  //#endregion
+
+  //#region updateLeadDestinations
+  @ApiOperation({ summary: 'Update bot lead notification destinations' })
+  @ApiResponse({ status: 200, description: 'Lead destinations updated' })
+  @ApiBadRequestResponse({ description: 'Invalid destinations payload' })
+  @ApiBearerAuth()
+  @Post('updateLeadDestinations')
+  @UseGuards(AccessTokenGuard)
+  async updateLeadDestinations(
+    @Body() body: UpdateLeadDestinationsRequest,
+    @Req() req: Request,
+  ) {
+    const user = req.user as IUser;
+    return this.botService.updateLeadDestinations(body, user.teamId);
   }
   //#endregion
 }

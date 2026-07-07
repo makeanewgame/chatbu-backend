@@ -1,0 +1,119 @@
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Olumsuz Geri Bildirim Alındı</title>
+    <style>
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        line-height: 1.6;
+        color: #333333;
+        margin: 0;
+        padding: 0;
+        background-color: #f7f7f7;
+      }
+      p {
+        font-size: 16px;
+      }
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #ffffff;
+      }
+      .header {
+        text-align: center;
+        padding: 20px 0;
+        border-bottom: 1px solid #eeeeee;
+      }
+      .logo {
+        max-height: 60px;
+        margin-bottom: 10px;
+      }
+      .content {
+        padding: 30px 20px;
+      }
+      .feedback-box {
+        background-color: #f5f5f5;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+        border-left: 4px solid #e4562b;
+      }
+      .feedback-box p {
+        margin: 8px 0;
+      }
+      .feedback-box strong {
+        color: #e4562b;
+      }
+      .answer-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        background-color: #e4562b;
+        color: #ffffff;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: bold;
+        margin-left: 8px;
+      }
+      .comment-content {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 4px;
+        margin-top: 10px;
+        border: 1px solid #e0e0e0;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .footer {
+        text-align: center;
+        padding: 20px;
+        color: #999999;
+        font-size: 12px;
+        border-top: 1px solid #eeeeee;
+        margin-top: 20px;
+      }
+      @media only screen and (max-width: 600px) {
+        .container {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <img
+          src="https://app.chatbu.io/images/chatbu-logo.webp"
+          alt="Chatbu Logo"
+          class="logo"
+        />
+        <h2>Olumsuz Geri Bildirim Alındı</h2>
+      </div>
+
+      <div class="content">
+        <p>{{botName}} botunuzdaki bir konuşmadan bir ziyaretçi tam olarak memnun kalmadı.</p>
+
+        <div class="feedback-box">
+          <p><strong>Cevap:</strong> <span class="answer-badge">{{answerLabel}}</span></p>
+          <p><strong>Alınma Tarihi:</strong> {{createdAt}}</p>
+          {{#if comment}}
+          <p><strong>Eksik kalan:</strong></p>
+          <div class="comment-content">{{comment}}</div>
+          {{/if}}
+        </div>
+
+        <p>Konuşmanın tamamını görmek için panelinizdeki sohbet geçmişini açabilirsiniz.</p>
+      </div>
+
+      <div class="footer">
+        <p>&copy; 2026 {{company}}. Tüm hakları saklıdır.</p>
+        <p>
+          <a href="{{privacyPolicyUrl}}" style="color: #2b72e4; text-decoration: none;">Gizlilik Politikası</a> |
+          <a href="{{supportUrl}}" style="color: #2b72e4; text-decoration: none;">Destek</a>
+        </p>
+        <p>Bu e-postayı, bu adres {{botName}} için bir kayıt bildirim adresi olarak ayarlandığı için alıyorsunuz. Ayarları bot ayarlarınızdan yönetebilirsiniz.</p>
+      </div>
+    </div>
+  </body>
+</html>

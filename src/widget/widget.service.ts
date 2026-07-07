@@ -10,6 +10,14 @@ import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { BotService } from '../bot/bot.service';
 import { MinioClientService } from '../minio-client/minio-client.service';
+import { MailService } from '../mail/mail.service';
+import { LeadDestination } from '../bot/lead-destination.constants';
+
+const FEEDBACK_ANSWER_TO_RATING: Record<'yes' | 'partial' | 'no', number> = {
+    yes: 5,
+    partial: 3,
+    no: 1,
+};
 
 @Injectable()
 export class WidgetService {
@@ -19,6 +27,7 @@ export class WidgetService {
         private configService: ConfigService,
         private botService: BotService,
         private minioClientService: MinioClientService,
+        private mailService: MailService,
     ) { }
 
     // ---------------------------------------------------------------------------
@@ -274,13 +283,22 @@ export class WidgetService {
 
     // ---------------------------------------------------------------------------
     // POST /widget/feedback
-    // Saves the visitor's 1-5 star rating for a completed chat session.
+    // Two shapes are accepted on the same endpoint so older embedded widgets
+    // keep working during a rolling deploy:
+    //   - legacy: { rating: 1-5 }
+    //   - current: { answer: 'yes' | 'partial' | 'no', comment? }
+    // `answer` submissions are audited in ChatFeedback and, when the visitor
+    // was not fully satisfied (partial/no), forwarded to the bot's configured
+    // lead-destination email(s) — the same "notification destinations" used
+    // by lead capture.
     // ---------------------------------------------------------------------------
 
     async submitFeedback(
         sessionToken: string,
         chatId: string,
-        rating: number,
+        rating?: number,
+        answer?: 'yes' | 'partial' | 'no',
+        comment?: string,
     ) {
         // 1. Verify session token
         let payload: any;
@@ -295,20 +313,91 @@ export class WidgetService {
             throw new UnauthorizedException('Invalid session token type');
         }
 
-        // 2. Validate rating value
-        const validRating = Math.round(rating);
-        if (validRating < 1 || validRating > 5) {
-            throw new UnauthorizedException('Rating must be between 1 and 5');
+        const { botId, teamId } = payload;
+
+        // 2. Resolve the 1-5 rating from either shape
+        let resolvedRating: number;
+        if (answer !== undefined) {
+            if (!(answer in FEEDBACK_ANSWER_TO_RATING)) {
+                throw new UnauthorizedException('Invalid feedback answer');
+            }
+            resolvedRating = FEEDBACK_ANSWER_TO_RATING[answer];
+        } else if (rating !== undefined) {
+            resolvedRating = Math.round(rating);
+            if (resolvedRating < 1 || resolvedRating > 5) {
+                throw new UnauthorizedException('Rating must be between 1 and 5');
+            }
+        } else {
+            throw new UnauthorizedException('rating or answer is required');
         }
 
         // 3. Update the chat record — only if it belongs to the verified bot/team
         await this.prisma.customerChats.updateMany({
-            where: {
+            where: { chatId, teamId, isDeleted: false },
+            data: { feedbackRating: resolvedRating },
+        });
+
+        if (answer === undefined) {
+            return { ok: true };
+        }
+
+        const dbAnswer = answer.toUpperCase() as 'YES' | 'PARTIAL' | 'NO';
+        const trimmedComment = comment?.trim() || undefined;
+
+        if (dbAnswer === 'YES') {
+            await this.prisma.chatFeedback.create({
+                data: { botId, chatId, answer: dbAnswer, comment: trimmedComment },
+            });
+            return { ok: true };
+        }
+
+        // 4. Not fully satisfied — notify the bot's enabled email destinations
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: botId, isDeleted: false },
+            select: { botName: true, leadDestinations: true },
+        });
+
+        const destinations = bot
+            ? ((bot.leadDestinations as unknown as LeadDestination[]) || []).filter((d) => d.enabled)
+            : [];
+
+        const channelsAttempted: string[] = [];
+        const channelsSucceeded: string[] = [];
+        const deliveryErrors: { channel: string; error: string; target?: string }[] = [];
+
+        await Promise.all(
+            destinations.map(async (destination) => {
+                channelsAttempted.push(destination.channel);
+                try {
+                    if (destination.channel === 'email') {
+                        await this.mailService.sendNegativeFeedbackNotification(
+                            destination.target,
+                            bot.botName,
+                            { answer: dbAnswer, comment: trimmedComment },
+                            'en',
+                        );
+                    }
+                    channelsSucceeded.push(destination.channel);
+                } catch (error) {
+                    deliveryErrors.push({
+                        channel: destination.channel,
+                        error: error instanceof Error ? error.message : 'unknown_error',
+                        target: destination.target,
+                    });
+                }
+            }),
+        );
+
+        await this.prisma.chatFeedback.create({
+            data: {
+                botId,
                 chatId,
-                teamId: payload.teamId,
-                isDeleted: false,
+                answer: dbAnswer,
+                comment: trimmedComment,
+                channelsAttempted,
+                channelsSucceeded,
+                deliveryErrors: deliveryErrors.length > 0 ? deliveryErrors : null,
             },
-            data: { feedbackRating: validRating },
         });
 
         return { ok: true };

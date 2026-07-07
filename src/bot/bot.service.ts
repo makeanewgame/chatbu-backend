@@ -9,6 +9,7 @@ import { ChatRequest } from './dto/chatRequest';
 import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
 import { MODEL_TIERS, DEFAULT_MODEL_TIER } from './model-tier.constants';
 import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
+import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -964,5 +965,38 @@ export class BotService {
     });
 
     return { message: 'Model tier updated', bot: updated };
+  }
+
+  async updateLeadDestinations(body: UpdateLeadDestinationsRequest, teamId: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { leadDestinations: body.destinations as any },
+    });
+
+    const enabledCount = body.destinations.filter((d) => d.enabled).length;
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_LEAD_DESTINATIONS',
+      status: 'SUCCESS',
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `${body.destinations.length} destinations, ${enabledCount} enabled`,
+    });
+
+    return { message: 'Lead destinations updated', bot: updated };
   }
 }

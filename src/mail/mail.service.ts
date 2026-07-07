@@ -429,4 +429,102 @@ export class MailService {
       throw error;
     }
   }
+
+  async sendLeadNotification(
+    to: string,
+    botName: string,
+    leadData: { name?: string; email?: string; phone?: string; notes?: string },
+    lang: string = 'en',
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'lead_notification.html' : 'lead_notification_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+
+    const html = template({
+      botName,
+      name: leadData.name,
+      email: leadData.email,
+      phone: leadData.phone,
+      notes: leadData.notes,
+      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      leadsInboxUrl: `${process.env.FRONTEND_URL}/leads`,
+      company: process.env.COMPANY_NAME,
+      privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      supportUrl: process.env.FRONTEND_SUPPORT_URL,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to,
+      subject: lang === 'en'
+        ? `New lead from your Chatbu bot: ${botName}`
+        : `Chatbu botunuzdan yeni bir kayıt: ${botName}`,
+      html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Lead notification sent to ${to}`);
+    } catch (error) {
+      this.logger.error(`Error sending lead notification to ${to}:`, error);
+      throw error;
+    }
+  }
+
+  async sendNegativeFeedbackNotification(
+    to: string,
+    botName: string,
+    feedbackData: { answer: 'PARTIAL' | 'NO'; comment?: string },
+    lang: string = 'en',
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'negative_feedback_notification.html' : 'negative_feedback_notification_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+
+    const answerLabelMap = {
+      PARTIAL: lang === 'en' ? 'Partially satisfied' : 'Kısmen memnun',
+      NO: lang === 'en' ? 'Not satisfied' : 'Memnun değil',
+    };
+
+    const html = template({
+      botName,
+      answerLabel: answerLabelMap[feedbackData.answer],
+      comment: feedbackData.comment,
+      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      company: process.env.COMPANY_NAME,
+      privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      supportUrl: process.env.FRONTEND_SUPPORT_URL,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to,
+      subject: lang === 'en'
+        ? `Negative feedback on your Chatbu bot: ${botName}`
+        : `Chatbu botunuzda olumsuz geri bildirim: ${botName}`,
+      html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Negative feedback notification sent to ${to}`);
+    } catch (error) {
+      this.logger.error(`Error sending negative feedback notification to ${to}:`, error);
+      throw error;
+    }
+  }
 }
