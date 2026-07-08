@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Query,
   Req,
@@ -11,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
+import { InternalApiKeyGuard } from 'src/integration/google-calendar/internal-api-key.guard';
 import { Request, Response } from 'express';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
@@ -25,6 +27,7 @@ import {
 import { RenameBotRequest } from './dto/renameBotRequest';
 import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
+import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -457,6 +460,35 @@ export class BotController {
   ) {
     const user = req.user as IUser;
     return this.botService.updateLeadDestinations(body, user.teamId);
+  }
+  //#endregion
+
+  //#region updateLeadVerification
+  @ApiOperation({ summary: 'Toggle required email verification for bot leads' })
+  @ApiResponse({ status: 200, description: 'Lead verification setting updated' })
+  @ApiBearerAuth()
+  @Post('updateLeadVerification')
+  @UseGuards(AccessTokenGuard)
+  async updateLeadVerification(
+    @Body() body: UpdateLeadVerificationRequest,
+    @Req() req: Request,
+  ) {
+    const user = req.user as IUser;
+    return this.botService.updateLeadVerification(body, user.teamId);
+  }
+  //#endregion
+
+  //#region verificationStatus
+  /**
+   * GET /api/bot/verification-status/:botId
+   * MCP-facing endpoint. Returns whether the bot requires lead-capture email verification.
+   */
+  @ApiOperation({ summary: 'Get lead verification requirement for bot (internal)' })
+  @ApiResponse({ status: 200, description: 'Requirement flag returned' })
+  @UseGuards(InternalApiKeyGuard)
+  @Get('verification-status/:botId')
+  async getVerificationStatus(@Param('botId') botId: string) {
+    return this.botService.getLeadVerificationStatus(botId);
   }
   //#endregion
 }

@@ -10,6 +10,7 @@ import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
 import { MODEL_TIERS, DEFAULT_MODEL_TIER } from './model-tier.constants';
 import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
+import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -998,5 +999,51 @@ export class BotService {
     });
 
     return { message: 'Lead destinations updated', bot: updated };
+  }
+
+  async updateLeadVerification(body: UpdateLeadVerificationRequest, teamId: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    const oldValue = bot.leadVerificationRequired;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { leadVerificationRequired: body.leadVerificationRequired },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_LEAD_VERIFICATION',
+      status: 'SUCCESS',
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot lead-verification: ${oldValue} -> ${body.leadVerificationRequired}`,
+    });
+
+    return { message: 'Lead verification setting updated', bot: updated };
+  }
+
+  async getLeadVerificationStatus(botId: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: botId, isDeleted: false },
+      select: { leadVerificationRequired: true },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    return { requiresVerification: bot.leadVerificationRequired };
   }
 }

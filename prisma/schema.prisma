@@ -140,6 +140,7 @@ model CustomerBots {
   active           Boolean    @default(false)
   modelTier        String     @default("haiku")
   leadDestinations Json       @default("[]")
+  leadVerificationRequired Boolean @default(false)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
   isDeleted        Boolean    @default(false)
@@ -429,12 +430,27 @@ model BotLeads {
   channelsSucceeded Json         @default("[]")
   deliveryErrors    Json?
   status            LeadStatus   @default(NEW)
+  verified          Boolean      @default(false)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   bot               CustomerBots @relation(fields: [botId], references: [id], onDelete: Cascade)
 
   @@index([botId, createdAt])
   @@index([botId, status])
+}
+
+model LeadVerification {
+  id        String    @id @default(cuid())
+  botId     String
+  email     String
+  codeHash  String
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([botId, email])
+  @@index([expiresAt])
 }
 
 model ChatFeedback {
@@ -639,6 +655,7 @@ enum LogAction {
   REGISTER
   UPDATE_MODEL_TIER
   UPDATE_LEAD_DESTINATIONS
+  UPDATE_LEAD_VERIFICATION
 }
 
 enum LeadStatus {

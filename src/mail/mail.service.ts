@@ -478,6 +478,46 @@ export class MailService {
     }
   }
 
+  async sendLeadVerificationCode(
+    to: string,
+    code: string,
+    botName: string,
+    lang: string = 'en',
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'lead_verification.html' : 'lead_verification_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+
+    const html = template({
+      botName,
+      code,
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to,
+      subject: lang === 'en' ? 'Your Chatbu confirmation code' : 'Chatbu doğrulama kodunuz',
+      html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Lead verification code sent to ${to}`);
+    } catch (error) {
+      this.logger.error(`Error sending lead verification code to ${to}:`, error);
+      throw error;
+    }
+  }
+
   async sendNegativeFeedbackNotification(
     to: string,
     botName: string,

@@ -35,4 +35,8 @@ export class SubmitLeadDto {
   @ValidateNested()
   @Type(() => LeadDataDto)
   leadData: LeadDataDto;
+
+  @IsOptional()
+  @IsString()
+  verificationToken?: string | null;
 }
