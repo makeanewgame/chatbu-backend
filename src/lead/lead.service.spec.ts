@@ -191,6 +191,31 @@ describe('LeadService — lead verification', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('audits a rejected attempt when no token is provided (bot owner must see the failed visit)', async () => {
+      prisma.customerBots.findUnique.mockResolvedValue({
+        id: botId,
+        botName: 'Test Bot',
+        leadDestinations: [],
+        leadVerificationRequired: true,
+      });
+
+      await expect(
+        service.submit({ botId, chatId: 'chat-1', leadData }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.botLeads.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          botId,
+          chatId: 'chat-1',
+          leadData: { email },
+          channelsAttempted: [],
+          channelsSucceeded: [],
+          deliveryErrors: [{ channel: 'none', error: 'verification_required' }],
+          verified: false,
+        }),
+      });
+    });
+
     it('rejects a token issued for a different purpose (wrong kind)', async () => {
       prisma.customerBots.findUnique.mockResolvedValue({
         id: botId,
@@ -203,6 +228,27 @@ describe('LeadService — lead verification', () => {
       await expect(
         service.submit({ botId, chatId: null, leadData, verificationToken: 'booking.jwt' }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('audits a rejected attempt when the token is invalid', async () => {
+      prisma.customerBots.findUnique.mockResolvedValue({
+        id: botId,
+        botName: 'Test Bot',
+        leadDestinations: [],
+        leadVerificationRequired: true,
+      });
+      jwt.verifyAsync.mockResolvedValue({ email, botId, kind: 'booking' });
+
+      await expect(
+        service.submit({ botId, chatId: null, leadData, verificationToken: 'booking.jwt' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prisma.botLeads.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          deliveryErrors: [{ channel: 'none', error: 'verification_invalid' }],
+          verified: false,
+        }),
+      });
     });
 
     it('accepts a valid lead_verification token and marks the lead verified', async () => {

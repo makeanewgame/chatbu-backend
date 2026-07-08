@@ -43,9 +43,18 @@ export class LeadService {
       throw new NotFoundException('Bot not found');
     }
 
+    // Whitespace-only optional fields are dropped before persisting/sending.
+    const cleanLeadData: Record<string, string> = {};
+    for (const [key, value] of Object.entries(leadData)) {
+      if (typeof value === 'string' && value.trim().length > 0) {
+        cleanLeadData[key] = value.trim();
+      }
+    }
+
     let verified = false;
     if (bot.leadVerificationRequired) {
       if (!verificationToken) {
+        await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'verification_required');
         throw new BadRequestException({ code: 'VERIFICATION_REQUIRED' });
       }
       try {
@@ -65,15 +74,8 @@ export class LeadService {
         }
         verified = true;
       } catch {
+        await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'verification_invalid');
         throw new BadRequestException({ code: 'VERIFICATION_INVALID' });
-      }
-    }
-
-    // Whitespace-only optional fields are dropped before persisting/sending.
-    const cleanLeadData: Record<string, string> = {};
-    for (const [key, value] of Object.entries(leadData)) {
-      if (typeof value === 'string' && value.trim().length > 0) {
-        cleanLeadData[key] = value.trim();
       }
     }
 
@@ -156,6 +158,32 @@ export class LeadService {
       channelsAttempted,
       channelsSucceeded,
     };
+  }
+
+  /**
+   * Audit invariant: every submit() attempt is persisted, even ones rejected
+   * before delivery is attempted. Without this, a bot owner debugging "why
+   * didn't my lead show up" via the leads inbox sees nothing for visitors
+   * who never made it past email verification.
+   */
+  private async recordVerificationRejection(
+    botId: string,
+    chatId: string | null | undefined,
+    cleanLeadData: Record<string, string>,
+    reason: 'verification_required' | 'verification_invalid',
+  ) {
+    await this.prisma.botLeads.create({
+      data: {
+        botId,
+        chatId: chatId || null,
+        leadData: cleanLeadData,
+        channelsAttempted: [],
+        channelsSucceeded: [],
+        deliveryErrors: [{ channel: 'none', error: reason }],
+        status: 'NEW',
+        verified: false,
+      },
+    });
   }
 
   async list(dto: ListLeadsDto, teamId: string) {
