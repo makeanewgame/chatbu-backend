@@ -5,6 +5,10 @@ export class CreateIntegrationDto {
     @IsNotEmpty()
     type: string;
 
+    @IsString()
+    @IsNotEmpty()
+    botId: string;
+
     @IsOptional()
     @IsObject()
     config?: Record<string, any>;

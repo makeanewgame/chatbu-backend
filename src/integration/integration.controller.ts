@@ -14,13 +14,13 @@ import { TestIntegrationDto } from './dto/test-integration.dto';
 export class IntegrationController {
     constructor(private readonly integrationService: IntegrationService) { }
 
-    @ApiOperation({ summary: 'List integrations for team' })
+    @ApiOperation({ summary: 'List integrations for a bot' })
     @ApiResponse({ status: 200, description: 'List integrations' })
     @ApiBearerAuth()
     @Post('list')
-    async list(@Req() req) {
+    async list(@Req() req, @Body() body: { botId?: string }) {
         const user = req.user as IUser;
-        return this.integrationService.listIntegrations(user.teamId);
+        return this.integrationService.listIntegrations(user.teamId, body?.botId);
     }
 
     @ApiOperation({ summary: 'Create integration for team' })
