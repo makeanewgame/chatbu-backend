@@ -79,10 +79,12 @@ export class WidgetController {
     }
 
     /**
-     * Submits a 1-5 star feedback rating for a completed chat session.
+     * Submits visitor feedback for a completed chat session.
+     * Accepts either the current { answer: 'yes'|'partial'|'no', comment? }
+     * shape or the legacy { rating: 1-5 } shape (older embedded widgets).
      * Throttled to 5 req/min per IP to prevent spam.
      */
-    @ApiOperation({ summary: 'Submit visitor feedback rating for a chat' })
+    @ApiOperation({ summary: 'Submit visitor feedback for a chat' })
     @Post('feedback')
     @Throttle({ default: { ttl: 60000, limit: 5 } })
     async feedback(@Body() body: any) {
@@ -90,6 +92,8 @@ export class WidgetController {
             body.sessionToken,
             body.chatId,
             body.rating,
+            body.answer,
+            body.comment,
         );
     }
 }

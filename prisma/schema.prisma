@@ -130,20 +130,24 @@ model Content {
 }
 
 model CustomerBots {
-  id           String    @id @default(cuid())
-  teamId       String
-  botName      String
-  botAvatar    String
-  systemPrompt String    @default("")
-  settings     Json?
-  purpose      String?
-  active       Boolean   @default(false)
-  modelTier    String    @default("haiku")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  isDeleted    Boolean   @default(false)
-  deletedAt    DateTime?
-  team         Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  id               String     @id @default(cuid())
+  teamId           String
+  botName          String
+  botAvatar        String
+  systemPrompt     String     @default("")
+  settings         Json?
+  purpose          String?
+  active           Boolean    @default(false)
+  modelTier        String     @default("haiku")
+  leadDestinations Json       @default("[]")
+  leadVerificationRequired Boolean @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  isDeleted        Boolean    @default(false)
+  deletedAt        DateTime?
+  team             Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  BotLeads         BotLeads[]
+  ChatFeedback     ChatFeedback[]
 }
 
 model CustomerChats {
@@ -417,6 +421,53 @@ model SystemLog {
   @@index([status])
 }
 
+model BotLeads {
+  id                String       @id @default(cuid())
+  botId             String
+  chatId            String?
+  leadData          Json
+  channelsAttempted Json         @default("[]")
+  channelsSucceeded Json         @default("[]")
+  deliveryErrors    Json?
+  status            LeadStatus   @default(NEW)
+  verified          Boolean      @default(false)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  bot               CustomerBots @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, createdAt])
+  @@index([botId, status])
+}
+
+model LeadVerification {
+  id        String    @id @default(cuid())
+  botId     String
+  email     String
+  codeHash  String
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([botId, email])
+  @@index([expiresAt])
+}
+
+model ChatFeedback {
+  id                String         @id @default(cuid())
+  botId             String
+  chatId            String?
+  answer            FeedbackAnswer
+  comment           String?
+  channelsAttempted Json           @default("[]")
+  channelsSucceeded Json           @default("[]")
+  deliveryErrors    Json?
+  createdAt         DateTime       @default(now())
+  bot               CustomerBots   @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, createdAt])
+}
+
 model BookingVerification {
   id        String   @id @default(cuid())
   email     String
@@ -603,6 +654,20 @@ enum LogAction {
   LOGIN
   REGISTER
   UPDATE_MODEL_TIER
+  UPDATE_LEAD_DESTINATIONS
+  UPDATE_LEAD_VERIFICATION
+}
+
+enum LeadStatus {
+  NEW
+  READ
+  ARCHIVED
+}
+
+enum FeedbackAnswer {
+  YES
+  PARTIAL
+  NO
 }
 
 enum LogStatus {

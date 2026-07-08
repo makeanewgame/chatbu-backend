@@ -84,7 +84,7 @@ export class BookingService {
         });
 
         const verificationToken = await this.jwt.signAsync(
-            { email, botCuid, sub: record.id },
+            { email, botCuid, kind: 'booking', sub: record.id },
             {
                 secret: process.env.BOOKING_VERIFICATION_SECRET || process.env.JWT_SECRET,
                 expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
@@ -97,13 +97,14 @@ export class BookingService {
     /**
      * Verify a JWT issued by `verify()`. Returns the payload if valid, throws if not.
      * mcp-server's create_appointment calls this before creating the calendar event.
+     * Rejects tokens issued for a different purpose (e.g. lead verification) via `kind`.
      */
     async checkToken(token: string, email: string, botCuid: string) {
-        const payload = await this.jwt.verifyAsync<{ email: string; botCuid: string; sub: string }>(
+        const payload = await this.jwt.verifyAsync<{ email: string; botCuid: string; kind?: string; sub: string }>(
             token,
             { secret: process.env.BOOKING_VERIFICATION_SECRET || process.env.JWT_SECRET },
         );
-        if (payload.email !== email || payload.botCuid !== botCuid) {
+        if (payload.email !== email || payload.botCuid !== botCuid || payload.kind !== 'booking') {
             throw new Error('TOKEN_MISMATCH');
         }
         return payload;
