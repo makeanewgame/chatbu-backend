@@ -15,16 +15,16 @@ export class IntegrationService {
         private systemLogService: SystemLogService,
     ) { }
 
-    async listIntegrations(teamId: string) {
+    async listIntegrations(teamId: string, botId?: string) {
         return this.prisma.integrations.findMany({
-            where: { teamId },
+            where: { teamId, ...(botId ? { botId } : {}) },
             orderBy: { createdAt: 'desc' },
         });
     }
 
     async createIntegration(teamId: string, dto: CreateIntegrationDto) {
         const existing = await this.prisma.integrations.findFirst({
-            where: { teamId, type: dto.type },
+            where: { teamId, type: dto.type, botId: dto.botId },
         });
 
         if (existing) {
@@ -53,6 +53,7 @@ export class IntegrationService {
         const created = await this.prisma.integrations.create({
             data: {
                 teamId,
+                botId: dto.botId,
                 type: dto.type,
                 config: dto.config,
             },

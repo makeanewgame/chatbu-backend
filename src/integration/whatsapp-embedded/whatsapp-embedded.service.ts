@@ -139,11 +139,11 @@ export class WhatsAppEmbeddedService {
         if (existing) {
             await this.prisma.integrations.update({
                 where: { id: existing.id },
-                data: { config },
+                data: { botId: chatbotId, config },
             });
         } else {
             await this.prisma.integrations.create({
-                data: { teamId, type: WHATSAPP_EMBEDDED_TYPE, config },
+                data: { teamId, botId: chatbotId, type: WHATSAPP_EMBEDDED_TYPE, config },
             });
         }
 

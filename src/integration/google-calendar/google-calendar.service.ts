@@ -86,12 +86,13 @@ export class GoogleCalendarService {
         if (existing) {
             await this.prisma.integrations.update({
                 where: { id: existing.id },
-                data: { config },
+                data: { botId, config },
             });
         } else {
             await this.prisma.integrations.create({
                 data: {
                     teamId,
+                    botId,
                     type: INTEGRATION_TYPE,
                     config,
                 },
