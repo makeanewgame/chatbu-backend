@@ -6,9 +6,25 @@ import * as bodyParser from 'body-parser';
 import { join } from 'path';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // `bufferLogs: true` makes Nest hold every framework log line until we
+  // wire in our own logger below. Without this, Nest's default color/
+  // pretty-printed bootstrap output (module loaded, route mapped, …)
+  // reaches stdout BEFORE `useLogger(...)` runs and Alloy's Winston-JSON
+  // parser downstream ignores those non-JSON lines. Loki's
+  // `| level=~"ERROR"` filter then misses every backend error emitted
+  // during startup or startup-adjacent moments.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+  // Route Nest's own framework logs through the same nest-winston
+  // provider AppModule registers with `winston.format.json()`. From here
+  // on out every backend log line — Nest framework AND application —
+  // is a single JSON object per line, parseable by Alloy's
+  // `stage.match {container="backend"} { stage.json ... }` pipeline.
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
   // Trust the ingress/load-balancer's X-Forwarded-For so ThrottlerGuard
   // uses the real client IP instead of the cluster-internal ingress IP.
   // Without this, all users share one throttle bucket → 429 → health-probe
