@@ -45,6 +45,12 @@ import { LeadModule } from './lead/lead.module';
         limit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
       },
     ]),
+    // Winston: single-line JSON to stdout. Loki's Alloy pipeline parses
+    // this at `stage.match {container="backend"} { stage.json ... }` and
+    // promotes `level`, `context`, `trace_id` as structured metadata.
+    // File transport removed 2026-07-09: writing `combined.log` inside
+    // a stateless container fills the ephemeral filesystem, and nobody
+    // ever tailed that file — Loki is the log store.
     WinstonModule.forRoot({
       format: winston.format.combine(
         winston.format.timestamp(),
@@ -52,7 +58,6 @@ import { LeadModule } from './lead/lead.module';
       ),
       transports: [
         new winston.transports.Console(),
-        new winston.transports.File({ filename: 'combined.log' }),
       ],
     }),
     ConfigModule.forRoot({
