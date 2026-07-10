@@ -1,8 +1,10 @@
-import { Body, Controller, Post, Req, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
+import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
+import { IUser } from 'src/util/interfaces';
 import { WidgetService } from './widget.service';
 
 @ApiTags('Widget')
@@ -92,6 +94,27 @@ export class WidgetController {
             body.sessionToken,
             body.chatId,
             body.rating,
+            body.answer,
+            body.comment,
+        );
+    }
+
+    /**
+     * Same feedback flow as POST /widget/feedback, for the dashboard's own
+     * internal "test your chatbot" panel (ChatForm.tsx) — an authenticated
+     * dashboard user testing their own bot, not a widget visitor with a
+     * sessionToken. Guarded per-route (this controller is otherwise public)
+     * since it's the one dashboard-facing exception here.
+     */
+    @ApiOperation({ summary: 'Submit feedback for a chat from the dashboard test panel' })
+    @Post('feedback-authenticated')
+    @UseGuards(AccessTokenGuard)
+    async feedbackAuthenticated(@Body() body: any, @Req() req: Request) {
+        const user = req.user as IUser;
+        return this.widgetService.submitFeedbackAuthenticated(
+            body.botId,
+            user.teamId,
+            body.chatId,
             body.answer,
             body.comment,
         );

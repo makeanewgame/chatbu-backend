@@ -330,7 +330,34 @@ export class WidgetService {
         }
 
         const { botId, teamId } = payload;
+        return this.recordFeedback(botId, teamId, chatId, rating, answer, comment);
+    }
 
+    // ---------------------------------------------------------------------------
+    // Same feedback flow as submitFeedback above, for the dashboard's own
+    // internal "test your chatbot" panel (ChatForm.tsx, /bot/chat — an
+    // authenticated dashboard user, not a widget visitor with a sessionToken).
+    // Trusts botId/teamId straight from the authenticated request the same
+    // way BotController#chat already does.
+    // ---------------------------------------------------------------------------
+    async submitFeedbackAuthenticated(
+        botId: string,
+        teamId: string,
+        chatId: string,
+        answer: 'yes' | 'partial' | 'no',
+        comment?: string,
+    ) {
+        return this.recordFeedback(botId, teamId, chatId, undefined, answer, comment);
+    }
+
+    private async recordFeedback(
+        botId: string,
+        teamId: string,
+        chatId: string,
+        rating?: number,
+        answer?: 'yes' | 'partial' | 'no',
+        comment?: string,
+    ) {
         // 2. Resolve the 1-5 rating from either shape
         let resolvedRating: number;
         if (answer !== undefined) {
