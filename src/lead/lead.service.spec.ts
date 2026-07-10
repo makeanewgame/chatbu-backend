@@ -17,6 +17,7 @@ describe('LeadService — lead verification', () => {
       update: jest.Mock;
     };
     botLeads: { create: jest.Mock };
+    teamMember: { findFirst: jest.Mock };
   };
   let mail: { sendLeadVerificationCode: jest.Mock; sendLeadNotification: jest.Mock };
   let jwt: { signAsync: jest.Mock; verifyAsync: jest.Mock };
@@ -34,6 +35,7 @@ describe('LeadService — lead verification', () => {
         update: jest.fn(),
       },
       botLeads: { create: jest.fn() },
+      teamMember: { findFirst: jest.fn() },
     };
     mail = { sendLeadVerificationCode: jest.fn(), sendLeadNotification: jest.fn() };
     jwt = { signAsync: jest.fn(), verifyAsync: jest.fn() };
@@ -255,10 +257,14 @@ describe('LeadService — lead verification', () => {
       prisma.customerBots.findUnique.mockResolvedValue({
         id: botId,
         botName: 'Test Bot',
+        teamId: 'team-1',
         leadDestinations: [],
         leadVerificationRequired: true,
       });
       jwt.verifyAsync.mockResolvedValue({ email, botId, kind: 'lead_verification' });
+      prisma.teamMember.findFirst.mockResolvedValue({
+        user: { email: 'owner@example.com' },
+      });
       prisma.botLeads.create.mockResolvedValue({ id: 'lead-1' });
 
       await service.submit({ botId, chatId: null, leadData, verificationToken: 'lead.jwt' });
@@ -272,8 +278,12 @@ describe('LeadService — lead verification', () => {
       prisma.customerBots.findUnique.mockResolvedValue({
         id: botId,
         botName: 'Test Bot',
+        teamId: 'team-1',
         leadDestinations: [],
         leadVerificationRequired: false,
+      });
+      prisma.teamMember.findFirst.mockResolvedValue({
+        user: { email: 'owner@example.com' },
       });
       prisma.botLeads.create.mockResolvedValue({ id: 'lead-1' });
 
@@ -281,6 +291,108 @@ describe('LeadService — lead verification', () => {
 
       expect(prisma.botLeads.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ verified: false }) }),
+      );
+    });
+  });
+
+  describe('submit — leadDestinations fallback', () => {
+    const leadData = { email };
+
+    it('falls back to the team owner email when leadDestinations is empty', async () => {
+      prisma.customerBots.findUnique.mockResolvedValue({
+        id: botId,
+        botName: 'Test Bot',
+        teamId: 'team-1',
+        leadDestinations: [],
+        leadVerificationRequired: false,
+      });
+      prisma.teamMember.findFirst.mockResolvedValue({
+        user: { email: 'owner@example.com' },
+        email: null,
+      });
+      prisma.botLeads.create.mockResolvedValue({ id: 'lead-1' });
+
+      const result = await service.submit({ botId, chatId: null, leadData });
+
+      expect(prisma.teamMember.findFirst).toHaveBeenCalledWith({
+        where: { teamId: 'team-1', role: 'TEAM_OWNER' },
+        include: { user: true },
+      });
+      expect(mail.sendLeadNotification).toHaveBeenCalledWith(
+        'owner@example.com',
+        'Test Bot',
+        expect.objectContaining({ email }),
+        'en',
+      );
+      expect(result.status).toBe('delivered');
+    });
+
+    it('uses TeamMember.email when the owner has no linked User (pending invite edge case)', async () => {
+      prisma.customerBots.findUnique.mockResolvedValue({
+        id: botId,
+        botName: 'Test Bot',
+        teamId: 'team-1',
+        leadDestinations: [],
+        leadVerificationRequired: false,
+      });
+      prisma.teamMember.findFirst.mockResolvedValue({
+        user: null,
+        email: 'pending-owner@example.com',
+      });
+      prisma.botLeads.create.mockResolvedValue({ id: 'lead-1' });
+
+      await service.submit({ botId, chatId: null, leadData });
+
+      expect(mail.sendLeadNotification).toHaveBeenCalledWith(
+        'pending-owner@example.com',
+        'Test Bot',
+        expect.objectContaining({ email }),
+        'en',
+      );
+    });
+
+    it('records no_destinations_and_no_team_owner when no owner email exists at all', async () => {
+      prisma.customerBots.findUnique.mockResolvedValue({
+        id: botId,
+        botName: 'Test Bot',
+        teamId: 'team-1',
+        leadDestinations: [],
+        leadVerificationRequired: false,
+      });
+      prisma.teamMember.findFirst.mockResolvedValue(null);
+      prisma.botLeads.create.mockResolvedValue({ id: 'lead-1' });
+
+      const result = await service.submit({ botId, chatId: null, leadData });
+
+      expect(mail.sendLeadNotification).not.toHaveBeenCalled();
+      expect(prisma.botLeads.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          deliveryErrors: [{ channel: 'none', error: 'no_destinations_and_no_team_owner' }],
+        }),
+      });
+      expect(result.status).toBe('failed');
+    });
+
+    it('honors explicit leadDestinations without falling back', async () => {
+      prisma.customerBots.findUnique.mockResolvedValue({
+        id: botId,
+        botName: 'Test Bot',
+        teamId: 'team-1',
+        leadDestinations: [
+          { channel: 'email', target: 'configured@example.com', enabled: true },
+        ],
+        leadVerificationRequired: false,
+      });
+      prisma.botLeads.create.mockResolvedValue({ id: 'lead-1' });
+
+      await service.submit({ botId, chatId: null, leadData });
+
+      expect(prisma.teamMember.findFirst).not.toHaveBeenCalled();
+      expect(mail.sendLeadNotification).toHaveBeenCalledWith(
+        'configured@example.com',
+        'Test Bot',
+        expect.any(Object),
+        'en',
       );
     });
   });
