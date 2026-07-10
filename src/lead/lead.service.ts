@@ -79,30 +79,49 @@ export class LeadService {
       }
     }
 
-    const destinations = ((bot.leadDestinations as unknown as LeadDestination[]) || []).filter(
+    let destinations = ((bot.leadDestinations as unknown as LeadDestination[]) || []).filter(
       (d) => d.enabled,
     );
 
+    // Fallback: an unconfigured `leadDestinations` (new bot, or bot owner
+    // never opened the Lead Notifications tab) still delivers to the team
+    // owner's account email. Without this, a successful calendar booking
+    // silently drops the notification and the bot owner never learns a
+    // lead came in. Explicit user-configured destinations always win.
     if (destinations.length === 0) {
-      const lead = await this.prisma.botLeads.create({
-        data: {
-          botId,
-          chatId: chatId || null,
-          leadData: cleanLeadData,
+      const ownerMembership = await this.prisma.teamMember.findFirst({
+        where: { teamId: bot.teamId, role: 'TEAM_OWNER' },
+        include: { user: true },
+      });
+      const ownerEmail = ownerMembership?.user?.email || ownerMembership?.email || '';
+      if (ownerEmail) {
+        console.log(
+          `[LeadCapture] leadDestinations empty for bot ${botId}, ` +
+            `falling back to team owner ${ownerEmail}`,
+        );
+        destinations = [
+          { channel: 'email', target: ownerEmail, enabled: true } as LeadDestination,
+        ];
+      } else {
+        const lead = await this.prisma.botLeads.create({
+          data: {
+            botId,
+            chatId: chatId || null,
+            leadData: cleanLeadData,
+            channelsAttempted: [],
+            channelsSucceeded: [],
+            deliveryErrors: [{ channel: 'none', error: 'no_destinations_and_no_team_owner' }],
+            status: 'NEW',
+            verified,
+          },
+        });
+        return {
+          status: 'failed',
+          leadId: lead.id,
           channelsAttempted: [],
           channelsSucceeded: [],
-          deliveryErrors: [{ channel: 'none', error: 'no_destinations_configured' }],
-          status: 'NEW',
-          verified,
-        },
-      });
-
-      return {
-        status: 'failed',
-        leadId: lead.id,
-        channelsAttempted: [],
-        channelsSucceeded: [],
-      };
+        };
+      }
     }
 
     const channelsAttempted: string[] = [];
