@@ -51,8 +51,19 @@ export class EventsGateway {
     this.server.to(`agent-${agentUserId}`).emit('new_customer_message', payload);
   }
 
+  // Ajana: bir ziyaretçi canlı destek talep etti (dashboard'da toast/ses için,
+  // sessiz new_customer_message'dan ayrı, dikkat çekici bir event)
+  async notifyHandoffRequested(agentUserId: string, payload: any) {
+    this.server.to(`agent-${agentUserId}`).emit('handoff_requested', payload);
+  }
+
   // Müşteri widget'ına: ajan yeni mesaj gönderdi
   async notifyCustomer(chatId: string, payload: any) {
     this.server.to(`chat-${chatId}`).emit('agent_message', payload);
+  }
+
+  // Müşteri widget'ına: chat sona erdi (ajan kapattı / cron otomatik kapattı)
+  async notifyChatEnded(chatId: string, payload: any) {
+    this.server.to(`chat-${chatId}`).emit('chat_ended', payload);
   }
 }

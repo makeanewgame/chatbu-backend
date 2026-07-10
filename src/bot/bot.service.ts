@@ -697,6 +697,29 @@ export class BotService {
                 type: 'auto_handover',
                 message: 'New live chat conversation assigned to you.',
               });
+
+              const sessionLink = `${process.env.FRONTEND_URL}/live-chat/${activeChat.id}`;
+              this.eventsGateway.notifyHandoffRequested(defaultAgentId, {
+                chatId: activeChat.id,
+                botName: botUser.botName,
+                sessionLink,
+              });
+
+              try {
+                const agentUser = await this.prisma.user.findUnique({
+                  where: { id: defaultAgentId },
+                  select: { email: true },
+                });
+                if (agentUser?.email) {
+                  await this.mailService.sendHandoffNotification(
+                    agentUser.email,
+                    botUser.botName,
+                    sessionLink,
+                  );
+                }
+              } catch (mailError) {
+                console.log('Handoff notification email failed:', mailError);
+              }
             }
           } catch (e) {
             console.log('Auto-handover failed:', e);
