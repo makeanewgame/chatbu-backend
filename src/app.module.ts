@@ -31,6 +31,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { MetaWhatsappModule } from './meta-whatsapp/meta-whatsapp.module';
 import { WidgetModule } from './widget/widget.module';
 import { LeadModule } from './lead/lead.module';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 
 @Module({
   imports: [
@@ -62,7 +63,19 @@ import { LeadModule } from './lead/lead.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-    }), AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule],
+    }),
+    // Prometheus /metrics endpoint on the existing HTTP port (3001).
+    // Default label set includes `app: chatbu-backend`. Node process
+    // metrics (event loop lag, GC, heap) enabled — cheap and standard.
+    // kube-prometheus-stack (observability Phase 2A) picks this up
+    // via the ServiceMonitor added to k8s/deployments/servicemonitors.yaml
+    // in the same PR. Custom counters + Prisma-duration histogram
+    // ship in Phase 3 PR-4.
+    PrometheusModule.register({
+      defaultLabels: { app: 'chatbu-backend' },
+      defaultMetrics: { enabled: true },
+    }),
+    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule],
   controllers: [AppController],
   providers: [
     AppService,
