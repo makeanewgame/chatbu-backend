@@ -1,6 +1,7 @@
 import {
     GoneException,
     Injectable,
+    Logger,
     NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,11 +13,18 @@ const INTEGRATION_TYPE = 'google-calendar';
 // Full `calendar` scope is required so check_availability can call freebusy.query —
 // `calendar.events` alone returns 403 insufficientPermissions on freebusy. Narrowing
 // this scope was a drive-by change in 64b977c that broke every booking flow.
-const SCOPES = ['https://www.googleapis.com/auth/calendar'];
+// `openid` + `email` are required for Google to return an id_token on token exchange —
+// without them handleCallback() below can never populate connected_email.
+const SCOPES = [
+    'https://www.googleapis.com/auth/calendar',
+    'openid',
+    'email',
+];
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
 
 @Injectable()
 export class GoogleCalendarService {
+    private readonly logger = new Logger(GoogleCalendarService.name);
     private oauth2Client: OAuth2Client;
 
     constructor(
@@ -60,12 +68,23 @@ export class GoogleCalendarService {
         // Extract connected email from id_token if present
         let connectedEmail: string | undefined;
         if (tokens.id_token) {
-            const ticket = await this.oauth2Client.verifyIdToken({
-                idToken: tokens.id_token,
-                audience: this.configService.get<string>('GOOGLE_CLIENT_ID'),
-            });
-            connectedEmail = ticket.getPayload()?.email;
+            try {
+                const ticket = await this.oauth2Client.verifyIdToken({
+                    idToken: tokens.id_token,
+                    audience: this.configService.get<string>('GOOGLE_CLIENT_ID'),
+                });
+                connectedEmail = ticket.getPayload()?.email;
+            } catch (err) {
+                // TEMP DEBUG - remove after diagnosing missing connected_email
+                this.logger.warn(
+                    `verifyIdToken failed: ${err instanceof Error ? err.message : err}`,
+                );
+            }
         }
+        // TEMP DEBUG - remove after diagnosing missing connected_email
+        this.logger.warn(
+            `handleCallback: has_id_token=${!!tokens.id_token} connectedEmail=${connectedEmail ?? 'null'} grantedScope=${(tokens as any).scope ?? 'n/a'}`,
+        );
 
         const config = {
             botId,

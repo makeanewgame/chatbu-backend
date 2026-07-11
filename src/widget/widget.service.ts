@@ -12,6 +12,7 @@ import { BotService } from '../bot/bot.service';
 import { MinioClientService } from '../minio-client/minio-client.service';
 import { MailService } from '../mail/mail.service';
 import { LeadDestination } from '../bot/lead-destination.constants';
+import { EventsGateway } from '../events/events.gateway';
 
 const FEEDBACK_ANSWER_TO_RATING: Record<'yes' | 'partial' | 'no', number> = {
     yes: 5,
@@ -28,6 +29,7 @@ export class WidgetService {
         private botService: BotService,
         private minioClientService: MinioClientService,
         private mailService: MailService,
+        private eventsGateway: EventsGateway,
     ) { }
 
     // ---------------------------------------------------------------------------
@@ -269,16 +271,30 @@ export class WidgetService {
     @Cron('* * * * *')
     async autoCloseInactiveBotChats() {
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-        await this.prisma.customerChats.updateMany({
+        const chatsToClose = await this.prisma.customerChats.findMany({
             where: {
                 chatStatus: 'BOT_ACTIVE',
                 isDeleted: false,
                 updatedAt: { lt: tenMinutesAgo },
             },
+            select: { id: true, chatId: true },
+        });
+
+        if (chatsToClose.length === 0) {
+            return;
+        }
+
+        await this.prisma.customerChats.updateMany({
+            where: { id: { in: chatsToClose.map((c) => c.id) } },
             data: {
                 chatStatus: 'CLOSED',
             },
         });
+
+        for (const chat of chatsToClose) {
+            this.eventsGateway.notifyChatEnded(chat.id, { chatId: chat.id, reason: 'auto_closed_inactivity' });
+            this.eventsGateway.notifyChatEnded(chat.chatId, { chatId: chat.chatId, reason: 'auto_closed_inactivity' });
+        }
     }
 
     // ---------------------------------------------------------------------------
@@ -314,7 +330,34 @@ export class WidgetService {
         }
 
         const { botId, teamId } = payload;
+        return this.recordFeedback(botId, teamId, chatId, rating, answer, comment);
+    }
 
+    // ---------------------------------------------------------------------------
+    // Same feedback flow as submitFeedback above, for the dashboard's own
+    // internal "test your chatbot" panel (ChatForm.tsx, /bot/chat — an
+    // authenticated dashboard user, not a widget visitor with a sessionToken).
+    // Trusts botId/teamId straight from the authenticated request the same
+    // way BotController#chat already does.
+    // ---------------------------------------------------------------------------
+    async submitFeedbackAuthenticated(
+        botId: string,
+        teamId: string,
+        chatId: string,
+        answer: 'yes' | 'partial' | 'no',
+        comment?: string,
+    ) {
+        return this.recordFeedback(botId, teamId, chatId, undefined, answer, comment);
+    }
+
+    private async recordFeedback(
+        botId: string,
+        teamId: string,
+        chatId: string,
+        rating?: number,
+        answer?: 'yes' | 'partial' | 'no',
+        comment?: string,
+    ) {
         // 2. Resolve the 1-5 rating from either shape
         let resolvedRating: number;
         if (answer !== undefined) {
@@ -331,10 +374,12 @@ export class WidgetService {
             throw new UnauthorizedException('rating or answer is required');
         }
 
-        // 3. Update the chat record — only if it belongs to the verified bot/team
+        // 3. Update the chat record — only if it belongs to the verified bot/team.
+        // Any conversation that received feedback is considered concluded,
+        // regardless of which trigger opened the feedback panel — mark it CLOSED.
         await this.prisma.customerChats.updateMany({
             where: { chatId, teamId, isDeleted: false },
-            data: { feedbackRating: resolvedRating },
+            data: { feedbackRating: resolvedRating, chatStatus: 'CLOSED' },
         });
 
         if (answer === undefined) {

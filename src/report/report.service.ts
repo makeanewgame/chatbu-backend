@@ -23,6 +23,7 @@ export class ReportService {
             },
             select: {
                 id: true,
+                chatId: true,
                 teamId: true,
                 createdAt: true,
                 updatedAt: true,
@@ -68,7 +69,34 @@ export class ReportService {
             }
         }
 
-        return chatHistoryList;
+        // ChatFeedback isn't a formal Prisma relation on CustomerChats (it's
+        // only linked by the shared `chatId` string), so the written comment
+        // behind a "Kısmen"/"Hayır" rating has to be joined manually here —
+        // batch-fetched once for the whole list rather than N+1 queries.
+        const feedbackChatIds = chatHistoryList
+            .map((chat) => chat.chatId)
+            .filter((chatId): chatId is string => !!chatId);
+
+        const feedbackComments = feedbackChatIds.length
+            ? await this.prisma.chatFeedback.findMany({
+                where: { chatId: { in: feedbackChatIds } },
+                orderBy: { createdAt: 'desc' },
+                select: { chatId: true, comment: true },
+            })
+            : [];
+
+        // Most recent comment wins if a chat somehow has more than one feedback row.
+        const commentByChatId = new Map<string, string | null>();
+        for (const fb of feedbackComments) {
+            if (fb.chatId && !commentByChatId.has(fb.chatId)) {
+                commentByChatId.set(fb.chatId, fb.comment ?? null);
+            }
+        }
+
+        return chatHistoryList.map((chat) => ({
+            ...chat,
+            feedbackComment: chat.chatId ? commentByChatId.get(chat.chatId) ?? null : null,
+        }));
     }
 
     async getChatHistoryDetail(teamId: string, chatId: string) {
@@ -476,6 +504,15 @@ export class ReportService {
             where: { id: chat.id },
             data: { chatStatus: 'CLOSED', updatedAt: new Date() },
         });
+
+        // Widget'a bilgi ver ki geri bildirim paneli açılabilsin. Widget hangi
+        // id ile odaya katıldıysa yakalasın diye hem chat.id hem chat.chatId
+        // odalarına gönderiyoruz — sendAgentMessage'daki desenle aynı.
+        // Temporary diagnostic — remove once the 2026-07-10 "agent closed
+        // chat but no feedback panel appeared" report is root-caused.
+        console.log('[closeChat] emitting chat_ended', { id: chat.id, chatId: chat.chatId });
+        this.eventsGateway.notifyChatEnded(chat.id, { chatId: chat.id, reason: 'agent_closed' });
+        this.eventsGateway.notifyChatEnded(chat.chatId, { chatId: chat.chatId, reason: 'agent_closed' });
 
         return { success: true };
     }

@@ -4,11 +4,12 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { BotModule } from '../bot/bot.module';
 import { MinioClientModule } from '../minio-client/minio-client.module';
 import { MailModule } from '../mail/mail.module';
+import { EventsModule } from '../events/events.module';
 import { WidgetController } from './widget.controller';
 import { WidgetService } from './widget.service';
 
 @Module({
-    imports: [PrismaModule, JwtModule, BotModule, MinioClientModule, MailModule],
+    imports: [PrismaModule, JwtModule, BotModule, MinioClientModule, MailModule, EventsModule],
     controllers: [WidgetController],
     providers: [WidgetService],
 })

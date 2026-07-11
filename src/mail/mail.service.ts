@@ -478,6 +478,50 @@ export class MailService {
     }
   }
 
+  async sendHandoffNotification(
+    to: string,
+    botName: string,
+    sessionLink: string,
+    lang: string = 'en',
+  ) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'handoff_notification.html' : 'handoff_notification_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+
+    const html = template({
+      botName,
+      sessionLink,
+      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      company: process.env.COMPANY_NAME,
+      privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      supportUrl: process.env.FRONTEND_SUPPORT_URL,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to,
+      subject: lang === 'en'
+        ? `Live chat requested on your Chatbu bot: ${botName}`
+        : `Chatbu botunuzda canlı destek talebi: ${botName}`,
+      html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Handoff notification sent to ${to}`);
+    } catch (error) {
+      this.logger.error(`Error sending handoff notification to ${to}:`, error);
+      throw error;
+    }
+  }
+
   async sendLeadVerificationCode(
     to: string,
     code: string,
