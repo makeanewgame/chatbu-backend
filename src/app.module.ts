@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
@@ -32,6 +32,11 @@ import { MetaWhatsappModule } from './meta-whatsapp/meta-whatsapp.module';
 import { WidgetModule } from './widget/widget.module';
 import { LeadModule } from './lead/lead.module';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import {
+  chatbuHttpRequestDurationSeconds,
+  chatbuHttpRequestsTotal,
+} from './prometheus/metrics.providers';
+import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.interceptor';
 
 @Module({
   imports: [
@@ -82,6 +87,19 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // ---- Prometheus RED metrics (Phase 3 PR-4) --------------------
+    // Two custom metrics wrap every controller request:
+    //   chatbu_http_requests_total{method,route,status}
+    //   chatbu_http_request_duration_seconds{method,route}
+    // Cardinality guarded by using NestJS's route pattern, not the raw
+    // URL. `defaultMetrics` (from PrometheusModule.register above)
+    // already covers the Node process side; this layer is HTTP-shape.
+    chatbuHttpRequestsTotal,
+    chatbuHttpRequestDurationSeconds,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PrometheusHttpInterceptor,
     },
   ],
 })
