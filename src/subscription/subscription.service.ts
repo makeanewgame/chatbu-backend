@@ -471,7 +471,10 @@ export class SubscriptionService {
         return { message: 'Payment method updated successfully' };
     }
 
-    async checkTokenQuota(userId: string): Promise<{ allowed: boolean; message?: string; tokensRemaining?: number; spendingLimit?: number; tier?: string }> {
+    async checkTokenQuota(
+        userId: string,
+        context?: { teamId?: string; entityId?: string; entityName?: string },
+    ): Promise<{ allowed: boolean; message?: string; tokensRemaining?: number; spendingLimit?: number; tier?: string }> {
         const subscription = await this.getOrCreateSubscription(userId);
         const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
@@ -493,6 +496,11 @@ export class SubscriptionService {
                     action: 'QUOTA_EXCEEDED',
                     status: 'ERROR',
                     userId,
+                    userName: user?.name,
+                    userEmail: user?.email,
+                    teamId: context?.teamId,
+                    entityId: context?.entityId,
+                    entityName: context?.entityName,
                     message: `Free token quota exceeded`,
                     details: { tier: 'FREE', tokensUsed: subscription.tokensUsedThisMonth, limit: totalAvailable },
                 });

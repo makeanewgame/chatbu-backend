@@ -36,7 +36,7 @@ export class BotService {
     private eventsGateway: EventsGateway,
   ) { }
 
-  async createBot(body: CreateBotRequest) {
+  async createBot(body: CreateBotRequest, userId?: string, userEmail?: string) {
     const user = await this.prisma.team.findUnique({
       where: {
         id: body.user,
@@ -105,6 +105,8 @@ export class BotService {
             category: 'BOT',
             action: 'CREATE',
             status: 'SUCCESS',
+            userId,
+            userEmail,
             teamId: body.user,
             entityId: bot.id,
             entityName: body.botName,
@@ -149,7 +151,7 @@ export class BotService {
     }
   }
 
-  async deleteBot(body: DeleteBotRequest) {
+  async deleteBot(body: DeleteBotRequest, userId?: string, userEmail?: string) {
     const findUser = await this.prisma.team.findUnique({
       where: {
         id: body.teamId,
@@ -211,6 +213,8 @@ export class BotService {
       category: 'BOT',
       action: 'DELETE',
       status: 'SUCCESS',
+      userId,
+      userEmail,
       teamId: body.teamId,
       entityId: body.botId,
       entityName: bot.botName,
@@ -353,7 +357,7 @@ export class BotService {
     throw new Error('Error listing bots');
   }
 
-  async renameBot(body: RenameBotRequest) {
+  async renameBot(body: RenameBotRequest, userId?: string, userEmail?: string) {
     const findUser = await this.prisma.team.findUnique({
       where: {
         id: body.teamId,
@@ -380,6 +384,8 @@ export class BotService {
         category: 'BOT',
         action: 'UPDATE',
         status: 'SUCCESS',
+        userId,
+        userEmail,
         teamId: body.teamId,
         entityId: body.botId,
         entityName: body.name,
@@ -523,7 +529,11 @@ export class BotService {
       }
 
       // Check subscription quota
-      const quotaCheck = await this.subscriptionService.checkTokenQuota(team.ownerId);
+      const quotaCheck = await this.subscriptionService.checkTokenQuota(team.ownerId, {
+        teamId: body.teamId,
+        entityId: body.botId,
+        entityName: botUser.botName,
+      });
       if (!quotaCheck.allowed) {
         // Send email notification if user is free tier
         const subscription = await this.prisma.subscription.findUnique({
@@ -924,7 +934,7 @@ export class BotService {
   //   return token;
   // }
 
-  async updateModelTier(body: UpdateModelTierRequest, teamId: string) {
+  async updateModelTier(body: UpdateModelTierRequest, teamId: string, userId?: string, userEmail?: string) {
     if (!MODEL_TIERS.includes(body.modelTier as any)) {
       throw new BadRequestException('Invalid model tier');
     }
@@ -958,6 +968,8 @@ export class BotService {
           category: 'BOT',
           action: 'UPDATE_MODEL_TIER',
           status: 'REJECTED_PLAN',
+          userId,
+          userEmail,
           teamId,
           entityId: bot.id,
           entityName: bot.botName,
@@ -982,6 +994,8 @@ export class BotService {
       category: 'BOT',
       action: 'UPDATE_MODEL_TIER',
       status: 'SUCCESS',
+      userId,
+      userEmail,
       teamId,
       entityId: bot.id,
       entityName: bot.botName,
@@ -991,7 +1005,7 @@ export class BotService {
     return { message: 'Model tier updated', bot: updated };
   }
 
-  async updateLeadDestinations(body: UpdateLeadDestinationsRequest, teamId: string) {
+  async updateLeadDestinations(body: UpdateLeadDestinationsRequest, teamId: string, userId?: string, userEmail?: string) {
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: body.botId, isDeleted: false },
     });
@@ -1015,6 +1029,8 @@ export class BotService {
       category: 'BOT',
       action: 'UPDATE_LEAD_DESTINATIONS',
       status: 'SUCCESS',
+      userId,
+      userEmail,
       teamId,
       entityId: bot.id,
       entityName: bot.botName,
@@ -1024,7 +1040,7 @@ export class BotService {
     return { message: 'Lead destinations updated', bot: updated };
   }
 
-  async updateLeadVerification(body: UpdateLeadVerificationRequest, teamId: string) {
+  async updateLeadVerification(body: UpdateLeadVerificationRequest, teamId: string, userId?: string, userEmail?: string) {
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: body.botId, isDeleted: false },
     });
@@ -1048,6 +1064,8 @@ export class BotService {
       category: 'BOT',
       action: 'UPDATE_LEAD_VERIFICATION',
       status: 'SUCCESS',
+      userId,
+      userEmail,
       teamId,
       entityId: bot.id,
       entityName: bot.botName,
