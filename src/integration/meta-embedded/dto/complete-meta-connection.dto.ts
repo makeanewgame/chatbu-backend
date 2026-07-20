@@ -30,4 +30,8 @@ export class CompleteMetaConnectionDto {
     @IsOptional()
     @IsString()
     instagramUsername?: string;
+
+    @IsOptional()
+    @IsString()
+    fbUserId?: string;
 }
