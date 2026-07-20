@@ -517,15 +517,29 @@ export class ReportService {
         return { success: true };
     }
 
-    // ── Harici kanal teslimi (WhatsApp / Meta Messenger) ────────────────────
+    // ── Harici kanal teslimi (WhatsApp / Meta Messenger / Instagram) ────────
     private async deliverToExternalChannel(chat: any, message: string) {
-        // Integration'ı botId + teamId üzerinden bul
-        const integration = await this.prisma.integrations.findFirst({
+        // Kanala göre entegrasyon tiplerini daralt — aksi halde aynı bota bağlı
+        // birden fazla kanal (ör. Messenger + Instagram) varken yanlış config
+        // seçilebilir.
+        const typesByChannel: Record<string, string[]> = {
+            WHATSAPP: ['whatsapp_embedded', 'whatsapp_manual', 'whatsapp'],
+            META_MESSENGER: ['metabusiness_embedded', 'metabusiness'],
+            INSTAGRAM: ['instagram_embedded', 'instagram'],
+        };
+        const candidateTypes = typesByChannel[chat.channel];
+
+        if (!candidateTypes) return;
+
+        const integrations = await this.prisma.integrations.findMany({
             where: {
                 teamId: chat.teamId,
+                type: { in: candidateTypes },
                 config: { path: ['botId'], equals: chat.botId },
             },
         });
+        // Embedded (OAuth) bağlantı varsa onu tercih et, yoksa manuel olana düş.
+        const integration = integrations.find((i) => i.type.endsWith('_embedded')) ?? integrations[0];
 
         if (!integration) {
             throw new NotFoundException('No integration found for this bot');
@@ -535,7 +549,7 @@ export class ReportService {
 
         if (chat.channel === 'WHATSAPP') {
             const phoneNumberId: string = cfg?.phoneNumberId;
-            const accessToken: string = cfg?.accessToken;
+            const accessToken: string = cfg?.businessToken ?? cfg?.accessToken;
 
             if (!phoneNumberId || !accessToken || !chat.externalContactId) {
                 throw new BadRequestException('Missing WhatsApp config or contact ID');
@@ -551,15 +565,15 @@ export class ReportService {
                 },
                 { headers: { Authorization: `Bearer ${accessToken}` } },
             );
-        } else if (chat.channel === 'META_MESSENGER') {
+        } else if (chat.channel === 'META_MESSENGER' || chat.channel === 'INSTAGRAM') {
             const pageAccessToken: string = cfg?.pageAccessToken;
 
             if (!pageAccessToken || !chat.externalContactId) {
-                throw new BadRequestException('Missing Messenger config or contact ID');
+                throw new BadRequestException(`Missing ${chat.channel} config or contact ID`);
             }
 
             await axios.post(
-                `https://graph.facebook.com/v21.0/me/messages`,
+                `https://graph.facebook.com/v23.0/me/messages`,
                 {
                     recipient: { id: chat.externalContactId },
                     message: { text: message },

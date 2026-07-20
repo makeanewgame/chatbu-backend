@@ -3,6 +3,7 @@ import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { BotService } from 'src/bot/bot.service';
+import { MetaEmbeddedService } from 'src/integration/meta-embedded/meta-embedded.service';
 
 @Injectable()
 export class MetaService {
@@ -12,6 +13,7 @@ export class MetaService {
         private prisma: PrismaService,
         private botService: BotService,
         private configService: ConfigService,
+        private metaEmbeddedService: MetaEmbeddedService,
     ) { }
 
     async verifyWebhook(mode: string, verifyToken: string, challenge: string): Promise<string> {
@@ -19,8 +21,16 @@ export class MetaService {
             throw new ForbiddenException('Invalid hub.mode');
         }
 
+        // Centralized token: used by the Meta Embedded (Messenger/Instagram) connect flow,
+        // configured once in the App Dashboard's webhook settings.
+        const globalVerifyToken = this.configService.get<string>('META_WEBHOOK_VERIFY_TOKEN');
+        if (globalVerifyToken && verifyToken === globalVerifyToken) {
+            return challenge;
+        }
+
+        // Legacy fallback: per-integration verify token for manually configured integrations.
         const integrations = await this.prisma.integrations.findMany({
-            where: { type: 'metabusiness' },
+            where: { type: { in: ['metabusiness', 'instagram'] } },
         });
 
         const match = integrations.find(i => {
@@ -36,22 +46,21 @@ export class MetaService {
     }
 
     async handleWebhook(body: any): Promise<void> {
-        if (body.object !== 'page') return;
+        if (body.object === 'page') {
+            await this.handlePageWebhook(body);
+        } else if (body.object === 'instagram') {
+            await this.handleInstagramWebhook(body);
+        }
+    }
 
+    private async handlePageWebhook(body: any): Promise<void> {
         for (const entry of body.entry || []) {
             const pageId = entry.id;
 
-            const integrations = await this.prisma.integrations.findMany({
-                where: { type: 'metabusiness' },
-            });
-
-            const integration = integrations.find(i => {
-                const config = i.config as any;
-                return config?.pageId === pageId;
-            });
+            const integration = await this.metaEmbeddedService.findByPageId(pageId);
 
             if (!integration) {
-                this.logger.warn(`No metabusiness integration found for pageId: ${pageId}`);
+                this.logger.warn(`No Messenger integration found for pageId: ${pageId}`);
                 continue;
             }
 
@@ -84,17 +93,69 @@ export class MetaService {
                     );
 
                     const replyText = response?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
-                    await this.sendFacebookMessage(senderId, replyText, pageAccessToken);
+                    await this.sendMetaMessage(senderId, replyText, pageAccessToken);
                 } catch (err) {
-                    this.logger.error(`Error processing message from ${senderId}: ${err?.toString()}`);
+                    this.logger.error(`Error processing Messenger message from ${senderId}: ${err?.toString()}`);
                 }
             }
         }
     }
 
-    private async sendFacebookMessage(recipientId: string, text: string, pageAccessToken: string): Promise<void> {
+    private async handleInstagramWebhook(body: any): Promise<void> {
+        for (const entry of body.entry || []) {
+            const instagramAccountId = entry.id;
+
+            const integration = await this.metaEmbeddedService.findByInstagramAccountId(instagramAccountId);
+
+            if (!integration) {
+                this.logger.warn(`No Instagram integration found for instagramAccountId: ${instagramAccountId}`);
+                continue;
+            }
+
+            const config = integration.config as any;
+            const botId = config?.botId;
+            const pageAccessToken = config?.pageAccessToken;
+
+            if (!botId || !pageAccessToken) {
+                this.logger.warn(`Missing botId or pageAccessToken for instagramAccountId: ${instagramAccountId}`);
+                continue;
+            }
+
+            for (const messagingEvent of entry.messaging || []) {
+                if (!messagingEvent.message || !messagingEvent.message.text) continue;
+
+                const senderId = messagingEvent.sender.id;
+                const text = messagingEvent.message.text;
+
+                try {
+                    const response = await this.botService.chat(
+                        {
+                            botId,
+                            teamId: integration.teamId,
+                            message: text,
+                            chatId: `ig_${senderId}`,
+                            sender: senderId,
+                            date: new Date().toISOString(),
+                        } as any,
+                        '0.0.0.0',
+                    );
+
+                    const replyText = response?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
+                    await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                } catch (err) {
+                    this.logger.error(`Error processing Instagram message from ${senderId}: ${err?.toString()}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Sends a text reply via the unified Meta Send API. Works for both Messenger (PSID)
+     * and Page-linked Instagram (IGSID) recipients when given that Page's access token.
+     */
+    private async sendMetaMessage(recipientId: string, text: string, pageAccessToken: string): Promise<void> {
         await axios.post(
-            'https://graph.facebook.com/v19.0/me/messages',
+            'https://graph.facebook.com/v23.0/me/messages',
             {
                 recipient: { id: recipientId },
                 message: { text },

@@ -5,13 +5,15 @@ import { GoogleCalendarController } from './google-calendar/google-calendar.cont
 import { GoogleCalendarService } from './google-calendar/google-calendar.service';
 import { WhatsAppEmbeddedController } from './whatsapp-embedded/whatsapp-embedded.controller';
 import { WhatsAppEmbeddedService } from './whatsapp-embedded/whatsapp-embedded.service';
+import { MetaEmbeddedController } from './meta-embedded/meta-embedded.controller';
+import { MetaEmbeddedService } from './meta-embedded/meta-embedded.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { BookingModule } from './booking/booking.module';
 
 @Module({
     imports: [PrismaModule, BookingModule],
-    controllers: [IntegrationController, GoogleCalendarController, WhatsAppEmbeddedController],
-    providers: [IntegrationService, GoogleCalendarService, WhatsAppEmbeddedService],
-    exports: [WhatsAppEmbeddedService],
+    controllers: [IntegrationController, GoogleCalendarController, WhatsAppEmbeddedController, MetaEmbeddedController],
+    providers: [IntegrationService, GoogleCalendarService, WhatsAppEmbeddedService, MetaEmbeddedService],
+    exports: [WhatsAppEmbeddedService, MetaEmbeddedService],
 })
 export class IntegrationModule { }
