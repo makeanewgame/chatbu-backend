@@ -69,8 +69,9 @@ export class BotController {
   })
   @Post('create')
   @UseGuards(AccessTokenGuard)
-  async createBot(@Body() body: CreateBotRequest) {
-    return this.botService.createBot(body);
+  async createBot(@Body() body: CreateBotRequest, @Req() req: Request) {
+    const user = req.user as IUser;
+    return this.botService.createBot(body, user.sub, user.email);
   }
   //#endregion
 
@@ -109,8 +110,9 @@ export class BotController {
   })
   @Post('delete')
   @UseGuards(AccessTokenGuard)
-  async deleteBot(@Body() body: DeleteBotRequest) {
-    return this.botService.deleteBot(body);
+  async deleteBot(@Body() body: DeleteBotRequest, @Req() req: Request) {
+    const user = req.user as IUser;
+    return this.botService.deleteBot(body, user.sub, user.email);
   }
   //#endregion
 
@@ -192,8 +194,9 @@ export class BotController {
   })
   @Post('rename')
   @UseGuards(AccessTokenGuard)
-  async renameBot(@Body() body: RenameBotRequest) {
-    return this.botService.renameBot(body);
+  async renameBot(@Body() body: RenameBotRequest, @Req() req: Request) {
+    const user = req.user as IUser;
+    return this.botService.renameBot(body, user.sub, user.email);
   }
   //#endregion
 
@@ -443,7 +446,7 @@ export class BotController {
   @UseGuards(AccessTokenGuard)
   async updateModelTier(@Body() body: UpdateModelTierRequest, @Req() req: Request) {
     const user = req.user as IUser;
-    return this.botService.updateModelTier(body, user.teamId);
+    return this.botService.updateModelTier(body, user.teamId, user.sub, user.email);
   }
   //#endregion
 
@@ -459,7 +462,7 @@ export class BotController {
     @Req() req: Request,
   ) {
     const user = req.user as IUser;
-    return this.botService.updateLeadDestinations(body, user.teamId);
+    return this.botService.updateLeadDestinations(body, user.teamId, user.sub, user.email);
   }
   //#endregion
 
@@ -474,7 +477,7 @@ export class BotController {
     @Req() req: Request,
   ) {
     const user = req.user as IUser;
-    return this.botService.updateLeadVerification(body, user.teamId);
+    return this.botService.updateLeadVerification(body, user.teamId, user.sub, user.email);
   }
   //#endregion
 

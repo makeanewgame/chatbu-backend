@@ -316,6 +316,27 @@ export class AdminController {
     }
     //#endregion
 
+    //#region getBotCustomerChats
+    @ApiOperation({ summary: 'Get customer chats (conversations) for a bot (Admin only)' })
+    @ApiParam({ name: 'id', type: String, description: 'Bot ID' })
+    @ApiResponse({ status: 200, description: 'Customer chats retrieved' })
+    @Get('chatbots/:id/customer-chats')
+    async getBotCustomerChats(@Param('id') id: string) {
+        return this.adminService.getBotCustomerChats(id);
+    }
+    //#endregion
+
+    //#region getBotCustomerChatDetail
+    @ApiOperation({ summary: 'Get a single customer chat transcript for a bot (Admin only)' })
+    @ApiParam({ name: 'id', type: String, description: 'Bot ID' })
+    @ApiParam({ name: 'chatId', type: String, description: 'CustomerChats ID' })
+    @ApiResponse({ status: 200, description: 'Customer chat detail retrieved' })
+    @Get('chatbots/:id/customer-chats/:chatId')
+    async getBotCustomerChatDetail(@Param('id') id: string, @Param('chatId') chatId: string) {
+        return this.adminService.getBotCustomerChatDetail(id, chatId);
+    }
+    //#endregion
+
     //#region getBotVectorData
     @ApiOperation({ summary: 'Get vector DB documents for a bot (Admin only)' })
     @ApiParam({ name: 'id', type: String, description: 'Bot ID' })

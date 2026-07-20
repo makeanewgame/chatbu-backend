@@ -744,6 +744,141 @@ export class AdminService {
         };
     }
 
+    async getBotCustomerChats(botId: string) {
+        const bot = await this.prisma.customerBots.findUnique({ where: { id: botId } });
+
+        if (!bot) {
+            throw new NotFoundException('Bot not found');
+        }
+
+        const chatHistoryList = await this.prisma.customerChats.findMany({
+            where: { botId },
+            select: {
+                id: true,
+                chatId: true,
+                teamId: true,
+                createdAt: true,
+                updatedAt: true,
+                totalTokens: true,
+                chatStatus: true,
+                channel: true,
+                agentUserId: true,
+                agent: {
+                    select: { id: true, name: true, email: true },
+                },
+                botId: true,
+                feedbackRating: true,
+                CustomerChatDetails: {
+                    where: { sender: 'user' },
+                    take: 1,
+                    orderBy: { createdAt: 'desc' },
+                    select: { message: true, createdAt: true },
+                },
+                GeoLocation: {
+                    select: { country: true, city: true },
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        const feedbackChatIds = chatHistoryList
+            .map((chat) => chat.chatId)
+            .filter((chatId): chatId is string => !!chatId);
+
+        const feedbackComments = feedbackChatIds.length
+            ? await this.prisma.chatFeedback.findMany({
+                where: { chatId: { in: feedbackChatIds } },
+                orderBy: { createdAt: 'desc' },
+                select: { chatId: true, comment: true },
+            })
+            : [];
+
+        const commentByChatId = new Map<string, string | null>();
+        for (const fb of feedbackComments) {
+            if (fb.chatId && !commentByChatId.has(fb.chatId)) {
+                commentByChatId.set(fb.chatId, fb.comment ?? null);
+            }
+        }
+
+        return {
+            botName: bot.botName,
+            data: chatHistoryList.map((chat) => ({
+                ...chat,
+                feedbackComment: chat.chatId ? commentByChatId.get(chat.chatId) ?? null : null,
+            })),
+        };
+    }
+
+    async getBotCustomerChatDetail(botId: string, chatId: string) {
+        const chat = await this.prisma.customerChats.findFirst({
+            where: { botId, id: chatId },
+            select: {
+                id: true,
+                chatId: true,
+                botId: true,
+                CustomerChatDetails: {
+                    where: { chatId },
+                    orderBy: { createdAt: 'asc' },
+                    select: {
+                        message: true,
+                        createdAt: true,
+                        sender: true,
+                        id: true,
+                        attachments: true,
+                    },
+                },
+            },
+        });
+
+        if (!chat) {
+            throw new NotFoundException('Chat not found');
+        }
+
+        const bucket = this.configService.get('S3_BUCKET_NAME');
+
+        const enrichedDetails = await Promise.all(
+            chat.CustomerChatDetails.map(async (detail) => {
+                if (!detail.attachments || !Array.isArray(detail.attachments)) {
+                    return detail;
+                }
+
+                const enrichedAttachments = await Promise.all(
+                    (detail.attachments as any[]).map(async (att) => {
+                        if (!att.objectPath) return att;
+
+                        const storageRecord = att.storageId
+                            ? await this.prisma.storage.findFirst({
+                                where: { id: att.storageId },
+                                select: { isDeleted: true },
+                            })
+                            : null;
+
+                        if (storageRecord?.isDeleted) {
+                            return {
+                                storageId: att.storageId,
+                                fileName: att.fileName,
+                                fileType: att.fileType,
+                                size: att.size,
+                                deleted: true,
+                            };
+                        }
+
+                        try {
+                            const presignedUrl = await this.minioClientService.getPresignedUrl(att.objectPath, bucket);
+                            return { ...att, presignedUrl, deleted: false };
+                        } catch {
+                            return { ...att, deleted: true };
+                        }
+                    }),
+                );
+
+                return { ...detail, attachments: enrichedAttachments };
+            }),
+        );
+
+        return { ...chat, CustomerChatDetails: enrichedDetails };
+    }
+
     async getServicesHealth() {
         const ingestUrl = this.configService.get('INGEST_ENPOINT');
         const results: any[] = [];
