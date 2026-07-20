@@ -75,6 +75,9 @@ export class MetaService {
 
             for (const messagingEvent of entry.messaging || []) {
                 if (!messagingEvent.message || !messagingEvent.message.text) continue;
+                // Echoes are our own bot's outbound messages reflected back by Meta —
+                // replying to them would create an infinite loop.
+                if (messagingEvent.message.is_echo) continue;
 
                 const senderId = messagingEvent.sender.id;
                 const text = messagingEvent.message.text;
@@ -123,6 +126,9 @@ export class MetaService {
 
             for (const messagingEvent of entry.messaging || []) {
                 if (!messagingEvent.message || !messagingEvent.message.text) continue;
+                // Echoes are our own bot's outbound messages reflected back by Meta —
+                // replying to them would create an infinite loop.
+                if (messagingEvent.message.is_echo) continue;
 
                 const senderId = messagingEvent.sender.id;
                 const text = messagingEvent.message.text;
