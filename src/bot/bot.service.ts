@@ -599,7 +599,8 @@ export class BotService {
       // Kanal tespiti: chatId prefix'inden otomatik belirle
       const chatChannel = body.chatId?.startsWith('wa_') ? 'WHATSAPP'
         : body.chatId?.startsWith('fb_') ? 'META_MESSENGER'
-          : 'WIDGET';
+          : body.chatId?.startsWith('ig_') ? 'INSTAGRAM'
+            : 'WIDGET';
       const externalContactId = (chatChannel !== 'WIDGET') ? body.sender : null;
 
       if (isNewChat) {

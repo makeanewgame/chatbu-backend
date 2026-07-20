@@ -565,6 +565,7 @@ enum ChatChannel {
   WIDGET
   WHATSAPP
   META_MESSENGER
+  INSTAGRAM
 }
 
 enum QuotaType {
