@@ -31,6 +31,8 @@ export class ReportService {
                 totalTokens: true,
                 chatStatus: true,
                 channel: true,
+                externalContactId: true,
+                externalContactName: true,
                 agentUserId: true,
                 agent: {
                     select: {
@@ -108,6 +110,9 @@ export class ReportService {
                 id: chatId,
             },
             select: {
+                channel: true,
+                externalContactId: true,
+                externalContactName: true,
                 CustomerChatDetails: {
                     where: {
                         chatId: chatId,
@@ -464,7 +469,7 @@ export class ReportService {
         });
         const agentName = agentUser?.name ? agentUser.name.trim().split(' ')[0] : undefined;
 
-        if (chat.channel === 'WHATSAPP' || chat.channel === 'META_MESSENGER') {
+        if (chat.channel === 'WHATSAPP' || chat.channel === 'META_MESSENGER' || chat.channel === 'INSTAGRAM') {
             await this.deliverToExternalChannel(chat, message);
         } else {
             // Widget: WebSocket üzerinden müşteriye ilet

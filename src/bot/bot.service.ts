@@ -478,7 +478,7 @@ export class BotService {
         await this.prisma.customerChatDetails.create({
           data: {
             chatId: activeChat.id,
-            sender: body.sender,
+            sender: 'user',
             message: body.message,
             attachments: body.attachments ? (body.attachments as any) : undefined,
             createdAt: new Date(body.date),
@@ -492,7 +492,7 @@ export class BotService {
         if (activeChat.agentUserId) {
           this.eventsGateway.notifyAgent(activeChat.agentUserId, {
             chatId: activeChat.id,
-            sender: body.sender,
+            sender: 'user',
             message: body.message,
             createdAt: new Date().toISOString(),
           });
@@ -613,12 +613,13 @@ export class BotService {
             totalTokens: tokenCount,
             channel: chatChannel,
             externalContactId: externalContactId,
+            externalContactName: body.externalContactName ?? null,
             createdAt: new Date(),
             updatedAt: new Date(),
             CustomerChatDetails: {
               create: [
                 {
-                  sender: body.sender,
+                  sender: 'user',
                   message: body.message,
                   attachments: body.attachments ? (body.attachments as any) : undefined,
                   createdAt: new Date(body.date),
@@ -654,7 +655,7 @@ export class BotService {
           data: [
             {
               chatId: activeChat.id,
-              sender: body.sender,
+              sender: 'user',
               message: body.message,
               attachments: body.attachments ? (body.attachments as any) : undefined,
               createdAt: new Date(body.date),
