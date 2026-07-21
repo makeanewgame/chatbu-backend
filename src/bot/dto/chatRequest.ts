@@ -35,4 +35,8 @@ export class ChatRequest {
 
   @IsOptional()
   attachments?: ChatAttachment[];
+
+  @IsOptional()
+  @IsString()
+  externalContactName?: string;
 }

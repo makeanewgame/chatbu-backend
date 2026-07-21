@@ -138,6 +138,7 @@ export class MetaService {
 
                 const senderId = messagingEvent.sender.id;
                 const text = messagingEvent.message.text;
+                const contactName = await this.fetchInstagramContactName(senderId, pageAccessToken);
 
                 try {
                     const response = await this.botService.chat(
@@ -147,6 +148,7 @@ export class MetaService {
                             message: text,
                             chatId: `ig_${senderId}`,
                             sender: senderId,
+                            externalContactName: contactName,
                             date: new Date().toISOString(),
                         } as any,
                         '0.0.0.0',
@@ -174,6 +176,25 @@ export class MetaService {
             },
             { params: { access_token: pageAccessToken } },
         );
+    }
+
+    /**
+     * Best-effort lookup of the customer's display name via the Instagram user profile API.
+     * Messenger has no equivalent here: Meta restricts the Messenger User Profile API's
+     * first_name/last_name/name fields to apps with extended access, which this app doesn't
+     * have yet (Standard Access only — see App Review status), so PSID lookups fail outright.
+     * Never throws — the chat is created with a missing name rather than failing entirely.
+     */
+    private async fetchInstagramContactName(igsid: string, pageAccessToken: string): Promise<string | undefined> {
+        try {
+            const { data } = await axios.get(`https://graph.facebook.com/v23.0/${igsid}`, {
+                params: { fields: 'name,username', access_token: pageAccessToken },
+            });
+            return data?.name || data?.username || undefined;
+        } catch (err) {
+            this.logger.warn(`Failed to fetch Instagram contact name for ${igsid}: ${err?.toString()}`);
+            return undefined;
+        }
     }
 
     // ─── WhatsApp Test Methods (Temporary – Meta App Review) ──────────────────
