@@ -1216,4 +1216,102 @@ export class ContentService {
             };
         }
     }
+
+    /**
+     * Phase B-3 — per-URL batch summary.
+     *
+     * Given the ML worker's task_id, join the request-side snapshot
+     * (`IngestBatch.pageList`) with the outcome side (`Content` rows
+     * with `taskId = X`) and return one entry per requested URL:
+     *
+     *   {
+     *     taskId, botId, triggeredBy, createdAt,
+     *     summary: { total, indexed, failed, notProcessed },
+     *     urls: [
+     *       { url, contentId, status, ingestionInfo, updatedAt }, ...
+     *     ]
+     *   }
+     *
+     * `notProcessed` = the URL was in the request but no Content row
+     * carries this taskId (either the URL matcher missed it, or the
+     * Content row was deleted after the ingest). Non-zero is worth
+     * flagging in the FE.
+     *
+     * Auth: batch's teamId must match the caller's. Returns `{ error }`
+     * on not-found / forbidden — matches the return-object convention
+     * used by the rest of this service (see reIngestContents).
+     */
+    async getIngestBatch(user: IUser, taskId: string) {
+        const batch = await this.prisma.ingestBatch.findUnique({
+            where: { taskId },
+        });
+        if (!batch) {
+            return { error: 'Ingest batch not found' };
+        }
+        if (batch.teamId !== user.teamId) {
+            return { error: 'Forbidden' };
+        }
+
+        const contents = await this.prisma.content.findMany({
+            where: {
+                taskId,
+                teamId: user.teamId,
+                isDeleted: false,
+            },
+            select: {
+                id: true,
+                content: true,
+                status: true,
+                ingestionInfo: true,
+                updatedAt: true,
+            },
+        });
+
+        // Build a normalized-URL → Content lookup for the per-URL join.
+        // Uses the same normalizer as the ingest path so URLs match
+        // regardless of trailing-slash / case-in-host drift.
+        const contentByUrl = new Map<string, typeof contents[number]>();
+        for (const c of contents) {
+            const rawUrl =
+                (c.content as any)?.url ||
+                (c.content as any)?.source ||
+                (c.content as any)?.fileUrl ||
+                (c.content as any)?.page_url;
+            const normalized = this.normalizeComparableUrl(rawUrl);
+            if (normalized) {
+                contentByUrl.set(normalized, c);
+            }
+        }
+
+        const pageList = Array.isArray(batch.pageList)
+            ? (batch.pageList as unknown as string[])
+            : [];
+        const urls = pageList.map((url) => {
+            const normalized = this.normalizeComparableUrl(url);
+            const c = normalized ? contentByUrl.get(normalized) : undefined;
+            return {
+                url,
+                contentId: c?.id ?? null,
+                status: c?.status ?? 'not_processed',
+                ingestionInfo: c?.ingestionInfo ?? null,
+                updatedAt: c?.updatedAt ?? null,
+            };
+        });
+
+        const summary = {
+            total: urls.length,
+            indexed: urls.filter((u) => u.status === 'INDEXED').length,
+            failed: urls.filter((u) => u.status === 'FAILED').length,
+            notProcessed: urls.filter((u) => u.status === 'not_processed').length,
+        };
+
+        return {
+            taskId: batch.taskId,
+            botId: batch.botId,
+            triggeredBy: batch.triggeredBy,
+            createdAt: batch.createdAt,
+            summary,
+            urls,
+        };
+    }
 }

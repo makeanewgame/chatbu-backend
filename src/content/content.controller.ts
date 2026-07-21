@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { ContentService } from './content.service';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
@@ -313,6 +313,21 @@ export class ContentController {
     async reIngestContents(@Body() body: any, @Req() req: any) {
         const user = req.user as IUser;
         return this.contentService.reIngestContents(user, body.contentIds, body.botId);
+    }
+    //#endregion
+
+    //#region getIngestBatch (Phase B-3)
+    @ApiOperation({ summary: 'Get per-URL outcome for an ingest batch by task_id' })
+    @ApiResponse({
+        status: 200,
+        description: 'Batch summary with per-URL status + audit trail',
+    })
+    @ApiBearerAuth()
+    @Get('ingestBatch/:taskId')
+    @UseGuards(AccessTokenGuard)
+    async getIngestBatch(@Param('taskId') taskId: string, @Req() req: any) {
+        const user = req.user as IUser;
+        return this.contentService.getIngestBatch(user, taskId);
     }
     //#endregion
 
