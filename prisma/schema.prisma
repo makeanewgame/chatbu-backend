@@ -8,39 +8,39 @@ datasource db {
 }
 
 model User {
-  id                    String          @id @default(cuid())
-  name                  String
-  email                 String          @unique
-  phoneNumber           String?         @unique @map("phonenumber")
-  password              String
-  refreshToken          String?
-  emailVerified         Boolean         @default(false)
-  phoneVerified         Boolean         @default(false)
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
-  activationCode        String?
-  verifiedAt            DateTime?
-  resetCode             String?
-  isDeleted             Boolean         @default(false)
-  deletedAt             DateTime?
-  deletionScheduledFor  DateTime?
-  role                  String          @default("USER")
-  googleId              String?         @unique
-  googleEmail           String?
-  accountBlocked        Boolean         @default(false)
-  blockedAt             DateTime?
-  blockedReason         String?
-  termsAccepted         Boolean         @default(false)
-  termsAcceptedAt       DateTime?
-  Team                  Team[]
-  User                  TeamMember[]
-  Subscription          Subscription?
-  BillingInfo           BillingInfo?
-  Feedback              Feedback[]
-  Ticket                Ticket[]
-  TicketMessage         TicketMessage[]
-  Notification          Notification[]
-  AssignedChats         CustomerChats[]  @relation("AssignedAgent")
+  id                   String          @id @default(cuid())
+  name                 String
+  email                String          @unique
+  phoneNumber          String?         @unique @map("phonenumber")
+  password             String
+  refreshToken         String?
+  emailVerified        Boolean         @default(false)
+  phoneVerified        Boolean         @default(false)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  activationCode       String?
+  verifiedAt           DateTime?
+  resetCode            String?
+  isDeleted            Boolean         @default(false)
+  deletedAt            DateTime?
+  deletionScheduledFor DateTime?
+  role                 String          @default("USER")
+  googleId             String?         @unique
+  googleEmail          String?
+  accountBlocked       Boolean         @default(false)
+  blockedAt            DateTime?
+  blockedReason        String?
+  termsAccepted        Boolean         @default(false)
+  termsAcceptedAt      DateTime?
+  Team                 Team[]
+  User                 TeamMember[]
+  Subscription         Subscription?
+  BillingInfo          BillingInfo?
+  Feedback             Feedback[]
+  Ticket               Ticket[]
+  TicketMessage        TicketMessage[]
+  Notification         Notification[]
+  AssignedChats        CustomerChats[] @relation("AssignedAgent")
 }
 
 model Team {
@@ -57,6 +57,7 @@ model Team {
   Content               Content[]
   CustomerBots          CustomerBots[]
   CustomerChats         CustomerChats[]
+  IngestBatch           IngestBatch[]
   Integrations          Integrations[]
   Quota                 Quota[]
   Storage               Storage[]
@@ -130,25 +131,25 @@ model Content {
 }
 
 model CustomerBots {
-  id               String     @id @default(cuid())
-  teamId           String
-  botName          String
-  botAvatar        String
-  systemPrompt     String     @default("")
-  settings         Json?
-  purpose          String?
-  active           Boolean    @default(false)
-  modelTier        String     @default("haiku")
-  leadDestinations Json       @default("[]")
-  leadVerificationRequired Boolean @default(false)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  isDeleted        Boolean    @default(false)
-  deletedAt        DateTime?
-  team             Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  BotLeads         BotLeads[]
-  ChatFeedback     ChatFeedback[]
-  integrations     Integrations[]
+  id                       String         @id @default(cuid())
+  teamId                   String
+  botName                  String
+  botAvatar                String
+  systemPrompt             String         @default("")
+  settings                 Json?
+  purpose                  String?
+  active                   Boolean        @default(false)
+  modelTier                String         @default("haiku")
+  leadDestinations         Json           @default("[]")
+  leadVerificationRequired Boolean        @default(false)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
+  isDeleted                Boolean        @default(false)
+  deletedAt                DateTime?
+  team                     Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  BotLeads                 BotLeads[]
+  ChatFeedback             ChatFeedback[]
+  integrations             Integrations[]
 }
 
 model CustomerChats {
@@ -164,9 +165,9 @@ model CustomerChats {
   chatStatus          ChatStatus            @default(BOT_ACTIVE)
   agentUserId         String?
   channel             ChatChannel           @default(WIDGET)
-  externalContactId   String?               // WhatsApp: wa_id (phone number), Messenger: PSID
-  externalContactName String?               // Best-effort display name fetched from the channel's profile API (currently: Instagram only)
-  feedbackRating      Int?                  // 1-5 star rating submitted by the visitor after chat closes
+  externalContactId   String? // WhatsApp: wa_id (phone number), Messenger: PSID
+  externalContactName String? // Best-effort display name fetched from the channel's profile API (currently: Instagram only)
+  feedbackRating      Int? // 1-5 star rating submitted by the visitor after chat closes
   agent               User?                 @relation("AssignedAgent", fields: [agentUserId], references: [id])
   CustomerChatDetails CustomerChatDetails[]
   team                Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -221,6 +222,43 @@ model fastapi_ingestiontask {
 
   @@index([bot_cuid], map: "ix_fastapi_ingestiontask_bot_cuid")
   @@index([customer_cuid], map: "ix_fastapi_ingestiontask_customer_cuid")
+}
+
+// Phase B-2 (2026-07-21): per-web-ingest-request batch record.
+//
+// Immutable request-side snapshot of what the user asked to ingest,
+// keyed on the ML worker's task_id. `pageList` is the exact URL set
+// sent to `/ingest-webpages` — the source of truth for retry-failed-
+// only queries (join to Content by taskId to see per-URL outcome).
+//
+// Per-URL outcome + counts are NOT duplicated here; they live in
+// `Content.ingestionInfo` (Phase B-1) and can be aggregated by
+// `SELECT ... FROM Content WHERE taskId = X GROUP BY status` when
+// the batch-summary endpoint (B-3) needs them.
+model IngestBatch {
+  id          String   @id @default(cuid())
+  teamId      String
+  botId       String
+  // Matches `fastapi_ingestiontask.task_id`. Not a Prisma relation
+  // because that table lives outside the app schema (owned by the
+  // ML worker) — we join on task_id at read time when needed.
+  taskId      String   @unique
+  // The requested URL set. Kept verbatim so retry-failed-only can
+  // reconstruct the original intent even if a Content row later
+  // gets deleted for one of the URLs.
+  pageList    Json
+  // How the ingest was kicked off:
+  //   initial   — first-time add via `POST /content/ingestWebPages`
+  //   reingest  — re-ingest via `POST /content/reIngest`
+  // Free-form string so future sources (scheduled, retry-failed)
+  // don't need a migration.
+  triggeredBy String   @default("initial")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([teamId, createdAt])
 }
 
 model Subscription {
