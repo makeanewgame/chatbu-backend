@@ -30,7 +30,7 @@ export class MetaEmbeddedService {
      * Pages (and their linked Instagram professional accounts) the user granted access to.
      * Nothing is persisted here — the frontend lets the user pick which channels to enable.
      */
-    async exchangeCode(chatbotId: string, authorizationCode: string): Promise<{ pages: MetaPage[] }> {
+    async exchangeCode(chatbotId: string, authorizationCode: string): Promise<{ pages: MetaPage[]; fbUserId?: string }> {
         const appId = this.configService.get<string>('META_APP_ID');
         const appSecret = this.configService.get<string>('META_APP_SECRET');
 
@@ -107,16 +107,28 @@ export class MetaEmbeddedService {
             throw new BadRequestException('Failed to list Facebook Pages for this account');
         }
 
+        // Resolve the connecting Facebook user's ID so that a later Meta deauthorize/data-deletion
+        // callback (keyed by that same user_id) can find and remove the integrations it created.
+        let fbUserId: string | undefined;
+        try {
+            const meRes = await axios.get<{ id: string }>(`${GRAPH_BASE}/me`, {
+                params: { access_token: userToken, fields: 'id' },
+            });
+            fbUserId = meRes.data.id;
+        } catch (err: any) {
+            this.logger.warn('Could not resolve Facebook user id for this connection', err?.response?.data ?? err?.message);
+        }
+
         this.logger.log(`Meta code exchange complete | chatbotId=${chatbotId} | pages=${pages.length}`);
 
-        return { pages };
+        return { pages, fbUserId };
     }
 
     /**
      * Subscribe the app to the selected Page's webhooks and persist the requested channels.
      */
     async completeConnection(teamId: string, dto: CompleteMetaConnectionDto) {
-        const { chatbotId, pageId, pageName, pageAccessToken, enableMessenger, enableInstagram, instagramAccountId, instagramUsername } = dto;
+        const { chatbotId, pageId, pageName, pageAccessToken, enableMessenger, enableInstagram, instagramAccountId, instagramUsername, fbUserId } = dto;
 
         if (!enableMessenger && !enableInstagram) {
             throw new BadRequestException('At least one of enableMessenger or enableInstagram must be true');
@@ -153,6 +165,7 @@ export class MetaEmbeddedService {
                 pageId,
                 pageName,
                 pageAccessToken,
+                fbUserId,
                 status: 'connected',
                 connectedAt,
             };
@@ -168,6 +181,7 @@ export class MetaEmbeddedService {
                 instagramAccountId,
                 instagramUsername,
                 pageAccessToken,
+                fbUserId,
                 status: 'connected',
                 connectedAt,
             };
@@ -263,6 +277,39 @@ export class MetaEmbeddedService {
         await this.prisma.integrations.delete({ where: { id: row.id } });
         this.logger.log(`Meta ${channel} integration disconnected | teamId=${teamId} | chatbotId=${chatbotId}`);
         return { success: true };
+    }
+
+    /**
+     * Removes all Messenger/Instagram embedded integrations created by a given Facebook user.
+     * Called from the Meta deauthorize and data-deletion callbacks — `fbUserId` is the
+     * `user_id` Meta reports in the signed_request for whoever connected the integration.
+     * Best-effort unsubscribes each Page from our app's webhooks before deleting the row.
+     */
+    async deleteByFbUserId(fbUserId: string): Promise<number> {
+        const rows = await this.prisma.integrations.findMany({
+            where: {
+                type: { in: [META_MESSENGER_EMBEDDED_TYPE, META_INSTAGRAM_EMBEDDED_TYPE] },
+                config: { path: ['fbUserId'], equals: fbUserId },
+            },
+        });
+
+        for (const row of rows) {
+            const cfg = row.config as any;
+            try {
+                await axios.delete(`${GRAPH_BASE}/${cfg.pageId}/subscribed_apps`, {
+                    headers: { Authorization: `Bearer ${cfg.pageAccessToken}` },
+                });
+            } catch (err: any) {
+                this.logger.warn(`Failed to unsubscribe Page webhooks while deleting for fbUserId=${fbUserId}`, err?.response?.data ?? err?.message);
+            }
+        }
+
+        if (rows.length > 0) {
+            await this.prisma.integrations.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+        }
+
+        this.logger.log(`Deleted ${rows.length} Meta embedded integration(s) for fbUserId=${fbUserId}`);
+        return rows.length;
     }
 
     /**
