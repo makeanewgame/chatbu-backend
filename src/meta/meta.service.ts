@@ -111,7 +111,13 @@ export class MetaService {
             const integration = await this.metaEmbeddedService.findByInstagramAccountId(instagramAccountId);
 
             if (!integration) {
-                this.logger.warn(`No Instagram integration found for instagramAccountId: ${instagramAccountId}`);
+                // instagramAccountId here has been observed to diverge from the ID captured
+                // during the OAuth connect flow (/me/accounts field instagram_business_account.id) —
+                // logging recipient/sender IDs from the raw entry lets us compare ID schemes
+                // without needing to reproduce the issue again.
+                this.logger.warn(
+                    `No Instagram integration found for instagramAccountId: ${instagramAccountId} | raw entry: ${JSON.stringify(entry)}`,
+                );
                 continue;
             }
 

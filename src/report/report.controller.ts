@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
@@ -194,6 +194,19 @@ export class ReportController {
     async closeChat(@Req() req: Request, @Param('chatId') chatId: string) {
         const user = req.user as IUser;
         return this.reportService.closeChat(user.teamId, chatId, user.sub);
+    }
+    //#endregion
+
+    //#region delete-chat
+    @ApiOperation({ summary: 'Delete a chat (soft delete)' })
+    @ApiResponse({ status: 200, description: 'Chat deleted' })
+    @ApiBearerAuth()
+    @ApiParam({ name: 'chatId', description: 'Chat ID', required: true, type: String })
+    @Delete('chatHistory/:chatId')
+    @UseGuards(AccessTokenGuard)
+    async deleteChat(@Req() req: Request, @Param('chatId') chatId: string) {
+        const user = req.user as IUser;
+        return this.reportService.deleteChat(user.teamId, chatId);
     }
     //#endregion
 }

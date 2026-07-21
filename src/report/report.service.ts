@@ -20,6 +20,7 @@ export class ReportService {
         const chatHistoryList = await this.prisma.customerChats.findMany({
             where: {
                 teamId: teamId,
+                isDeleted: false,
             },
             select: {
                 id: true,
@@ -513,6 +514,24 @@ export class ReportService {
         console.log('[closeChat] emitting chat_ended', { id: chat.id, chatId: chat.chatId });
         this.eventsGateway.notifyChatEnded(chat.id, { chatId: chat.id, reason: 'agent_closed' });
         this.eventsGateway.notifyChatEnded(chat.chatId, { chatId: chat.chatId, reason: 'agent_closed' });
+
+        return { success: true };
+    }
+
+    // ── Delete chat (soft delete) ────────────────────────────────────────────
+    async deleteChat(teamId: string, chatId: string) {
+        const chat = await this.prisma.customerChats.findFirst({
+            where: { id: chatId, teamId, isDeleted: false },
+        });
+
+        if (!chat) {
+            throw new NotFoundException('Chat not found');
+        }
+
+        await this.prisma.customerChats.update({
+            where: { id: chat.id },
+            data: { isDeleted: true, deletedAt: new Date() },
+        });
 
         return { success: true };
     }
