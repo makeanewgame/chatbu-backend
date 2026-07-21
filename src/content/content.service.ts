@@ -574,6 +574,28 @@ export class ContentService {
 
             console.log("ingest response", data);
 
+            // Phase B-2 — record the request-side batch snapshot so
+            // future FE views (per-URL results, retry-failed-only) can
+            // reconstruct what was actually asked to be ingested. Best-
+            // effort: a batch-write failure must NOT fail the ingest
+            // itself, so wrap in try/catch and log the failure.
+            const taskId = data?.task_id;
+            if (taskId) {
+                try {
+                    await this.prisma.ingestBatch.create({
+                        data: {
+                            teamId: user.teamId,
+                            botId,
+                            taskId,
+                            pageList: urlsToIngest,
+                            triggeredBy: 'initial',
+                        },
+                    });
+                } catch (batchErr) {
+                    console.error('IngestBatch create failed (initial):', batchErr);
+                }
+            }
+
             // Create content records for new URLs after successful ingest
             for (const url of newUrls) {
                 await this.prisma.content.create({
@@ -777,6 +799,26 @@ export class ContentService {
             );
 
             console.log(`Re-ingestion response for ${urlsToReingest.length} URLs:`, data);
+
+            // Phase B-2 — batch snapshot (see the `ingestWebPages` twin
+            // for full rationale). Best-effort: don't fail the re-ingest
+            // if the batch row can't be written.
+            const taskId = data?.task_id;
+            if (taskId) {
+                try {
+                    await this.prisma.ingestBatch.create({
+                        data: {
+                            teamId: user.teamId,
+                            botId,
+                            taskId,
+                            pageList: urlsToReingest,
+                            triggeredBy: 'reingest',
+                        },
+                    });
+                } catch (batchErr) {
+                    console.error('IngestBatch create failed (reingest):', batchErr);
+                }
+            }
 
             await this.systemLogService.createLog({
                 category: 'CONTENT',
