@@ -128,6 +128,11 @@ model Content {
   deletedAt     DateTime?
   isDeleted     Boolean   @default(false)
   team          Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  // Phase B-3 (2026-07-21): the batch-summary endpoint fetches every
+  // Content row for a given task_id to compute per-URL status. Without
+  // this index, that's a full table scan on the Content table.
+  @@index([taskId])
 }
 
 model CustomerBots {
