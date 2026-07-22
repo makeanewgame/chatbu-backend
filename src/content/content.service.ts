@@ -558,11 +558,16 @@ export class ContentService {
 
             // Send to ingest service first — only persist if successful
             const ingestUrl = this.configService.get('INGEST_ENPOINT');
+            // Phase D-1 — spread per-bot knobs (min_chars, allow/deny
+            // globs) into the payload. Undefined values are dropped
+            // by JSON.stringify.
+            const knobs = await this.loadPerBotIngestKnobs(botId, user.teamId);
             const { data } = await firstValueFrom(
                 this.httpService.post(`${ingestUrl}/ingest-webpages`, {
                     "bot_cuid": botId,
                     "customer_cuid": user.teamId,
                     "page_list": urlsToIngest,
+                    ...knobs,
                 })
                     .pipe(
                         catchError((error: AxiosError) => {
@@ -784,12 +789,16 @@ export class ContentService {
 
         if (urlsToReingest.length === 0) return;
 
+        // Phase D-1 — same per-bot knob spread as ingestWebPages.
+        const knobs = await this.loadPerBotIngestKnobs(botId, user.teamId);
+
         try {
             const { data } = await firstValueFrom(
                 this.httpService.post(`${ingestUrl}/ingest-webpages`, {
                     "bot_cuid": botId,
                     "customer_cuid": user.teamId,
                     "page_list": urlsToReingest,
+                    ...knobs,
                 }).pipe(
                     catchError((error: AxiosError) => {
                         console.log("processReIngest ingest error", error);
@@ -1313,5 +1322,44 @@ export class ContentService {
             summary,
             urls,
         };
+    }
+
+    /**
+     * Phase D-1 — per-bot ingest knobs read from
+     * `CustomerBots.settings`. Both `ingestWebPages` (initial add)
+     * and `processReIngest` (retry) spread the result into their
+     * `/ingest-webpages` payload. Undefined values are dropped by
+     * JSON.stringify, so older ML pods that don't yet know about
+     * these fields ignore them cleanly.
+     *
+     * Types are checked defensively — a hand-edited settings blob
+     * with the wrong shape shouldn't crash the ingest flow.
+     */
+    private async loadPerBotIngestKnobs(botId: string, teamId: string) {
+        try {
+            const bot = await this.prisma.customerBots.findFirst({
+                where: { id: botId, teamId, isDeleted: false },
+                select: { settings: true },
+            });
+            const s = (bot?.settings as any) || {};
+            const min_chars =
+                typeof s.ingestMinChars === 'number' && s.ingestMinChars > 0
+                    ? s.ingestMinChars
+                    : undefined;
+            const url_allow_globs =
+                Array.isArray(s.ingestUrlAllowGlobs) && s.ingestUrlAllowGlobs.length > 0
+                    ? s.ingestUrlAllowGlobs.filter((g: unknown) => typeof g === 'string')
+                    : undefined;
+            const url_deny_globs =
+                Array.isArray(s.ingestUrlDenyGlobs) && s.ingestUrlDenyGlobs.length > 0
+                    ? s.ingestUrlDenyGlobs.filter((g: unknown) => typeof g === 'string')
+                    : undefined;
+            return { min_chars, url_allow_globs, url_deny_globs };
+        } catch (err) {
+            // Fetch failure MUST NOT block ingest — a hiccup here
+            // just means the ML worker uses its own defaults.
+            console.warn('[ingest.knobs.lookup_failed]', err?.message ?? err);
+            return {};
+        }
     }
 }
