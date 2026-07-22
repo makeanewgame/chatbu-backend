@@ -558,11 +558,16 @@ export class ContentService {
 
             // Send to ingest service first — only persist if successful
             const ingestUrl = this.configService.get('INGEST_ENPOINT');
+            // Phase D-1 — spread per-bot knobs (min_chars, allow/deny
+            // globs) into the payload. Undefined values are dropped
+            // by JSON.stringify.
+            const knobs = await this.loadPerBotIngestKnobs(botId, user.teamId);
             const { data } = await firstValueFrom(
                 this.httpService.post(`${ingestUrl}/ingest-webpages`, {
                     "bot_cuid": botId,
                     "customer_cuid": user.teamId,
                     "page_list": urlsToIngest,
+                    ...knobs,
                 })
                     .pipe(
                         catchError((error: AxiosError) => {
@@ -573,6 +578,28 @@ export class ContentService {
             );
 
             console.log("ingest response", data);
+
+            // Phase B-2 — record the request-side batch snapshot so
+            // future FE views (per-URL results, retry-failed-only) can
+            // reconstruct what was actually asked to be ingested. Best-
+            // effort: a batch-write failure must NOT fail the ingest
+            // itself, so wrap in try/catch and log the failure.
+            const taskId = data?.task_id;
+            if (taskId) {
+                try {
+                    await this.prisma.ingestBatch.create({
+                        data: {
+                            teamId: user.teamId,
+                            botId,
+                            taskId,
+                            pageList: urlsToIngest,
+                            triggeredBy: 'initial',
+                        },
+                    });
+                } catch (batchErr) {
+                    console.error('IngestBatch create failed (initial):', batchErr);
+                }
+            }
 
             // Create content records for new URLs after successful ingest
             for (const url of newUrls) {
@@ -762,12 +789,16 @@ export class ContentService {
 
         if (urlsToReingest.length === 0) return;
 
+        // Phase D-1 — same per-bot knob spread as ingestWebPages.
+        const knobs = await this.loadPerBotIngestKnobs(botId, user.teamId);
+
         try {
             const { data } = await firstValueFrom(
                 this.httpService.post(`${ingestUrl}/ingest-webpages`, {
                     "bot_cuid": botId,
                     "customer_cuid": user.teamId,
                     "page_list": urlsToReingest,
+                    ...knobs,
                 }).pipe(
                     catchError((error: AxiosError) => {
                         console.log("processReIngest ingest error", error);
@@ -777,6 +808,26 @@ export class ContentService {
             );
 
             console.log(`Re-ingestion response for ${urlsToReingest.length} URLs:`, data);
+
+            // Phase B-2 — batch snapshot (see the `ingestWebPages` twin
+            // for full rationale). Best-effort: don't fail the re-ingest
+            // if the batch row can't be written.
+            const taskId = data?.task_id;
+            if (taskId) {
+                try {
+                    await this.prisma.ingestBatch.create({
+                        data: {
+                            teamId: user.teamId,
+                            botId,
+                            taskId,
+                            pageList: urlsToReingest,
+                            triggeredBy: 'reingest',
+                        },
+                    });
+                } catch (batchErr) {
+                    console.error('IngestBatch create failed (reingest):', batchErr);
+                }
+            }
 
             await this.systemLogService.createLog({
                 category: 'CONTENT',
@@ -1172,6 +1223,143 @@ export class ContentService {
                 limitKb: 0, usedKb: 0, remainingKb: 0,
                 limitMb: 0, usedMb: 0, remainingMb: 0,
             };
+        }
+    }
+
+    /**
+     * Phase B-3 — per-URL batch summary.
+     *
+     * Given the ML worker's task_id, join the request-side snapshot
+     * (`IngestBatch.pageList`) with the outcome side (`Content` rows
+     * with `taskId = X`) and return one entry per requested URL:
+     *
+     *   {
+     *     taskId, botId, triggeredBy, createdAt,
+     *     summary: { total, indexed, failed, notProcessed },
+     *     urls: [
+     *       { url, contentId, status, ingestionInfo, updatedAt }, ...
+     *     ]
+     *   }
+     *
+     * `notProcessed` = the URL was in the request but no Content row
+     * carries this taskId (either the URL matcher missed it, or the
+     * Content row was deleted after the ingest). Non-zero is worth
+     * flagging in the FE.
+     *
+     * Auth: batch's teamId must match the caller's. Returns `{ error }`
+     * on not-found / forbidden — matches the return-object convention
+     * used by the rest of this service (see reIngestContents).
+     */
+    async getIngestBatch(user: IUser, taskId: string) {
+        const batch = await this.prisma.ingestBatch.findUnique({
+            where: { taskId },
+        });
+        if (!batch) {
+            return { error: 'Ingest batch not found' };
+        }
+        if (batch.teamId !== user.teamId) {
+            return { error: 'Forbidden' };
+        }
+
+        const contents = await this.prisma.content.findMany({
+            where: {
+                taskId,
+                teamId: user.teamId,
+                isDeleted: false,
+            },
+            select: {
+                id: true,
+                content: true,
+                status: true,
+                ingestionInfo: true,
+                updatedAt: true,
+            },
+        });
+
+        // Build a normalized-URL → Content lookup for the per-URL join.
+        // Uses the same normalizer as the ingest path so URLs match
+        // regardless of trailing-slash / case-in-host drift.
+        const contentByUrl = new Map<string, typeof contents[number]>();
+        for (const c of contents) {
+            const rawUrl =
+                (c.content as any)?.url ||
+                (c.content as any)?.source ||
+                (c.content as any)?.fileUrl ||
+                (c.content as any)?.page_url;
+            const normalized = this.normalizeComparableUrl(rawUrl);
+            if (normalized) {
+                contentByUrl.set(normalized, c);
+            }
+        }
+
+        const pageList = Array.isArray(batch.pageList)
+            ? (batch.pageList as unknown as string[])
+            : [];
+        const urls = pageList.map((url) => {
+            const normalized = this.normalizeComparableUrl(url);
+            const c = normalized ? contentByUrl.get(normalized) : undefined;
+            return {
+                url,
+                contentId: c?.id ?? null,
+                status: c?.status ?? 'not_processed',
+                ingestionInfo: c?.ingestionInfo ?? null,
+                updatedAt: c?.updatedAt ?? null,
+            };
+        });
+
+        const summary = {
+            total: urls.length,
+            indexed: urls.filter((u) => u.status === 'INDEXED').length,
+            failed: urls.filter((u) => u.status === 'FAILED').length,
+            notProcessed: urls.filter((u) => u.status === 'not_processed').length,
+        };
+
+        return {
+            taskId: batch.taskId,
+            botId: batch.botId,
+            triggeredBy: batch.triggeredBy,
+            createdAt: batch.createdAt,
+            summary,
+            urls,
+        };
+    }
+
+    /**
+     * Phase D-1 — per-bot ingest knobs read from
+     * `CustomerBots.settings`. Both `ingestWebPages` (initial add)
+     * and `processReIngest` (retry) spread the result into their
+     * `/ingest-webpages` payload. Undefined values are dropped by
+     * JSON.stringify, so older ML pods that don't yet know about
+     * these fields ignore them cleanly.
+     *
+     * Types are checked defensively — a hand-edited settings blob
+     * with the wrong shape shouldn't crash the ingest flow.
+     */
+    private async loadPerBotIngestKnobs(botId: string, teamId: string) {
+        try {
+            const bot = await this.prisma.customerBots.findFirst({
+                where: { id: botId, teamId, isDeleted: false },
+                select: { settings: true },
+            });
+            const s = (bot?.settings as any) || {};
+            const min_chars =
+                typeof s.ingestMinChars === 'number' && s.ingestMinChars > 0
+                    ? s.ingestMinChars
+                    : undefined;
+            const url_allow_globs =
+                Array.isArray(s.ingestUrlAllowGlobs) && s.ingestUrlAllowGlobs.length > 0
+                    ? s.ingestUrlAllowGlobs.filter((g: unknown) => typeof g === 'string')
+                    : undefined;
+            const url_deny_globs =
+                Array.isArray(s.ingestUrlDenyGlobs) && s.ingestUrlDenyGlobs.length > 0
+                    ? s.ingestUrlDenyGlobs.filter((g: unknown) => typeof g === 'string')
+                    : undefined;
+            return { min_chars, url_allow_globs, url_deny_globs };
+        } catch (err) {
+            // Fetch failure MUST NOT block ingest — a hiccup here
+            // just means the ML worker uses its own defaults.
+            console.warn('[ingest.knobs.lookup_failed]', err?.message ?? err);
+            return {};
         }
     }
 }
