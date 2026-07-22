@@ -778,12 +778,48 @@ export class BotService {
         console.error('[chat.error]', logCtx, error);
       }
 
-      // The site visitor sees this text. Deliberately generic — the
-      // real "why" (quota, billing, ML down) is not their problem
-      // and often reveals internal state. Bot owner can customise
-      // per-bot later via Phase D-1's settings panel.
+      // Best-effort enrichment: if the bot owner configured contact
+      // info in `settings.contactEmail` / `settings.contactPhone`,
+      // surface it so the visitor can actually reach the business
+      // instead of a dead end. A settings-lookup failure just falls
+      // through to the generic message — the whole point of this
+      // catch is to never re-throw to the widget.
+      let contactEmail: string | undefined;
+      let contactPhone: string | undefined;
+      try {
+        if (body?.botId) {
+          const bot = await this.prisma.customerBots.findUnique({
+            where: { id: body.botId },
+            select: { settings: true },
+          });
+          const settings = (bot?.settings as any) || {};
+          contactEmail =
+            typeof settings.contactEmail === 'string' && settings.contactEmail.trim()
+              ? settings.contactEmail.trim()
+              : undefined;
+          contactPhone =
+            typeof settings.contactPhone === 'string' && settings.contactPhone.trim()
+              ? settings.contactPhone.trim()
+              : undefined;
+        }
+      } catch (settingsErr: any) {
+        console.warn(
+          '[chat.fallback.settings_lookup_failed]',
+          settingsErr?.message ?? settingsErr,
+        );
+      }
+
+      // Compose the visitor-facing message. Deliberately generic on
+      // the "why" (quota / billing / ML down) — not the visitor's
+      // problem and often reveals internal state. Contact info, if
+      // available, is what actually helps them get unstuck.
+      const channels: string[] = [];
+      if (contactEmail) channels.push(contactEmail);
+      if (contactPhone) channels.push(contactPhone);
       const fallbackMessage =
-        'Şu anda size yanıt veremiyorum. Lütfen daha sonra tekrar deneyin veya bu sitenin sahibiyle doğrudan iletişime geçin.';
+        channels.length > 0
+          ? `Şu anda size yanıt veremiyorum. Lütfen işletmeyle doğrudan iletişime geçin: ${channels.join(' veya ')}.`
+          : 'Şu anda size yanıt veremiyorum. Lütfen daha sonra tekrar deneyin veya bu sitenin sahibiyle doğrudan iletişime geçin.';
 
       return {
         content: fallbackMessage,
