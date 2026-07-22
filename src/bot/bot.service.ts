@@ -745,8 +745,51 @@ export class BotService {
       };
     }
     catch (error) {
-      console.log("error", error);
-      throw new Error('Error in chat');
+      // Any failure inside the chat pipeline used to bubble up as a
+      // generic 500 to the widget, which renders "Internal Server
+      // Error" to the site visitor. That kills trust in the bot AND
+      // in Chatbu itself, and hides the actual failure from the bot
+      // owner (they don't get any signal that their bot is broken).
+      //
+      // Fix (2026-07-22 prod incident): swallow the throw, return a
+      // graceful bot-reply-shaped response. Widget renders it as a
+      // normal message. Original error is logged at ERROR level with
+      // structured context so ops / on-call still see it and can
+      // reach out to the bot owner.
+      //
+      // Explicit account-blocked path gets its own log tag so a
+      // billing-side alert can pattern-match on it without parsing
+      // the whole stack.
+      const isBlocked =
+        error?.status === 403 &&
+        typeof error?.message === 'string' &&
+        error.message.toLowerCase().includes('blocked due to payment');
+      const logCtx = {
+        botId: body?.botId,
+        teamId: body?.teamId,
+        chatId: body?.chatId,
+        isBlocked,
+        errorClass: error?.constructor?.name,
+        errorMessage: error?.message,
+      };
+      if (isBlocked) {
+        console.error('[chat.blocked_by_billing]', logCtx);
+      } else {
+        console.error('[chat.error]', logCtx, error);
+      }
+
+      // The site visitor sees this text. Deliberately generic — the
+      // real "why" (quota, billing, ML down) is not their problem
+      // and often reveals internal state. Bot owner can customise
+      // per-bot later via Phase D-1's settings panel.
+      const fallbackMessage =
+        'Şu anda size yanıt veremiyorum. Lütfen daha sonra tekrar deneyin veya bu sitenin sahibiyle doğrudan iletişime geçin.';
+
+      return {
+        content: fallbackMessage,
+        session_id: body?.chatId || `fallback-${Date.now()}`,
+        tokens: { total_tokens: 0 },
+      };
     }
 
 
