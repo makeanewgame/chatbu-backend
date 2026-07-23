@@ -38,14 +38,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   const port = configService.get<number>('PORT');
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Chatbu API')
-    .setDescription('The chatbu api description')
-    .setVersion('1.0')
-    .addTag('chatbu')
-    .addBearerAuth()
-    .addOAuth2()
-    .build();
+  const isProduction = configService.get<string>('NODE_ENV') === 'production';
 
   app.setGlobalPrefix('api');
 
@@ -80,8 +73,21 @@ async function bootstrap() {
     optionsSuccessStatus: 204
   });
 
-  const documentFactory = () => SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api', app, documentFactory);
+  // Swagger exposes the full API surface (routes, DTOs, auth schemes) — keep
+  // it out of production so it isn't publicly discoverable at /api.
+  if (!isProduction) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Chatbu API')
+      .setDescription('The chatbu api description')
+      .setVersion('1.0')
+      .addTag('chatbu')
+      .addBearerAuth()
+      .addOAuth2()
+      .build();
+
+    const documentFactory = () => SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api', app, documentFactory);
+  }
 
   await app.listen(port || 3001);
   app.useStaticAssets(join(__dirname, '../../', 'public'));
