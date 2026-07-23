@@ -14,8 +14,8 @@ export class RegisterRequest {
     password: string;
 
     @IsString()
-    @IsNotEmpty()
-    phoneNumber: string;
+    @IsOptional()
+    phoneNumber?: string;
 
     @IsBoolean()
     @IsNotEmpty()
