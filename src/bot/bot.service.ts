@@ -1168,4 +1168,58 @@ export class BotService {
 
     return { requiresVerification: bot.leadVerificationRequired };
   }
+
+  /**
+   * Phase D-2 of the retrieval quality overhaul: per-bot query-time
+   * URL glob preferences. Read from `CustomerBots.settings` (existing
+   * Json column, no schema migration).
+   *
+   * Shape:
+   *   {
+   *     queryUrlAllowGlobs?: string[]      // fnmatch patterns; chunk must match ≥1
+   *     queryUrlDenyGlobs?: string[]       // fnmatch patterns; chunk must match NONE
+   *     queryUrlBoostGlobs?: {glob: string, boost: number}[]  // soft preference
+   *   }
+   *
+   * Consumed by the FastAPI gateway's `RetrievalMiddleware` via an
+   * internal-key-guarded probe on every chat request (60s in-memory
+   * cache on the gateway side). Returns empty arrays when the bot has
+   * no config — the gateway treats "no config" the same as "no globs".
+   */
+  async getRetrievalSettings(botId: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: botId, isDeleted: false },
+      select: { settings: true },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    const settings = (bot.settings as Record<string, unknown>) || {};
+    const asStringArray = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
+    const asBoostArray = (v: unknown): Array<{ glob: string; boost: number }> => {
+      if (!Array.isArray(v)) return [];
+      return v.flatMap((item) => {
+        if (
+          typeof item !== 'object' ||
+          item === null ||
+          typeof (item as { glob?: unknown }).glob !== 'string'
+        ) {
+          return [];
+        }
+        const rawBoost = (item as { boost?: unknown }).boost;
+        const boost = typeof rawBoost === 'number' && Number.isFinite(rawBoost) ? rawBoost : 1.15;
+        const glob = ((item as { glob: string }).glob || '').trim();
+        return glob ? [{ glob, boost }] : [];
+      });
+    };
+
+    return {
+      queryUrlAllowGlobs: asStringArray(settings.queryUrlAllowGlobs),
+      queryUrlDenyGlobs: asStringArray(settings.queryUrlDenyGlobs),
+      queryUrlBoostGlobs: asBoostArray(settings.queryUrlBoostGlobs),
+    };
+  }
 }
