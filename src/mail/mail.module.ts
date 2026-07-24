@@ -14,7 +14,7 @@ import { join } from 'path';
       useFactory: (config: ConfigService) => ({
         transport: {
           host: config.get('SMTP_HOST'),
-          post: config.get('SMTP_PORT'),
+          port: config.get('SMTP_PORT'),
           secure: true,
           preview: true,
           auth: {

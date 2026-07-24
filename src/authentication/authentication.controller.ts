@@ -17,6 +17,7 @@ import { GoogleGuard } from './utils/google.guard';
 import { ConfigService } from '@nestjs/config';
 import { AccessTokenGuard } from './utils/accesstoken.guard';
 import { ActivateRegistrationRequest } from './dto/activateregister.request';
+import { ResendVerificationRequest } from './dto/resendverification.request';
 import { LoginRequest } from './dto/login.request';
 import { Language } from 'src/lang';
 import { PasswordRequestChange } from './dto/passwordChangeRequest';
@@ -253,6 +254,13 @@ export class AuthenticationController {
   @Post('resend-verification')
   async resendVerification(@Req() req) {
     return await this.authService.resendEmailVerification(req.user.sub);
+  }
+
+  // No auth guard: a user who just registered (or hit the emailNotVerified
+  // login response) has no access token yet, so this has to work by email.
+  @Post('resend-verification-by-email')
+  async resendVerificationByEmail(@Body() body: ResendVerificationRequest) {
+    return await this.authService.resendEmailVerificationByEmail(body.email);
   }
 
   @UseGuards(AccessTokenGuard)
