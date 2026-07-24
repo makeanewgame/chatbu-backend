@@ -494,4 +494,27 @@ export class BotController {
     return this.botService.getLeadVerificationStatus(botId);
   }
   //#endregion
+
+  //#region retrievalSettings
+  /**
+   * GET /api/bot/retrieval-settings/:botId
+   *
+   * FastAPI-gateway-facing endpoint (guarded by the same internal-key
+   * pattern as `verification-status`). Returns per-bot query-time URL
+   * globs read from `CustomerBots.settings`:
+   *   - queryUrlAllowGlobs — allow filter
+   *   - queryUrlDenyGlobs  — deny filter
+   *   - queryUrlBoostGlobs — soft preference boost
+   *
+   * Consumed by RetrievalMiddleware's hybrid path (Phase D-2 of the
+   * retrieval quality overhaul plan). Gateway caches in-memory 60 s.
+   */
+  @ApiOperation({ summary: 'Get retrieval URL glob preferences for bot (internal)' })
+  @ApiResponse({ status: 200, description: 'Retrieval settings returned' })
+  @UseGuards(InternalApiKeyGuard)
+  @Get('retrieval-settings/:botId')
+  async getRetrievalSettings(@Param('botId') botId: string) {
+    return this.botService.getRetrievalSettings(botId);
+  }
+  //#endregion
 }
