@@ -301,11 +301,10 @@ export class AuthenticationController {
 
   @UseGuards(AccessTokenGuard)
   @Post('google/connect')
-  async connectGoogle(@Req() req, @Body() body: { googleId: string; googleEmail: string }) {
+  async connectGoogle(@Req() req, @Body() body: { idToken: string }) {
     return await this.authService.connectGoogleAccount(
       req.user.sub,
-      body.googleId,
-      body.googleEmail,
+      body.idToken,
     );
   }
 
