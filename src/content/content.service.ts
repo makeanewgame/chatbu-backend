@@ -556,26 +556,96 @@ export class ContentService {
                 };
             }
 
-            // Send to ingest service first — only persist if successful
+            // Content-first, then ML call — the ML worker's
+            // background task queries `Content WHERE status=UPLOADED`
+            // as soon as the HTTP call lands. If we posted before the
+            // Content rows existed, the worker's snapshot would miss
+            // them and those URLs would sit stuck as UPLOADED forever
+            // (observed 2026-07-24 prod veribilimiokulu 89-URL ingest:
+            // 34 EN mirror URLs went untouched because the ML worker
+            // snapshot ran during the middle of Prisma's per-URL
+            // creates). Persist all Content rows first, THEN call ML.
+            const contentIdsForRollback: string[] = [];
+            for (const url of newUrls) {
+                const created = await this.prisma.content.create({
+                    data: {
+                        teamId: user.teamId,
+                        botId: botId,
+                        type: 'WEBPAGE',
+                        content: { url },
+                        status: 'UPLOADED',
+                        taskId: '',
+                        ingestionInfo: {},
+                        createdAt: new Date(),
+                    },
+                    select: { id: true },
+                });
+                contentIdsForRollback.push(created.id);
+            }
+
+            // Re-mark existing duplicate URLs as UPLOADED if user confirmed re-ingest
+            if (duplicateUrls.length > 0 && forceReingest) {
+                for (const duplicateUrl of duplicateUrls) {
+                    const normalizedDuplicateUrl = this.normalizeComparableUrl(duplicateUrl);
+                    if (!normalizedDuplicateUrl) continue;
+                    const existing = existingByNormalizedUrl.get(normalizedDuplicateUrl);
+                    if (!existing) continue;
+
+                    await this.prisma.content.update({
+                        where: { id: existing.id },
+                        data: {
+                            status: 'UPLOADED',
+                            taskId: '',
+                            ingestionInfo: {},
+                            updatedAt: new Date(),
+                        },
+                    });
+                    contentIdsForRollback.push(existing.id);
+                }
+            }
+
+            // NOW dispatch to the ML worker. By this point every URL
+            // in urlsToIngest has an UPLOADED Content row visible to
+            // the worker's snapshot query.
             const ingestUrl = this.configService.get('INGEST_ENPOINT');
             // Phase D-1 — spread per-bot knobs (min_chars, allow/deny
             // globs) into the payload. Undefined values are dropped
             // by JSON.stringify.
             const knobs = await this.loadPerBotIngestKnobs(botId, user.teamId);
-            const { data } = await firstValueFrom(
-                this.httpService.post(`${ingestUrl}/ingest-webpages`, {
-                    "bot_cuid": botId,
-                    "customer_cuid": user.teamId,
-                    "page_list": urlsToIngest,
-                    ...knobs,
-                })
-                    .pipe(
-                        catchError((error: AxiosError) => {
-                            console.log("ingestWebPages error", error);
-                            throw 'An error happened!';
-                        }),
-                    )
-            );
+            let data: any;
+            try {
+                const response = await firstValueFrom(
+                    this.httpService.post(`${ingestUrl}/ingest-webpages`, {
+                        "bot_cuid": botId,
+                        "customer_cuid": user.teamId,
+                        "page_list": urlsToIngest,
+                        ...knobs,
+                    })
+                        .pipe(
+                            catchError((error: AxiosError) => {
+                                console.log("ingestWebPages error", error);
+                                throw 'An error happened!';
+                            }),
+                        )
+                );
+                data = response.data;
+            } catch (mlErr) {
+                // ML dispatch failed after we already persisted the
+                // Content rows — flip them back to a terminal state
+                // so the owner can retry cleanly instead of seeing
+                // permanent UPLOADED "ghosts".
+                if (contentIdsForRollback.length > 0) {
+                    try {
+                        await this.prisma.content.updateMany({
+                            where: { id: { in: contentIdsForRollback } },
+                            data: { status: 'FAILED', updatedAt: new Date() },
+                        });
+                    } catch (rollbackErr) {
+                        console.error('ingestWebPages rollback failed:', rollbackErr);
+                    }
+                }
+                throw mlErr;
+            }
 
             console.log("ingest response", data);
 
@@ -598,42 +668,6 @@ export class ContentService {
                     });
                 } catch (batchErr) {
                     console.error('IngestBatch create failed (initial):', batchErr);
-                }
-            }
-
-            // Create content records for new URLs after successful ingest
-            for (const url of newUrls) {
-                await this.prisma.content.create({
-                    data: {
-                        teamId: user.teamId,
-                        botId: botId,
-                        type: 'WEBPAGE',
-                        content: { url },
-                        status: 'UPLOADED',
-                        taskId: '',
-                        ingestionInfo: {},
-                        createdAt: new Date(),
-                    }
-                });
-            }
-
-            // Re-mark existing duplicate URLs as UPLOADED if user confirmed re-ingest
-            if (duplicateUrls.length > 0 && forceReingest) {
-                for (const duplicateUrl of duplicateUrls) {
-                    const normalizedDuplicateUrl = this.normalizeComparableUrl(duplicateUrl);
-                    if (!normalizedDuplicateUrl) continue;
-                    const existing = existingByNormalizedUrl.get(normalizedDuplicateUrl);
-                    if (!existing) continue;
-
-                    await this.prisma.content.update({
-                        where: { id: existing.id },
-                        data: {
-                            status: 'UPLOADED',
-                            taskId: '',
-                            ingestionInfo: {},
-                            updatedAt: new Date(),
-                        },
-                    });
                 }
             }
 
