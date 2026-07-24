@@ -446,6 +446,7 @@ export class AuthenticationService {
         role: true,
         isDeleted: true,
         deletionScheduledFor: true,
+        emailVerified: true,
       },
     });
 
@@ -466,7 +467,11 @@ export class AuthenticationService {
         await this.cacheManager.del(ATTEMPTS_KEY);
         await this.cacheManager.del(LOCK_KEY);
 
-        const { password, isDeleted, deletionScheduledFor, ...data } = findUser;
+        const { password, isDeleted, deletionScheduledFor, emailVerified, ...data } = findUser;
+
+        if (!emailVerified) {
+          return { success: false, emailNotVerified: true, email: data.email };
+        }
 
         // Check if account is scheduled for deletion
         if (isDeleted && deletionScheduledFor) {
@@ -1100,6 +1105,51 @@ export class AuthenticationService {
       };
     } catch (error) {
       this.logger.error('Error resending verification email:', error);
+      return {
+        success: false,
+        message: 'Error sending verification email',
+      };
+    }
+  }
+
+  // Unverified users have no access token yet, so the code-entry screen
+  // shown right after registration has to resend by email, not by userId.
+  async resendEmailVerificationByEmail(email: string) {
+    try {
+      const user = await this.prisma.user.findFirst({ where: { email } });
+
+      // Always return a generic success so this endpoint can't be used to
+      // enumerate which emails are registered.
+      if (!user || user.emailVerified) {
+        return {
+          success: true,
+          message: 'If this email is registered and unverified, a new code has been sent.',
+        };
+      }
+
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { activationCode: verificationCode },
+      });
+
+      try {
+        await this.mail.sendEmailVerificationMail(user.email, verificationCode, 'en', user.name);
+      } catch (mailError) {
+        this.logger.error('Error sending verification email:', mailError);
+        return {
+          success: false,
+          message: 'Error sending verification email',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'If this email is registered and unverified, a new code has been sent.',
+      };
+    } catch (error) {
+      this.logger.error('Error resending verification email by email:', error);
       return {
         success: false,
         message: 'Error sending verification email',
