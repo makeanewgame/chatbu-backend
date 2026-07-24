@@ -1,11 +1,14 @@
 import { Controller, Get, Put, Body, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { JwtGuard } from 'src/authentication/utils/google.guard';
-import { RolesGuard } from 'src/authentication/utils/roles.guard';
+import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
+import { AdminGuard } from './guards/admin.guard';
 
+// System settings are global (token limits, pricing, bot limits) and must be
+// admin-only. AdminGuard enforces `role === 'ADMIN'`; the previous RolesGuard
+// was a no-op (it returned true whenever no @Permission metadata was present),
+// leaving these endpoints open to any authenticated user.
 @Controller('admin/settings')
-@UseGuards(JwtGuard, RolesGuard)
-//@Roles('ADMIN')
+@UseGuards(AccessTokenGuard, AdminGuard)
 export class SettingsController {
     constructor(private prisma: PrismaService) { }
 

@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
 import { randomUUID } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 
 @Injectable()
 export class AuthenticationService {
@@ -159,8 +160,6 @@ export class AuthenticationService {
         });
       }
 
-      console.log('Pending team member:', user); // DEBUG
-
       let createdUser;
       try {
         createdUser = await this.prisma.user.create({
@@ -225,8 +224,6 @@ export class AuthenticationService {
           },
         });
 
-        console.log('Created team:', defaultTeam.id, 'for user:', createdUser.id); // DEBUG
-
         // Create team member record for the owner
         const teamMember = await this.prisma.teamMember.create({
           data: {
@@ -237,8 +234,6 @@ export class AuthenticationService {
           },
         });
 
-        console.log('Created TeamMember:', teamMember.id); // DEBUG
-
         await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
       }
 
@@ -248,7 +243,6 @@ export class AuthenticationService {
       const company = process.env.COMPANY_NAME;
       const company_address = process.env.COMPANY_ADDRESS;
 
-      console.log('Sending registration mail to:', user.email, 'with code:', code); // --- IGNORE ---
       this.mail.sendRegisterMail(
         user.email,
         code,
@@ -266,70 +260,106 @@ export class AuthenticationService {
   }
 
   async activateRegistration(email: string, code: string) {
+    // The activation code is only 6 numeric digits, so without throttling it
+    // is trivially brute-forceable. Mirror the login lockout: 5 wrong tries
+    // per email → 15-minute lock. A uniform { success: false } response also
+    // keeps this endpoint from being used to enumerate registered accounts.
+    const LOCK_KEY = `act_lock:${email}`;
+    const ATTEMPTS_KEY = `act_attempts:${email}`;
+    const MAX_ATTEMPTS = 5;
+    const LOCK_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+    const isLocked = await this.cacheManager.get(LOCK_KEY);
+    if (isLocked) {
+      this.logger.warn(`Blocked activation attempt for locked email: ${email}`);
+      return { success: false, locked: true, retryAfter: 900 };
+    }
+
     const findUser = await this.prisma.user.findFirst({
       where: {
         email: email,
       },
     });
 
-    if (findUser.activationCode === code) {
-      await this.prisma.user.update({
-        where: {
-          id: findUser.id,
-        },
-        data: {
-          emailVerified: true,
-          verifiedAt: new Date(),
-          activationCode: null,
-        },
-      });
-
-      await this.cacheManager.del(email);
-
-      const user = await this.prisma.user.findFirst({
-        where: {
-          email: email,
-        },
-        select: { email: true, id: true, name: true, role: true },
-      });
-
-      const teamId = await this.getUserPrimaryTeamId(user.id);
-
-      if (!teamId) {
-        throw new UnauthorizedException('User has no team assigned');
+    const registerFailedAttempt = async () => {
+      const attempts: number =
+        ((await this.cacheManager.get<number>(ATTEMPTS_KEY)) || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.cacheManager.set(LOCK_KEY, true, LOCK_TTL_MS);
+        await this.cacheManager.del(ATTEMPTS_KEY);
+        this.logger.warn(
+          `Activation locked for ${email} after ${MAX_ATTEMPTS} failed attempts`,
+        );
+        return { success: false, locked: true, retryAfter: 900 };
       }
+      await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
+      return { success: false };
+    };
 
-      const tokens = this.getTokens(user.id, user.email, teamId, user.role);
-
-      //TODO: Send welcome email
-
-      // Create JWT and Refresh Token and redirect user to dashboard
-
-      const team = await this.prisma.team.findUnique({
-        where: { id: teamId },
-        select: { onboardingCompletedAt: true, ownerId: true },
-      });
-
-      // Use TeamMember role to correctly identify TEAM_OWNER vs regular member
-      const teamMember = await this.prisma.teamMember.findFirst({
-        where: { teamId, userId: user.id },
-        select: { role: true },
-      });
-      const teamRole = teamMember?.role ?? user.role;
-
-      return {
-        success: true,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        userEmail: user.email,
-        userId: user.id,
-        userName: user.name,
-        role: teamRole,
-        teamId: teamId,
-        onboardingCompleted: !!team?.onboardingCompletedAt,
-      };
+    // Guard against a null user (unknown email) and an already-consumed code
+    // (activationCode is nulled on success) before comparing.
+    if (!findUser || !findUser.activationCode || findUser.activationCode !== code) {
+      return registerFailedAttempt();
     }
-    return { success: false };
+
+    await this.cacheManager.del(ATTEMPTS_KEY);
+    await this.cacheManager.del(LOCK_KEY);
+
+    await this.prisma.user.update({
+      where: {
+        id: findUser.id,
+      },
+      data: {
+        emailVerified: true,
+        verifiedAt: new Date(),
+        activationCode: null,
+      },
+    });
+
+    await this.cacheManager.del(email);
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: email,
+      },
+      select: { email: true, id: true, name: true, role: true },
+    });
+
+    const teamId = await this.getUserPrimaryTeamId(user.id);
+
+    if (!teamId) {
+      throw new UnauthorizedException('User has no team assigned');
+    }
+
+    const tokens = this.getTokens(user.id, user.email, teamId, user.role);
+
+    //TODO: Send welcome email
+
+    // Create JWT and Refresh Token and redirect user to dashboard
+
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { onboardingCompletedAt: true, ownerId: true },
+    });
+
+    // Use TeamMember role to correctly identify TEAM_OWNER vs regular member
+    const teamMember = await this.prisma.teamMember.findFirst({
+      where: { teamId, userId: user.id },
+      select: { role: true },
+    });
+    const teamRole = teamMember?.role ?? user.role;
+
+    return {
+      success: true,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      userEmail: user.email,
+      userId: user.id,
+      userName: user.name,
+      role: teamRole,
+      teamId: teamId,
+      onboardingCompleted: !!team?.onboardingCompletedAt,
+    };
   }
   async lostPassword(user: any, lang: string) {
     user.refreshToken = '';
@@ -373,52 +403,6 @@ export class AuthenticationService {
     );
     this.logger.info(`Password reset mail sent to ${user.email}`);
     return true;
-
-    if (findUser) {
-      return false;
-    } else {
-      const bcrypt = require('bcrypt');
-      user.password = await bcrypt.hash(user.password, 10);
-
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      await this.cacheManager.set(user.email, code, 60 * 60 * 24);
-
-      const createdUser = await this.prisma.user.create({
-        data: {
-          name: user.name,
-          email: user.email,
-          password: user.password,
-          phoneNumber: user.phoneNumber || null,
-          emailVerified: true,
-          phoneVerified: false,
-        },
-      });
-
-      // Create a default team for the new user
-      const defaultTeam = await this.prisma.team.create({
-        data: {
-          name: `${user.name}'s Team`,
-          ownerId: createdUser.id,
-        },
-      });
-
-      await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
-
-      const activationUrl =
-        process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
-
-      this.mail.sendActivateLostPasswordMail(
-        user.email,
-        code,
-        lang,
-
-        activationUrl,
-      );
-
-      this.logger.info('Registering user', user.email);
-    }
-
-    return true;
   }
   async login(email: string, password: string) {
     const LOCK_KEY = `bf_lock:${email}`;
@@ -459,7 +443,9 @@ export class AuthenticationService {
         return { success: false, locked: true, retryAfter: 900 };
       }
       await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
-      return null;
+      // Same generic failure shape as a wrong password below, so this can't be
+      // used to distinguish a non-existent email from a bad password.
+      return { success: false };
     }
 
     return await bcrypt.compare(password, findUser.password).then(async (result) => {
@@ -507,7 +493,10 @@ export class AuthenticationService {
 
         const tokens = this.getTokens(data.id, data.email, teamId, findUser.role);
 
-        this.prisma.user.update({
+        // Must be awaited: the refresh token we return below is only valid if
+        // it has actually been persisted. Fire-and-forget risked returning a
+        // token that a concurrent read hadn't seen yet.
+        await this.prisma.user.update({
           where: {
             id: data.id,
           },
@@ -542,7 +531,11 @@ export class AuthenticationService {
         return { success: false, locked: true, retryAfter: 900 };
       }
       await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
-      return new UnauthorizedException();
+      // Return a consistent failure object rather than an exception instance:
+      // the controller returns this value directly, so throwing here would send
+      // a 401 the frontend's success/locked handler can't read, and returning
+      // the exception object leaked its internal shape as a 200 body.
+      return { success: false };
     });
   }
 
@@ -581,8 +574,6 @@ export class AuthenticationService {
         select: { email: true, id: true, name: true, password: true },
       });
 
-      console.log('Created Google user:', createdUser.id); // DEBUG
-
       // Handle team invitation if exists
       if (pendingTeamMember) {
         // Update the existing TeamMember record
@@ -614,8 +605,6 @@ export class AuthenticationService {
           },
         });
 
-        console.log('Created team for Google user:', defaultTeam.id); // DEBUG
-
         // Create team member record for the owner
         const teamMember = await this.prisma.teamMember.create({
           data: {
@@ -625,8 +614,6 @@ export class AuthenticationService {
             status: 'active',
           },
         });
-
-        console.log('Created TeamMember for Google user:', teamMember.id); // DEBUG
 
         await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
       }
@@ -638,8 +625,6 @@ export class AuthenticationService {
         select: { email: true, id: true, name: true, password: true, role: true },
       });
     }
-
-    console.log('Google login for user:', findUser); // --- IGNORE ---
 
     const { password, ...data } = findUser;
 
@@ -1533,12 +1518,45 @@ export class AuthenticationService {
     }
   }
 
-  async connectGoogleAccount(
-    userId: string,
-    googleId: string,
-    googleEmail: string,
-  ) {
+  async connectGoogleAccount(userId: string, idToken: string) {
     try {
+      // Never trust a googleId/email supplied by the client — verify a Google
+      // ID token server-side and derive the identity from the signed payload.
+      // Otherwise any user could link an arbitrary Google account to their own.
+      if (!idToken) {
+        return {
+          success: false,
+          message: 'Missing Google credential',
+        };
+      }
+
+      const clientId = this.configService.get<string>('GOOGLE_CLIENT_ID');
+      const oauthClient = new OAuth2Client(clientId);
+
+      let googleId: string;
+      let googleEmail: string;
+      try {
+        const ticket = await oauthClient.verifyIdToken({
+          idToken,
+          audience: clientId,
+        });
+        const payload = ticket.getPayload();
+        if (!payload?.sub || !payload.email_verified) {
+          return {
+            success: false,
+            message: 'Google account could not be verified',
+          };
+        }
+        googleId = payload.sub;
+        googleEmail = payload.email;
+      } catch (verifyError) {
+        this.logger.warn('Invalid Google ID token on account connect', verifyError);
+        return {
+          success: false,
+          message: 'Invalid Google credential',
+        };
+      }
+
       // Check if this Google account is already connected to another user
       const existingUser = await this.prisma.user.findFirst({
         where: {

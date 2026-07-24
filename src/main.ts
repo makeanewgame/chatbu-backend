@@ -45,7 +45,17 @@ async function bootstrap() {
   // Stripe webhook needs raw body for signature verification
   app.use('/api/subscription/webhook', bodyParser.raw({ type: 'application/json' }));
 
-  app.use(bodyParser.json({ limit: '20mb' }));
+  // Stash the raw request buffer on every JSON request so webhook handlers
+  // (Meta / WhatsApp) can verify the X-Hub-Signature-256 HMAC over the exact
+  // bytes Meta signed. This does not change how the parsed body is exposed.
+  app.use(
+    bodyParser.json({
+      limit: '20mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
   app.use(bodyParser.urlencoded({ limit: '20mb', extended: true }));
   const rawOrigin = configService.get<string>('CORS_ORIGIN') ?? '';
   const allowedOrigins = rawOrigin.includes(',')
@@ -53,7 +63,12 @@ async function bootstrap() {
     : rawOrigin;
 
   // Embed widget runs on third-party sites, so requests come from arbitrary
-  // origins. Auth is handled by JWT / bot tokens, not cookies — safe to allow.
+  // origins. Auth is handled by JWT / bot tokens in the Authorization header,
+  // NOT cookies — so we deliberately keep `credentials: false`. Reflecting an
+  // arbitrary origin together with `Access-Control-Allow-Credentials: true`
+  // would let any site make credentialed cross-origin requests; since we send
+  // no credentials, disabling it closes that hole while still allowing the
+  // widget to call the API from any origin.
   app.enableCors({
     origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
       // Allow requests with no origin (server-to-server, curl, mobile apps)
@@ -65,11 +80,11 @@ async function bootstrap() {
       ) {
         return callback(null, true);
       }
-      // Allow any other origin for embed widget API calls (credentials omitted)
+      // Allow any other origin for embed widget API calls (no credentials)
       return callback(null, true);
     },
     methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-    credentials: true,
+    credentials: false,
     optionsSuccessStatus: 204
   });
 

@@ -101,8 +101,6 @@ export class MailService {
   async sendPasswordChangedMail(email: string, code: string, lang: string) {
     const rootDir = process.cwd();
 
-    console.log('Sending password changed mail with code:', code, 'to email:', email, 'in language:', lang);
-
     const templatePath = path.join(
       rootDir,
       'dist',

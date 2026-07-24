@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    ForbiddenException,
     Get,
     Headers,
     HttpCode,
@@ -13,6 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { MetaWhatsappService, WhatsAppWebhookBody } from './meta-whatsapp.service';
+import { verifyMetaWebhookSignature } from '../meta/webhook-signature.util';
 
 /**
  * Handles Meta WhatsApp webhook verification and event ingestion.
@@ -64,11 +66,22 @@ export class MetaWhatsappController {
     ) {
         this.logger.log(
             `[WA-WEBHOOK] POST received | ip=${req.ip}` +
-            ` | sig=${signature ?? 'none'}` +
             ` | object=${body?.object}` +
             ` | entries=${body?.entry?.length ?? 0}`,
         );
-        this.logger.log(`[WA-WEBHOOK] POST full body: ${JSON.stringify(body)}`);
+
+        // Reject spoofed events: only Meta can produce a valid HMAC over the
+        // payload using our app secret. Without this any client could inject
+        // fake inbound WhatsApp messages.
+        const isValid = verifyMetaWebhookSignature(
+            (req as any).rawBody,
+            signature,
+            process.env.META_APP_SECRET,
+        );
+        if (!isValid) {
+            this.logger.warn('[WA-WEBHOOK] Rejected event with invalid signature');
+            throw new ForbiddenException('Invalid signature');
+        }
 
         try {
             await this.metaWhatsappService.handleWebhook(body);
