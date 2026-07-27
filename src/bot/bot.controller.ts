@@ -28,6 +28,7 @@ import { RenameBotRequest } from './dto/renameBotRequest';
 import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
+import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -478,6 +479,21 @@ export class BotController {
   ) {
     const user = req.user as IUser;
     return this.botService.updateLeadVerification(body, user.teamId, user.sub, user.email);
+  }
+  //#endregion
+
+  //#region updateSmsVerification
+  @ApiOperation({ summary: 'Toggle required SMS (NETGSM) verification for bot leads' })
+  @ApiResponse({ status: 200, description: 'SMS verification setting updated' })
+  @ApiBearerAuth()
+  @Post('updateSmsVerification')
+  @UseGuards(AccessTokenGuard)
+  async updateSmsVerification(
+    @Body() body: UpdateSmsVerificationRequest,
+    @Req() req: Request,
+  ) {
+    const user = req.user as IUser;
+    return this.botService.updateSmsVerification(body, user.teamId, user.sub, user.email);
   }
   //#endregion
 
