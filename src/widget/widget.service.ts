@@ -12,6 +12,7 @@ import { BotService } from '../bot/bot.service';
 import { MinioClientService } from '../minio-client/minio-client.service';
 import { MailService } from '../mail/mail.service';
 import { LeadDestination } from '../bot/lead-destination.constants';
+import { LeadService } from '../lead/lead.service';
 import { EventsGateway } from '../events/events.gateway';
 
 const FEEDBACK_ANSWER_TO_RATING: Record<'yes' | 'partial' | 'no', number> = {
@@ -30,7 +31,19 @@ export class WidgetService {
         private minioClientService: MinioClientService,
         private mailService: MailService,
         private eventsGateway: EventsGateway,
+        private leadService: LeadService,
     ) { }
+
+    /**
+     * Records that a widget visitor accepted the KVKK Aydınlatma Metni /
+     * Kullanım Şartları before an SMS OTP will be sent for lead capture.
+     * IP/user-agent are captured server-side from the request, never
+     * trusted from the client body, so the resulting audit row holds up
+     * even if the browser payload were tampered with.
+     */
+    async recordKvkkConsent(botId: string, chatId: string, ip: string, userAgent: string) {
+        return this.leadService.recordPrivacyConsent({ botId, chatId }, ip, userAgent);
+    }
 
     // ---------------------------------------------------------------------------
     // Helpers

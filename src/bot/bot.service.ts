@@ -11,6 +11,7 @@ import { MODEL_TIERS, DEFAULT_MODEL_TIER } from './model-tier.constants';
 import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
+import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -1193,17 +1194,55 @@ export class BotService {
     return { message: 'Lead verification setting updated', bot: updated };
   }
 
-  async getLeadVerificationStatus(botId: string) {
+  async updateSmsVerification(body: UpdateSmsVerificationRequest, teamId: string, userId?: string, userEmail?: string) {
     const bot = await this.prisma.customerBots.findUnique({
-      where: { id: botId, isDeleted: false },
-      select: { leadVerificationRequired: true },
+      where: { id: body.botId, isDeleted: false },
     });
 
     if (!bot) {
       throw new NotFoundException('Bot not found');
     }
 
-    return { requiresVerification: bot.leadVerificationRequired };
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    const oldValue = bot.smsVerificationRequired;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { smsVerificationRequired: body.smsVerificationRequired },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_SMS_VERIFICATION',
+      status: 'SUCCESS',
+      userId,
+      userEmail,
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot sms-verification: ${oldValue} -> ${body.smsVerificationRequired}`,
+    });
+
+    return { message: 'SMS verification setting updated', bot: updated };
+  }
+
+  async getLeadVerificationStatus(botId: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: botId, isDeleted: false },
+      select: { leadVerificationRequired: true, smsVerificationRequired: true },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    return {
+      requiresVerification: bot.leadVerificationRequired,
+      requiresSmsVerification: bot.smsVerificationRequired,
+    };
   }
 
   /**

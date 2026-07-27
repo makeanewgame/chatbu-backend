@@ -147,6 +147,7 @@ model CustomerBots {
   modelTier                String         @default("haiku")
   leadDestinations         Json           @default("[]")
   leadVerificationRequired Boolean        @default(false)
+  smsVerificationRequired  Boolean        @default(false)
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
   isDeleted                Boolean        @default(false)
@@ -480,6 +481,8 @@ model BotLeads {
   deliveryErrors    Json?
   status            LeadStatus   @default(NEW)
   verified          Boolean      @default(false)
+  smsVerified       Boolean      @default(false)
+  privacyConsentId  String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   bot               CustomerBots @relation(fields: [botId], references: [id], onDelete: Cascade)
@@ -500,6 +503,45 @@ model LeadVerification {
 
   @@index([botId, email])
   @@index([expiresAt])
+}
+
+model LeadSmsVerification {
+  id        String    @id @default(cuid())
+  botId     String
+  phone     String
+  codeHash  String
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([botId, phone])
+  @@index([expiresAt])
+}
+
+// KVKK / GDPR-style consent audit log for phone-based lead capture.
+// One row is created the moment a visitor accepts the Aydınlatma Metni +
+// Kullanım Şartları (before their phone number is even known), then updated
+// in place as the flow progresses so consent -> OTP -> lead is one row.
+model LeadPrivacyConsent {
+  id                String    @id @default(cuid())
+  botId             String
+  teamId            String
+  chatId            String
+  phone             String?
+  source            String    @default("chatbot")
+  privacyVersion    String
+  privacyAcceptedAt DateTime
+  ipAddress         String?
+  userAgent         String?
+  otpVerified       Boolean   @default(false)
+  otpVerifiedAt     DateTime?
+  leadId            String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([botId, chatId])
+  @@index([leadId])
 }
 
 model ChatFeedback {
@@ -706,6 +748,7 @@ enum LogAction {
   UPDATE_MODEL_TIER
   UPDATE_LEAD_DESTINATIONS
   UPDATE_LEAD_VERIFICATION
+  UPDATE_SMS_VERIFICATION
 }
 
 enum LeadStatus {

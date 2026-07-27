@@ -11,6 +11,8 @@ import { ListLeadsDto } from './dto/list-leads.dto';
 import { MarkLeadStatusDto } from './dto/mark-lead-status.dto';
 import { RequestLeadVerificationDto } from './dto/request-lead-verification.dto';
 import { VerifyLeadDto } from './dto/verify-lead.dto';
+import { RequestSmsVerificationDto } from './dto/request-sms-verification.dto';
+import { VerifySmsDto } from './dto/verify-sms.dto';
 
 @ApiTags('Lead Capture')
 @Controller('lead')
@@ -55,6 +57,34 @@ export class LeadController {
   @HttpCode(200)
   async verify(@Body() body: VerifyLeadDto) {
     return this.leadService.verifyCode(body);
+  }
+
+  /**
+   * POST /api/lead/request-sms-verification
+   * Called by the gateway's request_lead_sms_verification MCP tool.
+   */
+  @ApiOperation({ summary: 'Send a 6-digit SMS verification code via NETGSM (internal, called by gateway)' })
+  @ApiResponse({ status: 200, description: 'Code sent or rate limited' })
+  @ApiResponse({ status: 400, description: 'Verification not required, or KVKK consent missing' })
+  @UseGuards(InternalApiKeyGuard)
+  @Throttle({ default: { ttl: 3600000, limit: 20 } })
+  @Post('request-sms-verification')
+  @HttpCode(200)
+  async requestSmsVerification(@Body() body: RequestSmsVerificationDto) {
+    return this.leadService.requestSmsVerification(body);
+  }
+
+  /**
+   * POST /api/lead/verify-sms
+   * Called by the gateway to exchange a 6-digit SMS code for a verification JWT.
+   */
+  @ApiOperation({ summary: 'Verify an SMS code and issue a verification token (internal)' })
+  @ApiResponse({ status: 200, description: 'Verification result returned' })
+  @UseGuards(InternalApiKeyGuard)
+  @Post('verify-sms')
+  @HttpCode(200)
+  async verifySms(@Body() body: VerifySmsDto) {
+    return this.leadService.verifySmsCode(body);
   }
 
   //#region list

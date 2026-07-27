@@ -60,6 +60,30 @@ export class WidgetController {
     }
 
     /**
+     * Records KVKK consent (Aydınlatma Metni + Kullanım Şartları acceptance)
+     * for a widget visitor, before their phone number is collected for SMS
+     * lead verification. Public like the rest of this controller - bot-scoped
+     * only, no session token needed since consent can happen before a chat
+     * message (and therefore a session) even exists.
+     */
+    @ApiOperation({ summary: 'Record KVKK consent acceptance for SMS lead verification' })
+    @Post('lead/kvkk-consent')
+    @Throttle({ default: { ttl: 60000, limit: 10 } })
+    async recordKvkkConsent(@Body() body: any, @Req() req: Request) {
+        const ip =
+            ((req.headers['x-forwarded-for'] as string) ?? '')
+                .split(',')[0]
+                .trim() || req.socket?.remoteAddress || '127.0.0.1';
+
+        return this.widgetService.recordKvkkConsent(
+            body.botId,
+            body.chatId,
+            ip,
+            (req.headers['user-agent'] as string) ?? '',
+        );
+    }
+
+    /**
      * Uploads a chat attachment (image or document).
      * Authenticated via sessionToken (2-hour JWT from /widget/session).
      * Throttled to 10 uploads/min per IP.

@@ -39,4 +39,8 @@ export class SubmitLeadDto {
   @IsOptional()
   @IsString()
   verificationToken?: string | null;
+
+  @IsOptional()
+  @IsString()
+  smsVerificationToken?: string | null;
 }
