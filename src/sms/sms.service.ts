@@ -44,6 +44,21 @@ export class SmsService {
    * sendRegisterMail (which swallowed errors silently).
    */
   async sendOtpSms(phone: string, code: string, botName: string, lang: 'tr' | 'en' = 'tr'): Promise<void> {
+    const to = normalizeTurkishPhone(phone);
+    const message =
+      lang === 'en'
+        ? `Your ${botName} verification code: ${code}. Valid for 5 minutes.`
+        : `${botName} doğrulama kodunuz: ${code}. Kod 5 dakika geçerlidir.`;
+
+    // Dev/local escape hatch: skip the real NETGSM call and just log the
+    // code, so the KVKK-consent -> OTP -> verify flow can be exercised
+    // end-to-end without spending real SMS credits or needing a live
+    // NETGSM account on every dev machine. Never enable in prod.
+    if (process.env.NETGSM_MOCK?.toLowerCase() === 'true') {
+      this.logger.info(`[NETGSM_MOCK] Would send OTP to ${to}: "${message}"`);
+      return;
+    }
+
     const username = process.env.NETGSM_USERNAME;
     const password = process.env.NETGSM_PASSWORD;
     const msgheader = process.env.NETGSM_MSGHEADER;
@@ -52,12 +67,6 @@ export class SmsService {
       this.logger.error('NETGSM credentials are not configured (NETGSM_USERNAME/NETGSM_PASSWORD/NETGSM_MSGHEADER)');
       throw new InternalServerErrorException('SMS provider is not configured');
     }
-
-    const to = normalizeTurkishPhone(phone);
-    const message =
-      lang === 'en'
-        ? `Your ${botName} verification code: ${code}. Valid for 5 minutes.`
-        : `${botName} doğrulama kodunuz: ${code}. Kod 5 dakika geçerlidir.`;
 
     const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
 
