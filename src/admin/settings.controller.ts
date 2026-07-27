@@ -67,7 +67,7 @@ export class SettingsController {
             },
             {
                 key: 'PREMIUM_BOT_LIMIT',
-                value: '10',
+                value: '2',
                 description: 'Maximum number of bots for premium tier users',
             },
         ];

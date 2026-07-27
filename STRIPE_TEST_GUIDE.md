@@ -117,7 +117,7 @@ Bu ayarları elle de değiştirebilirsiniz:
 | TOKEN_PRICE_PER_1K | 0.002 | 1000 token başına fiyat (USD) |
 | PREMIUM_MONTHLY_PRICE | 29.99 | Premium aylık abonelik ücreti (USD) |
 | FREE_BOT_LIMIT | 1 | Free tier bot limiti |
-| PREMIUM_BOT_LIMIT | 10 | Premium tier bot limiti |
+| PREMIUM_BOT_LIMIT | 2 | Premium tier bot limiti |
 
 ## 🧪 Test Senaryoları
 
