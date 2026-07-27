@@ -35,7 +35,7 @@ export class GoogleCalendarController {
     @Post(':botId/connect')
     async connect(@Req() req, @Param('botId') botId: string) {
         const user = req.user as IUser;
-        const authUrl = this.googleCalendarService.getAuthUrl(user.teamId, botId);
+        const authUrl = this.googleCalendarService.getAuthUrl(user.teamId, botId, user.sub, user.email);
         return { authUrl };
     }
 
@@ -96,6 +96,6 @@ export class GoogleCalendarController {
     @Delete(':botId')
     async disconnect(@Req() req, @Param('botId') botId: string) {
         const user = req.user as IUser;
-        return this.googleCalendarService.disconnect(user.teamId, botId);
+        return this.googleCalendarService.disconnect(user.teamId, botId, user.sub, user.email);
     }
 }

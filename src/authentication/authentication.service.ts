@@ -11,6 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
 import { randomUUID } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
 export class AuthenticationService {
@@ -22,6 +23,7 @@ export class AuthenticationService {
     private quoteService: QuotaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+    private systemLogService: SystemLogService,
   ) { }
 
   /**
@@ -1263,6 +1265,18 @@ export class AuthenticationService {
           deletionScheduledFor: deletionDate,
           refreshToken: null, // Invalidate all sessions
         },
+      });
+
+      await this.systemLogService.createLog({
+        category: 'AUTH',
+        action: 'DELETE',
+        status: 'SUCCESS',
+        userId,
+        userName: user.name,
+        userEmail: user.email,
+        entityId: userId,
+        entityName: 'Account',
+        message: `Account deletion requested, scheduled for ${deletionDate.toISOString()}`,
       });
 
       // Send deletion confirmation email

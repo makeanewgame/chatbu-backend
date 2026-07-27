@@ -346,16 +346,25 @@ export class SubscriptionService {
             },
         });
 
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { name: true, email: true },
+        });
+
         await this.systemLogService.createLog({
             category: 'STRIPE',
             action: 'UNSUBSCRIBE',
             status: 'SUCCESS',
             userId,
+            userName: user?.name,
+            userEmail: user?.email,
+            entityId: subscription.id,
+            entityName: 'Subscription',
             message: `Subscription cancellation requested`,
         });
 
-        if (reasons?.length || otherText) {
-            await this.createCancellationFeedback(userId, 'SUBSCRIPTION_CANCELLATION', reasons, otherText);
+        if (user && (reasons?.length || otherText)) {
+            await this.createCancellationFeedback(userId, user, 'SUBSCRIPTION_CANCELLATION', reasons, otherText);
         }
 
         return { message: 'Subscription will be cancelled at period end' };
@@ -363,17 +372,11 @@ export class SubscriptionService {
 
     private async createCancellationFeedback(
         userId: string,
+        user: { name: string; email: string },
         category: 'SUBSCRIPTION_CANCELLATION' | 'ACCOUNT_DELETION',
         reasons?: string[],
         otherText?: string,
     ) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { name: true, email: true },
-        });
-
-        if (!user) return;
-
         const message = [...(reasons || []), otherText].filter(Boolean).join('\n');
 
         await this.prisma.feedback.create({
