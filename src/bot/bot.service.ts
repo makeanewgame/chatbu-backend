@@ -124,8 +124,27 @@ export class BotService {
   async generateSystemPrompt(body: GenerateSystemPromptRequest) {
     const ingestUrl = this.configService.get('INGEST_ENPOINT');
 
+    const team = await this.prisma.team.findUnique({
+      where: { id: body.teamId },
+      include: { owner: true },
+    });
+
+    if (!team) {
+      throw new Error('Team not found');
+    }
+
+    const quotaCheck = await this.subscriptionService.checkTokenQuota(team.ownerId, {
+      teamId: body.teamId,
+      entityId: body.botId,
+      entityName: body.businessName,
+    });
+    if (!quotaCheck.allowed) {
+      throw new ForbiddenException(quotaCheck.message || 'Token quota exceeded');
+    }
+
+    let data: any;
     try {
-      const { data } = await firstValueFrom(
+      const response = await firstValueFrom(
         this.httpService.post(`${ingestUrl}/generate-system-prompt`, {
           business_name: body.businessName,
           company_size: body.companySize,
@@ -140,15 +159,33 @@ export class BotService {
             throw error;
           }),
         ));
-
-      return {
-        systemPrompt: data.system_prompt,
-        tone: data.tone,
-        guidelines: data.guidelines,
-      };
+      data = response.data;
     } catch (error) {
       throw new BadRequestException('Could not generate a system prompt right now, please try again');
     }
+
+    // Bill the draft's token usage the same way a chat turn is billed —
+    // the gateway call above runs a real LLM invocation, it just wasn't
+    // metered before this. `tokens` is only present once the ML gateway
+    // reports it; older/unpatched gateway pods silently produce a 0-token
+    // (unbilled) log row rather than failing the request.
+    const tokenCount = data.tokens?.total_tokens || 0;
+    if (tokenCount > 0) {
+      await this.subscriptionService.trackTokenUsage(
+        team.ownerId,
+        tokenCount,
+        body.teamId,
+        body.botId,
+        undefined,
+        'system_prompt',
+      );
+    }
+
+    return {
+      systemPrompt: data.system_prompt,
+      tone: data.tone,
+      guidelines: data.guidelines,
+    };
   }
 
   async deleteBot(body: DeleteBotRequest, userId?: string, userEmail?: string) {
