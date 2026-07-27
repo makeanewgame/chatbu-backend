@@ -32,7 +32,7 @@ export class QuotaService {
 
         // Get limits from system settings
         const freeBotLimit = await this.getSettingValue('FREE_BOT_LIMIT', '1');
-        const premiumBotLimit = await this.getSettingValue('PREMIUM_BOT_LIMIT', '10');
+        const premiumBotLimit = await this.getSettingValue('PREMIUM_BOT_LIMIT', '2');
         const botLimit = isFree ? parseInt(freeBotLimit) : parseInt(premiumBotLimit);
 
         await this.prisma.quota.create({
@@ -104,7 +104,7 @@ export class QuotaService {
 
         const isFree = !subscription || subscription.tier === 'FREE';
         const freeBotLimit = await this.getSettingValue('FREE_BOT_LIMIT', '1');
-        const premiumBotLimit = await this.getSettingValue('PREMIUM_BOT_LIMIT', '10');
+        const premiumBotLimit = await this.getSettingValue('PREMIUM_BOT_LIMIT', '2');
         const botLimit = isFree ? parseInt(freeBotLimit) : parseInt(premiumBotLimit);
 
         for (const team of teams) {
