@@ -1204,7 +1204,7 @@ export class AuthenticationService {
    * Request account deletion (soft delete with 30-day grace period)
    * GDPR compliant - allows user to recover within 30 days
    */
-  async requestAccountDeletion(userId: string) {
+  async requestAccountDeletion(userId: string, reasons?: string[], otherText?: string) {
     try {
       // Check eligibility
       const eligibility = await this.checkDeletionEligibility(userId);
@@ -1234,6 +1234,20 @@ export class AuthenticationService {
           message: 'Account is already scheduled for deletion',
           scheduledFor: user.deletionScheduledFor,
         };
+      }
+
+      if (reasons?.length || otherText) {
+        const message = [...(reasons || []), otherText].filter(Boolean).join('\n');
+        await this.prisma.feedback.create({
+          data: {
+            userId,
+            userName: user.name,
+            userEmail: user.email,
+            category: 'ACCOUNT_DELETION',
+            message: message || 'No reason provided',
+            status: 'PENDING',
+          },
+        });
       }
 
       // Calculate deletion date (30 days from now)
