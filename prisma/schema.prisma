@@ -572,6 +572,25 @@ model BookingVerification {
   @@index([expiresAt])
 }
 
+// SMS-based counterpart of BookingVerification. Introduced Faz B of the
+// SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
+// Same shape modulo email→phone. Kept as a SEPARATE table (not a new
+// column on BookingVerification) so the email flow can keep serving
+// in-flight MCP callers until Faz C flips them over. Both tables will
+// be reconciled in a later cleanup cycle once the email path is unused.
+model BookingSmsVerification {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  botCuid   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone, botCuid])
+  @@index([expiresAt])
+}
+
 model WidgetVisitor {
   id                String   @id @default(cuid())
   visitorId         String   @unique
