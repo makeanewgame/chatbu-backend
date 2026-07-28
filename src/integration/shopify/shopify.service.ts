@@ -26,8 +26,23 @@ export class ShopifyService {
      * once the merchant approves. Mints a one-time code the Shopify app exchanges server-to-server.
      */
     async createAuthorizationCode(teamId: string, userId: string, redirectUri: string) {
-        const allowedRedirectUri = this.config.get<string>('SHOPIFY_APP_CALLBACK_URL');
-        if (!allowedRedirectUri || redirectUri !== allowedRedirectUri) {
+        // SHOPIFY_APP_CALLBACK_URL only needs to be the bare app domain (whatever
+        // `shopify app dev` prints each run) — only the origin is trusted here,
+        // the callback path is always fixed at /chatbu-callback regardless of
+        // whether a path happens to be included in the env value too.
+        const allowedOrigin = this.config.get<string>('SHOPIFY_APP_CALLBACK_URL');
+        let parsedRedirect: URL;
+        let parsedAllowed: URL;
+        try {
+            parsedRedirect = new URL(redirectUri);
+            parsedAllowed = new URL(allowedOrigin || '');
+        } catch {
+            throw new UnauthorizedException('Unknown redirect_uri');
+        }
+        if (
+            parsedRedirect.origin !== parsedAllowed.origin ||
+            parsedRedirect.pathname !== '/chatbu-callback'
+        ) {
             throw new UnauthorizedException('Unknown redirect_uri');
         }
 
