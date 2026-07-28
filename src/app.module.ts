@@ -31,6 +31,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { MetaWhatsappModule } from './meta-whatsapp/meta-whatsapp.module';
 import { WidgetModule } from './widget/widget.module';
 import { LeadModule } from './lead/lead.module';
+import { AppointmentModule } from './appointment/appointment.module';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import {
   chatbuHttpRequestDurationSeconds,
@@ -80,7 +81,7 @@ import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.intercep
       defaultLabels: { app: 'chatbu-backend' },
       defaultMetrics: { enabled: true },
     }),
-    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule],
+    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule, AppointmentModule],
   controllers: [AppController],
   providers: [
     AppService,
