@@ -29,7 +29,7 @@ export class IntegrationController {
     @Post()
     async create(@Req() req, @Body() body: CreateIntegrationDto) {
         const user = req.user as IUser;
-        return this.integrationService.createIntegration(user.teamId, body);
+        return this.integrationService.createIntegration(user.teamId, body, user.sub, user.email);
     }
 
     @ApiOperation({ summary: 'Update integration for team' })
@@ -47,7 +47,7 @@ export class IntegrationController {
     @Post('delete')
     async delete(@Req() req, @Body() body: DeleteIntegrationDto) {
         const user = req.user as IUser;
-        return this.integrationService.deleteIntegration(user.teamId, body);
+        return this.integrationService.deleteIntegration(user.teamId, body, user.sub, user.email);
     }
 
     @ApiOperation({ summary: 'Test integration connection' })

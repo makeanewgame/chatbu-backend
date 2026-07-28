@@ -42,10 +42,10 @@ export class GoogleCalendarService {
     /**
      * Generate Google OAuth authorization URL for a specific bot.
      */
-    getAuthUrl(teamId: string, botId: string): string {
-        const state = Buffer.from(JSON.stringify({ teamId, botId })).toString(
-            'base64url',
-        );
+    getAuthUrl(teamId: string, botId: string, userId?: string, userEmail?: string): string {
+        const state = Buffer.from(
+            JSON.stringify({ teamId, botId, userId, userEmail }),
+        ).toString('base64url');
 
         return this.oauth2Client.generateAuthUrl({
             access_type: 'offline',
@@ -59,7 +59,7 @@ export class GoogleCalendarService {
      * Handle the OAuth callback: exchange code for tokens, store in Integrations.
      */
     async handleCallback(code: string, state: string) {
-        const { teamId, botId } = JSON.parse(
+        const { teamId, botId, userId, userEmail } = JSON.parse(
             Buffer.from(state, 'base64url').toString('utf-8'),
         );
 
@@ -123,6 +123,9 @@ export class GoogleCalendarService {
             action: 'CREATE',
             status: 'SUCCESS',
             teamId,
+            userId,
+            userEmail,
+            entityId: botId,
             entityName: INTEGRATION_TYPE,
             message: `Google Calendar connected for bot ${botId}`,
         });
@@ -226,7 +229,7 @@ export class GoogleCalendarService {
     /**
      * Disconnect: revoke token at Google and delete the integration row.
      */
-    async disconnect(teamId: string, botId: string) {
+    async disconnect(teamId: string, botId: string, userId?: string, userEmail?: string) {
         const row = await this.findIntegration(teamId, botId);
 
         if (!row) {
@@ -251,6 +254,9 @@ export class GoogleCalendarService {
             action: 'DELETE',
             status: 'SUCCESS',
             teamId,
+            userId,
+            userEmail,
+            entityId: botId,
             entityName: INTEGRATION_TYPE,
             message: `Google Calendar disconnected for bot ${botId}`,
         });

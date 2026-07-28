@@ -43,9 +43,9 @@ export class SubscriptionController {
 
     @Post('cancel')
     @UseGuards(JwtGuard)
-    async cancel(@Req() req) {
+    async cancel(@Req() req, @Body() body: { reasons?: string[]; otherText?: string }) {
         const userId = req.user?.sub || req.user?.id;
-        return this.subscriptionService.cancelSubscription(userId);
+        return this.subscriptionService.cancelSubscription(userId, body?.reasons, body?.otherText);
     }
 
     @Post('purchase-tokens')

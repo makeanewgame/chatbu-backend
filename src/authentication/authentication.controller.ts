@@ -271,8 +271,8 @@ export class AuthenticationController {
 
   @UseGuards(AccessTokenGuard)
   @Post('request-deletion')
-  async requestAccountDeletion(@Req() req) {
-    return await this.authService.requestAccountDeletion(req.user.sub);
+  async requestAccountDeletion(@Req() req, @Body() body: { reasons?: string[]; otherText?: string }) {
+    return await this.authService.requestAccountDeletion(req.user.sub, body?.reasons, body?.otherText);
   }
 
   @UseGuards(AccessTokenGuard)

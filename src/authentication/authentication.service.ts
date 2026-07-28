@@ -11,6 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
 import { randomUUID } from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
+import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
 export class AuthenticationService {
@@ -22,6 +23,7 @@ export class AuthenticationService {
     private quoteService: QuotaService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+    private systemLogService: SystemLogService,
   ) { }
 
   /**
@@ -1204,7 +1206,7 @@ export class AuthenticationService {
    * Request account deletion (soft delete with 30-day grace period)
    * GDPR compliant - allows user to recover within 30 days
    */
-  async requestAccountDeletion(userId: string) {
+  async requestAccountDeletion(userId: string, reasons?: string[], otherText?: string) {
     try {
       // Check eligibility
       const eligibility = await this.checkDeletionEligibility(userId);
@@ -1236,6 +1238,20 @@ export class AuthenticationService {
         };
       }
 
+      if (reasons?.length || otherText) {
+        const message = [...(reasons || []), otherText].filter(Boolean).join('\n');
+        await this.prisma.feedback.create({
+          data: {
+            userId,
+            userName: user.name,
+            userEmail: user.email,
+            category: 'ACCOUNT_DELETION',
+            message: message || 'No reason provided',
+            status: 'PENDING',
+          },
+        });
+      }
+
       // Calculate deletion date (30 days from now)
       const deletionDate = new Date();
       deletionDate.setDate(deletionDate.getDate() + 30);
@@ -1249,6 +1265,18 @@ export class AuthenticationService {
           deletionScheduledFor: deletionDate,
           refreshToken: null, // Invalidate all sessions
         },
+      });
+
+      await this.systemLogService.createLog({
+        category: 'AUTH',
+        action: 'DELETE',
+        status: 'SUCCESS',
+        userId,
+        userName: user.name,
+        userEmail: user.email,
+        entityId: userId,
+        entityName: 'Account',
+        message: `Account deletion requested, scheduled for ${deletionDate.toISOString()}`,
       });
 
       // Send deletion confirmation email

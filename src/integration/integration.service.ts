@@ -22,7 +22,7 @@ export class IntegrationService {
         });
     }
 
-    async createIntegration(teamId: string, dto: CreateIntegrationDto) {
+    async createIntegration(teamId: string, dto: CreateIntegrationDto, userId?: string, userEmail?: string) {
         const existing = await this.prisma.integrations.findFirst({
             where: { teamId, type: dto.type, botId: dto.botId },
         });
@@ -42,6 +42,8 @@ export class IntegrationService {
                 action: 'UPDATE',
                 status: 'SUCCESS',
                 teamId,
+                userId,
+                userEmail,
                 entityId: existing.id,
                 entityName: dto.type,
                 message: `Integration updated: ${dto.type}`,
@@ -68,6 +70,8 @@ export class IntegrationService {
             action: 'CREATE',
             status: 'SUCCESS',
             teamId,
+            userId,
+            userEmail,
             entityId: created.id,
             entityName: dto.type,
             message: `Integration created: ${dto.type}`,
@@ -95,7 +99,7 @@ export class IntegrationService {
         return updated;
     }
 
-    async deleteIntegration(teamId: string, dto: DeleteIntegrationDto) {
+    async deleteIntegration(teamId: string, dto: DeleteIntegrationDto, userId?: string, userEmail?: string) {
         const existing = await this.prisma.integrations.findFirst({
             where: { id: dto.id, teamId },
         });
@@ -117,7 +121,10 @@ export class IntegrationService {
             action: 'DELETE',
             status: 'SUCCESS',
             teamId,
+            userId,
+            userEmail,
             entityId: dto.id,
+            entityName: existing.type,
             message: `Integration deleted`,
         });
 

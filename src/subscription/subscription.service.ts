@@ -324,7 +324,7 @@ export class SubscriptionService {
         };
     }
 
-    async cancelSubscription(userId: string) {
+    async cancelSubscription(userId: string, reasons?: string[], otherText?: string) {
         const subscription = await this.prisma.subscription.findUnique({
             where: { userId },
         });
@@ -346,15 +346,49 @@ export class SubscriptionService {
             },
         });
 
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { name: true, email: true },
+        });
+
         await this.systemLogService.createLog({
             category: 'STRIPE',
             action: 'UNSUBSCRIBE',
             status: 'SUCCESS',
             userId,
+            userName: user?.name,
+            userEmail: user?.email,
+            entityId: subscription.id,
+            entityName: 'Subscription',
             message: `Subscription cancellation requested`,
         });
 
+        if (user && (reasons?.length || otherText)) {
+            await this.createCancellationFeedback(userId, user, 'SUBSCRIPTION_CANCELLATION', reasons, otherText);
+        }
+
         return { message: 'Subscription will be cancelled at period end' };
+    }
+
+    private async createCancellationFeedback(
+        userId: string,
+        user: { name: string; email: string },
+        category: 'SUBSCRIPTION_CANCELLATION' | 'ACCOUNT_DELETION',
+        reasons?: string[],
+        otherText?: string,
+    ) {
+        const message = [...(reasons || []), otherText].filter(Boolean).join('\n');
+
+        await this.prisma.feedback.create({
+            data: {
+                userId,
+                userName: user.name,
+                userEmail: user.email,
+                category,
+                message: message || 'No reason provided',
+                status: 'PENDING',
+            },
+        });
     }
 
     async purchaseTokens(userId: string, tokenAmount: number) {
