@@ -156,6 +156,7 @@ model CustomerBots {
   BotLeads                 BotLeads[]
   ChatFeedback             ChatFeedback[]
   integrations             Integrations[]
+  appointments             Appointment[]
 }
 
 model CustomerChats {
@@ -589,6 +590,54 @@ model BookingSmsVerification {
 
   @@index([phone, botCuid])
   @@index([expiresAt])
+}
+
+// Persisted record of a completed booking. Introduced in Faz D of the
+// SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
+// Two callers today:
+//   - AppointmentService.createFromMcp() inserts one row per successful
+//     MCP `create_appointment` (bridged via the /appointment-created
+//     hop from the MCP server).
+//   - AppointmentReminderService (Faz E) scans upcoming rows every
+//     minute and sends SMS reminders based on the bot's configured
+//     offsets, updating `reminderStates` per-offset so a reminder can
+//     never fire twice for the same slot.
+//
+// Google Calendar remains the visitor-facing source of truth (invite
+// email + cancel/reschedule buttons), but the calendar has no API for
+// "list events starting in the next 24 hours across all bots"; we
+// persist here so a per-minute cron can efficiently find what's due
+// without walking every bot's calendar over HTTP.
+model Appointment {
+  id              String       @id @default(cuid())
+  botId           String
+  calendarEventId String
+  attendeeName    String
+  attendeePhone   String
+  attendeeEmail   String
+  startAt         DateTime
+  endAt           DateTime
+  summary         String
+  description     String       @default("")
+  timezone        String       @default("UTC")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  // Per-offset reminder dispatch state. Keys are the offset in minutes
+  // as strings ("1440", "60", ...); values are "pending" | "sent" |
+  // "failed". `pending` is implicit (absence of the key is the same as
+  // "not tried yet") so an empty {} on insert is fine — the cron
+  // updates the key on each dispatch attempt so retries don't double-
+  // fire.
+  reminderStates  Json         @default("{}")
+  bot             CustomerBots @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([startAt])
+  // A single Google Calendar event should map to at most one Appointment
+  // row per bot. The MCP hop is idempotent (fail-open, but a retry could
+  // still fire twice); a unique key here catches any duplicate hop
+  // attempt at the DB layer rather than doubling reminders downstream.
+  @@unique([botId, calendarEventId])
 }
 
 model WidgetVisitor {
