@@ -208,3 +208,110 @@ describe('AppointmentService.createFromMcp', () => {
         expect(prisma.appointment.create).not.toHaveBeenCalled();
     });
 });
+
+
+// ---------------------------------------------------------------------------
+// Faz E: updateReminderOffsets — FE-facing per-bot config
+// ---------------------------------------------------------------------------
+describe('AppointmentService.updateReminderOffsets', () => {
+    let service: AppointmentService;
+    let prisma: {
+        customerBots: { findUnique: jest.Mock; update: jest.Mock };
+    };
+
+    beforeEach(async () => {
+        prisma = {
+            customerBots: { findUnique: jest.fn(), update: jest.fn() },
+        };
+
+        const module: TestingModule = await Test.createTestingModule({
+            providers: [
+                AppointmentService,
+                { provide: PrismaService, useValue: prisma },
+                { provide: SmsService, useValue: {} },
+            ],
+        }).compile();
+
+        service = module.get(AppointmentService);
+    });
+
+    it('persists a whitelisted offset set for a bot the caller owns', async () => {
+        prisma.customerBots.findUnique.mockResolvedValue({ id: 'bot_1', teamId: 'team_a' });
+        prisma.customerBots.update.mockResolvedValue({
+            id: 'bot_1',
+            appointmentReminderOffsets: [60, 1440],
+        });
+
+        const result = await service.updateReminderOffsets('bot_1', 'team_a', [1440, 60]);
+
+        // Canonical form: sorted, de-duplicated. Owner-flipping-then-
+        // re-flipping the same box in a different order shouldn't
+        // produce a stored diff — checked against the update args.
+        const updateArgs = prisma.customerBots.update.mock.calls[0][0];
+        expect(updateArgs.data.appointmentReminderOffsets).toEqual([60, 1440]);
+        expect(result.appointmentReminderOffsets).toEqual([60, 1440]);
+    });
+
+    it('accepts an empty array to disable reminders for the bot', async () => {
+        prisma.customerBots.findUnique.mockResolvedValue({ id: 'bot_1', teamId: 'team_a' });
+        prisma.customerBots.update.mockResolvedValue({
+            id: 'bot_1',
+            appointmentReminderOffsets: [],
+        });
+
+        await service.updateReminderOffsets('bot_1', 'team_a', []);
+
+        expect(prisma.customerBots.update.mock.calls[0][0].data.appointmentReminderOffsets).toEqual([]);
+    });
+
+    it('deduplicates repeated offsets before persisting', async () => {
+        prisma.customerBots.findUnique.mockResolvedValue({ id: 'bot_1', teamId: 'team_a' });
+        prisma.customerBots.update.mockResolvedValue({
+            id: 'bot_1',
+            appointmentReminderOffsets: [60],
+        });
+
+        await service.updateReminderOffsets('bot_1', 'team_a', [60, 60]);
+
+        expect(prisma.customerBots.update.mock.calls[0][0].data.appointmentReminderOffsets).toEqual([60]);
+    });
+
+    it('rejects an offset outside the allowed whitelist', async () => {
+        prisma.customerBots.findUnique.mockResolvedValue({ id: 'bot_1', teamId: 'team_a' });
+
+        // 10080 = 7 days. Not on the FE. The whitelist stops any wonky
+        // proxy or scripted client from smuggling wildly off-band values
+        // into the cron's scan window.
+        await expect(
+            service.updateReminderOffsets('bot_1', 'team_a', [10080]),
+        ).rejects.toThrow(/Unsupported reminder offset/);
+        expect(prisma.customerBots.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects an offset even when it is bundled with a valid one', async () => {
+        prisma.customerBots.findUnique.mockResolvedValue({ id: 'bot_1', teamId: 'team_a' });
+
+        await expect(
+            service.updateReminderOffsets('bot_1', 'team_a', [60, 9999]),
+        ).rejects.toThrow(/Unsupported reminder offset/);
+        expect(prisma.customerBots.update).not.toHaveBeenCalled();
+    });
+
+    it('404s when the bot does not exist', async () => {
+        prisma.customerBots.findUnique.mockResolvedValue(null);
+
+        await expect(
+            service.updateReminderOffsets('bot_ghost', 'team_a', [60]),
+        ).rejects.toThrow(/not found/);
+        expect(prisma.customerBots.update).not.toHaveBeenCalled();
+    });
+
+    it('403s when the bot belongs to a different team', async () => {
+        prisma.customerBots.findUnique.mockResolvedValue({ id: 'bot_1', teamId: 'team_b' });
+
+        await expect(
+            service.updateReminderOffsets('bot_1', 'team_a', [60]),
+        ).rejects.toThrow(/does not belong to your team/);
+        expect(prisma.customerBots.update).not.toHaveBeenCalled();
+    });
+});
