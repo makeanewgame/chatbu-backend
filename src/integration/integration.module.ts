@@ -9,9 +9,10 @@ import { MetaEmbeddedController } from './meta-embedded/meta-embedded.controller
 import { MetaEmbeddedService } from './meta-embedded/meta-embedded.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { BookingModule } from './booking/booking.module';
+import { ShopifyModule } from './shopify/shopify.module';
 
 @Module({
-    imports: [PrismaModule, BookingModule],
+    imports: [PrismaModule, BookingModule, ShopifyModule],
     controllers: [IntegrationController, GoogleCalendarController, WhatsAppEmbeddedController, MetaEmbeddedController],
     providers: [IntegrationService, GoogleCalendarService, WhatsAppEmbeddedService, MetaEmbeddedService],
     exports: [WhatsAppEmbeddedService, MetaEmbeddedService],

@@ -392,6 +392,23 @@ model Integrations {
   @@index([teamId, botId])
 }
 
+// One-time authorization code exchanged by the Chatbu Shopify app for a
+// scoped 'shopify' access token. Mirrors the LeadSmsVerification shape
+// (hashed code, expiry, single-use via usedAt).
+model ShopifyAuthCode {
+  id          String    @id @default(cuid())
+  codeHash    String
+  teamId      String
+  userId      String
+  redirectUri String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  usedAt      DateTime?
+
+  @@index([codeHash])
+  @@index([expiresAt])
+}
+
 model Feedback {
   id        String           @id @default(cuid())
   userId    String
