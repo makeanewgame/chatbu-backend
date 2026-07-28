@@ -148,6 +148,13 @@ model CustomerBots {
   leadDestinations         Json           @default("[]")
   leadVerificationRequired Boolean        @default(false)
   smsVerificationRequired  Boolean        @default(false)
+  // Minutes-before-appointment offsets at which the reminder cron
+  // should fire an SMS to the visitor. Introduced Faz E of the
+  // SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
+  // Empty array disables reminders for this bot. Default [1440, 60]
+  // matches the two checkboxes the FE bot-settings surface exposes
+  // (24 hours before / 1 hour before). Owner picks 0, 1, or 2.
+  appointmentReminderOffsets Int[]        @default([1440, 60])
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
   isDeleted                Boolean        @default(false)

@@ -1,6 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SmsService } from 'src/sms/sms.service';
+
+// Only the two offsets the FE exposes today. Rejecting unknown offsets
+// prevents an attacker (or a wonky proxy) from smuggling a wildly
+// off-band value like 10080 (a week) into the cron scan window, which
+// would silently expand the scan range and pull in appointments we
+// weren't meant to remind for. If we ever need a third offset the FE
+// adds a checkbox and this whitelist grows in lockstep.
+const ALLOWED_REMINDER_OFFSETS = new Set([60, 1440]);
 
 /**
  * Payload shape from the MCP `/appointment-created` hop. `create_appointment`
@@ -166,5 +174,58 @@ export class AppointmentService {
         }
 
         return { appointmentId: appointment.id, confirmationSmsSent };
+    }
+
+    /**
+     * Update the per-bot appointment-reminder offsets. The FE exposes
+     * two checkboxes (24h before / 1h before); the caller sends the
+     * subset that's checked. An empty array disables reminders entirely
+     * for the bot. Any offset value not in ALLOWED_REMINDER_OFFSETS is
+     * rejected — FE misconfig or unauthorized proxy tampering must not
+     * silently expand what the cron will scan/dispatch.
+     *
+     * Team ownership check is here (not just at the controller layer)
+     * so any future non-HTTP caller (background job, admin CLI) still
+     * can't cross tenant boundaries.
+     */
+    async updateReminderOffsets(botId: string, teamId: string, offsets: number[]) {
+        // Dedup + sort — order isn't semantically meaningful but a
+        // canonical form makes the persisted value stable across
+        // updates (owner unchecks + rechecks same box in different
+        // order shouldn't produce a diff).
+        const cleaned = Array.from(new Set(offsets)).sort((a, b) => a - b);
+
+        for (const off of cleaned) {
+            if (!ALLOWED_REMINDER_OFFSETS.has(off)) {
+                throw new ForbiddenException(
+                    `Unsupported reminder offset ${off}. Allowed: ${[...ALLOWED_REMINDER_OFFSETS].join(', ')}.`,
+                );
+            }
+        }
+
+        // Verify the bot exists AND belongs to the caller's team before
+        // any write. Fetching first (rather than a scoped updateMany
+        // returning count=0 on mismatch) lets us differentiate 404 from
+        // 403 for the FE.
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: botId },
+            select: { id: true, teamId: true },
+        });
+        if (!bot) {
+            throw new NotFoundException(`Bot ${botId} not found`);
+        }
+        if (bot.teamId !== teamId) {
+            throw new ForbiddenException(`Bot ${botId} does not belong to your team`);
+        }
+
+        const updated = await this.prisma.customerBots.update({
+            where: { id: botId },
+            data: { appointmentReminderOffsets: cleaned },
+            select: { id: true, appointmentReminderOffsets: true },
+        });
+        this.logger.log(
+            `Updated appointmentReminderOffsets for bot ${botId} → [${cleaned.join(', ')}]`,
+        );
+        return updated;
     }
 }
