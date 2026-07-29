@@ -7,6 +7,7 @@ import { join } from 'path';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { RedisIoAdapter } from './events/redis-io.adapter';
 
 async function bootstrap() {
   // `bufferLogs: true` makes Nest hold every framework log line until we
@@ -102,6 +103,17 @@ async function bootstrap() {
 
     const documentFactory = () => SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('api', app, documentFactory);
+  }
+
+  // Backend runs 2+ replicas behind an ALB with no client affinity that the
+  // cross-origin embed widget can actually use (see RedisIoAdapter comment),
+  // so EventsGateway's room broadcasts need a shared pub/sub bus to reach
+  // sockets connected to a different pod than the one emitting.
+  const redisUrl = configService.get<string>('REDIS_URL');
+  if (redisUrl) {
+    const redisIoAdapter = new RedisIoAdapter(app);
+    await redisIoAdapter.connectToRedis(redisUrl);
+    app.useWebSocketAdapter(redisIoAdapter);
   }
 
   await app.listen(port || 3001);
