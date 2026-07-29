@@ -74,6 +74,8 @@ spec:
           value: "http://fastapi-gateway-service:8000"
         - name: MCP_API_GATEWAY_URL
           value: "http://fastapi-gateway-service:8000"
+        - name: REDIS_URL
+          value: "redis://redis-service:6379"
         resources:
           requests:
             memory: "1Gi"
