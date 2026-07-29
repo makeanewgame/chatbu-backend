@@ -460,6 +460,24 @@ export class LeadService {
   }
 
   /**
+   * Cheap idempotent probe used by the gateway's pre-agent PII scrub
+   * (chat_endpoint.py) to decide whether it's safe to invoke the agent
+   * on a message that contains a phone-number pattern. Same 60-minute
+   * freshness window as `requestSmsVerification` below, so a `fresh:true`
+   * answer here guarantees the OTP path won't reject on
+   * `KVKK_CONSENT_REQUIRED` a moment later. No PII in the response.
+   */
+  async hasFreshKvkkConsent(botId: string, chatId: string): Promise<{ fresh: boolean }> {
+    if (!botId || !chatId) return { fresh: false };
+    const consentWindowStart = new Date(Date.now() - CONSENT_FRESHNESS_MINUTES * 60 * 1000);
+    const consent = await this.prisma.leadPrivacyConsent.findFirst({
+      where: { botId, chatId, createdAt: { gte: consentWindowStart } },
+      select: { id: true },
+    });
+    return { fresh: !!consent };
+  }
+
+  /**
    * Generate a 6-digit code, persist its hash, and text it to the visitor
    * via NETGSM. Mirrors requestVerification(), gated additionally on a
    * fresh KVKK consent record for this chat.

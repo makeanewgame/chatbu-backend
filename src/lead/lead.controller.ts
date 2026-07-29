@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
@@ -85,6 +85,22 @@ export class LeadController {
   @HttpCode(200)
   async verifySms(@Body() body: VerifySmsDto) {
     return this.leadService.verifySmsCode(body);
+  }
+
+  /**
+   * GET /api/lead/kvkk-consent/:botId/:chatId
+   * Cheap idempotent probe consumed by the gateway's pre-agent PII scrub
+   * (P0 Item 3 of the 2026-07-29 security plan). Returns `{fresh: boolean}`
+   * — true iff a LeadPrivacyConsent row exists for this (botId, chatId)
+   * within the same 60-minute freshness window that gates the SMS OTP
+   * request. Never leaks PII (row id / timestamps / phone are all withheld).
+   */
+  @ApiOperation({ summary: 'Check whether a fresh KVKK consent exists for a (botId, chatId) pair (internal)' })
+  @ApiResponse({ status: 200, description: 'Boolean freshness flag' })
+  @UseGuards(InternalApiKeyGuard)
+  @Get('kvkk-consent/:botId/:chatId')
+  async kvkkConsentStatus(@Param('botId') botId: string, @Param('chatId') chatId: string) {
+    return this.leadService.hasFreshKvkkConsent(botId, chatId);
   }
 
   //#region list
