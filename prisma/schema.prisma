@@ -148,6 +148,13 @@ model CustomerBots {
   leadDestinations         Json           @default("[]")
   leadVerificationRequired Boolean        @default(false)
   smsVerificationRequired  Boolean        @default(false)
+  // Minutes-before-appointment offsets at which the reminder cron
+  // should fire an SMS to the visitor. Introduced Faz E of the
+  // SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
+  // Empty array disables reminders for this bot. Default [1440, 60]
+  // matches the two checkboxes the FE bot-settings surface exposes
+  // (24 hours before / 1 hour before). Owner picks 0, 1, or 2.
+  appointmentReminderOffsets Int[]        @default([1440, 60])
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
   isDeleted                Boolean        @default(false)
@@ -156,6 +163,7 @@ model CustomerBots {
   BotLeads                 BotLeads[]
   ChatFeedback             ChatFeedback[]
   integrations             Integrations[]
+  appointments             Appointment[]
 }
 
 model CustomerChats {
@@ -391,6 +399,23 @@ model Integrations {
   @@index([teamId, botId])
 }
 
+// One-time authorization code exchanged by the Chatbu Shopify app for a
+// scoped 'shopify' access token. Mirrors the LeadSmsVerification shape
+// (hashed code, expiry, single-use via usedAt).
+model ShopifyAuthCode {
+  id          String    @id @default(cuid())
+  codeHash    String
+  teamId      String
+  userId      String
+  redirectUri String
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  usedAt      DateTime?
+
+  @@index([codeHash])
+  @@index([expiresAt])
+}
+
 model Feedback {
   id        String           @id @default(cuid())
   userId    String
@@ -570,6 +595,73 @@ model BookingVerification {
 
   @@index([email, botCuid])
   @@index([expiresAt])
+}
+
+// SMS-based counterpart of BookingVerification. Introduced Faz B of the
+// SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
+// Same shape modulo email→phone. Kept as a SEPARATE table (not a new
+// column on BookingVerification) so the email flow can keep serving
+// in-flight MCP callers until Faz C flips them over. Both tables will
+// be reconciled in a later cleanup cycle once the email path is unused.
+model BookingSmsVerification {
+  id        String   @id @default(cuid())
+  phone     String
+  code      String
+  botCuid   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone, botCuid])
+  @@index([expiresAt])
+}
+
+// Persisted record of a completed booking. Introduced in Faz D of the
+// SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
+// Two callers today:
+//   - AppointmentService.createFromMcp() inserts one row per successful
+//     MCP `create_appointment` (bridged via the /appointment-created
+//     hop from the MCP server).
+//   - AppointmentReminderService (Faz E) scans upcoming rows every
+//     minute and sends SMS reminders based on the bot's configured
+//     offsets, updating `reminderStates` per-offset so a reminder can
+//     never fire twice for the same slot.
+//
+// Google Calendar remains the visitor-facing source of truth (invite
+// email + cancel/reschedule buttons), but the calendar has no API for
+// "list events starting in the next 24 hours across all bots"; we
+// persist here so a per-minute cron can efficiently find what's due
+// without walking every bot's calendar over HTTP.
+model Appointment {
+  id              String       @id @default(cuid())
+  botId           String
+  calendarEventId String
+  attendeeName    String
+  attendeePhone   String
+  attendeeEmail   String
+  startAt         DateTime
+  endAt           DateTime
+  summary         String
+  description     String       @default("")
+  timezone        String       @default("UTC")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  // Per-offset reminder dispatch state. Keys are the offset in minutes
+  // as strings ("1440", "60", ...); values are "pending" | "sent" |
+  // "failed". `pending` is implicit (absence of the key is the same as
+  // "not tried yet") so an empty {} on insert is fine — the cron
+  // updates the key on each dispatch attempt so retries don't double-
+  // fire.
+  reminderStates  Json         @default("{}")
+  bot             CustomerBots @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId])
+  @@index([startAt])
+  // A single Google Calendar event should map to at most one Appointment
+  // row per bot. The MCP hop is idempotent (fail-open, but a retry could
+  // still fire twice); a unique key here catches any duplicate hop
+  // attempt at the DB layer rather than doubling reminders downstream.
+  @@unique([botId, calendarEventId])
 }
 
 model WidgetVisitor {

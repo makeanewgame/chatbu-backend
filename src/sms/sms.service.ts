@@ -30,6 +30,32 @@ function normalizeTurkishPhone(phone: string): string {
   return digits;
 }
 
+// Format a Date in the target timezone as "DD/MM HH:MM" (24-hour). Intl
+// gives us TZ-correct components without pulling in a date library.
+function formatDateAndTime(when: Date, timezone: string = 'Europe/Istanbul'): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(when);
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${g('day')}/${g('month')} ${g('hour')}:${g('minute')}`;
+}
+
+function formatTimeOnly(when: Date, timezone: string = 'Europe/Istanbul'): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(when);
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${g('hour')}:${g('minute')}`;
+}
+
 @Injectable()
 export class SmsService {
   constructor(
@@ -38,24 +64,28 @@ export class SmsService {
   ) { }
 
   /**
-   * Send a 6-digit OTP over SMS via NETGSM. Throws on any failure - callers
-   * (LeadService) must catch and record it, mirroring the same fix already
-   * applied to every MailService method added after the original
-   * sendRegisterMail (which swallowed errors silently).
+   * Generic NETGSM send. Every SMS the platform emits eventually funnels
+   * through here — OTP, booking confirmation, appointment reminder — so
+   * transport concerns (auth, provider response code parsing, mock hatch,
+   * credential guard, timeout) live in exactly one place. Callers compose
+   * the message body and pass a raw phone; this method handles TR
+   * normalization + delivery. Throws on any failure — callers must catch
+   * and decide whether to fail the outer flow (e.g. OTP: fail) or continue
+   * (e.g. reminder: log-and-move-on, next cron tick will retry).
+   *
+   * `context` is a short log label ("otp", "booking_confirmation",
+   * "booking_reminder") so Loki queries can slice `[NETGSM]` traffic by
+   * purpose without parsing message bodies.
    */
-  async sendOtpSms(phone: string, code: string, botName: string, lang: 'tr' | 'en' = 'tr'): Promise<void> {
+  async sendSms(phone: string, message: string, context: string = 'generic'): Promise<void> {
     const to = normalizeTurkishPhone(phone);
-    const message =
-      lang === 'en'
-        ? `Your ${botName} verification code: ${code}. Valid for 5 minutes.`
-        : `${botName} doğrulama kodunuz: ${code}. Kod 5 dakika geçerlidir.`;
 
-    // Dev/local escape hatch: skip the real NETGSM call and just log the
-    // code, so the KVKK-consent -> OTP -> verify flow can be exercised
-    // end-to-end without spending real SMS credits or needing a live
-    // NETGSM account on every dev machine. Never enable in prod.
+    // Dev/local escape hatch: skip the real NETGSM call and just log,
+    // so end-to-end flows can be exercised without spending real SMS
+    // credits or needing a live NETGSM account on every dev machine.
+    // Never enable in prod.
     if (process.env.NETGSM_MOCK?.toLowerCase() === 'true') {
-      this.logger.info(`[NETGSM_MOCK] Would send OTP to ${to}: "${message}"`);
+      this.logger.info(`[NETGSM_MOCK] Would send ${context} to ${to}: "${message}"`);
       return;
     }
 
@@ -96,10 +126,105 @@ export class SmsService {
         throw new Error(`NETGSM rejected the message (code=${code_})`);
       }
 
-      this.logger.info(`OTP SMS sent to ${to} via NETGSM (jobid=${response.data?.jobid ?? 'n/a'})`);
+      this.logger.info(`[NETGSM] ${context} sent to ${to} (jobid=${response.data?.jobid ?? 'n/a'})`);
     } catch (error) {
-      this.logger.error(`Error sending OTP SMS to ${to} via NETGSM:`, error);
+      this.logger.error(`[NETGSM] error sending ${context} to ${to}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Send a 6-digit OTP over SMS. Composes the localized OTP message body
+   * and delegates transport to `sendSms`. Throws on any failure — callers
+   * (LeadService, BookingService) must catch and record it, mirroring the
+   * same fix already applied to every MailService method added after the
+   * original sendRegisterMail (which swallowed errors silently).
+   */
+  async sendOtpSms(phone: string, code: string, botName: string, lang: 'tr' | 'en' = 'tr'): Promise<void> {
+    const message =
+      lang === 'en'
+        ? `Your ${botName} verification code: ${code}. Valid for 5 minutes.`
+        : `${botName} doğrulama kodunuz: ${code}. Kod 5 dakika geçerlidir.`;
+    await this.sendSms(phone, message, 'otp');
+  }
+
+  /**
+   * Send a booking-confirmation SMS after an appointment is created. Called
+   * from the MCP post-booking hop (via AppointmentService.createFromMcp).
+   * `appointmentStart` is the appointment's UTC Date; `timezone` is the
+   * IANA zone name the event was booked under (defaults to Europe/Istanbul
+   * — the vast majority of Chatbu tenants). Fail policy is up to the
+   * caller: for a completed booking we do NOT want to fail the whole
+   * flow just because SMS was unreachable, so the appointment service
+   * catches and logs.
+   */
+  async sendBookingConfirmationSms(
+    phone: string,
+    botName: string,
+    appointmentStart: Date,
+    summary: string,
+    lang: 'tr' | 'en' = 'tr',
+    timezone: string = 'Europe/Istanbul',
+  ): Promise<void> {
+    const when = formatDateAndTime(appointmentStart, timezone);
+    const message =
+      lang === 'en'
+        ? `Your ${botName} appointment is confirmed for ${when}. Details: ${summary}.`
+        : `${botName} randevunuz ${when} için onaylandı. Detay: ${summary}.`;
+    await this.sendSms(phone, message, 'booking_confirmation');
+  }
+
+  /**
+   * Send a reminder SMS at a configured offset before the appointment.
+   * Two wording variants baked in — 24h ("tomorrow at HH:MM") and 60m
+   * ("in 1 hour at HH:MM") — because those are the two offsets the FE
+   * exposes (Faz E per-bot config). Other offsets fall back to the
+   * generic wording. The reminder cron catches per-send exceptions and
+   * marks the offset `failed` in `reminderStates`; the next tick won't
+   * retry the same failed slot (bounded, not infinite retry).
+   */
+  async sendBookingReminderSms(
+    phone: string,
+    botName: string,
+    appointmentStart: Date,
+    summary: string,
+    offsetMinutes: number,
+    lang: 'tr' | 'en' = 'tr',
+    timezone: string = 'Europe/Istanbul',
+  ): Promise<void> {
+    const timeOnly = formatTimeOnly(appointmentStart, timezone);
+    const dateAndTime = formatDateAndTime(appointmentStart, timezone);
+    let message: string;
+
+    if (offsetMinutes === 1440) {
+      message =
+        lang === 'en'
+          ? `Reminder: your ${botName} appointment is tomorrow at ${timeOnly}. Details: ${summary}.`
+          : `${botName} randevunuzu hatırlatırız: yarın ${timeOnly}. Detay: ${summary}.`;
+    } else if (offsetMinutes === 60) {
+      message =
+        lang === 'en'
+          ? `Reminder: your ${botName} appointment is in 1 hour at ${timeOnly}.`
+          : `${botName} randevunuz yaklaşıyor: 1 saat sonra ${timeOnly}.`;
+    } else {
+      // Fallback: mention the offset in hours if it divides cleanly,
+      // otherwise fall back to the concrete date/time so the visitor
+      // still gets an unambiguous timestamp even on unusual offsets.
+      const hours = offsetMinutes / 60;
+      const humanOffset =
+        Number.isInteger(hours) && hours > 0
+          ? lang === 'en'
+            ? `in ${hours} hours`
+            : `${hours} saat sonra`
+          : lang === 'en'
+            ? 'soon'
+            : 'yaklaşıyor';
+      message =
+        lang === 'en'
+          ? `Reminder: your ${botName} appointment ${humanOffset} at ${dateAndTime}. Details: ${summary}.`
+          : `${botName} randevunuz ${humanOffset}: ${dateAndTime}. Detay: ${summary}.`;
+    }
+
+    await this.sendSms(phone, message, 'booking_reminder');
   }
 }
