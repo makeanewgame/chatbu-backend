@@ -549,24 +549,126 @@ model LeadSmsVerification {
 // Kullanım Şartları (before their phone number is even known), then updated
 // in place as the flow progresses so consent -> OTP -> lead is one row.
 model LeadPrivacyConsent {
-  id                String    @id @default(cuid())
-  botId             String
-  teamId            String
-  chatId            String
-  phone             String?
-  source            String    @default("chatbot")
-  privacyVersion    String
-  privacyAcceptedAt DateTime
-  ipAddress         String?
-  userAgent         String?
-  otpVerified       Boolean   @default(false)
-  otpVerifiedAt     DateTime?
-  leadId            String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                     String    @id @default(cuid())
+  botId                  String
+  teamId                 String
+  chatId                 String
+  phone                  String?
+  source                 String    @default("chatbot")
+  privacyVersion         String
+  // Points at the LegalDocumentVersion actually shown to the visitor.
+  // Nullable because rows created before this system existed have no version.
+  legalDocumentVersionId String?
+  locale                 String    @default("tr")
+  privacyAcceptedAt      DateTime
+  ipAddress              String?
+  userAgent              String?
+  otpVerified            Boolean   @default(false)
+  otpVerifiedAt          DateTime?
+  leadId                 String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   @@index([botId, chatId])
   @@index([leadId])
+}
+
+// ─── Legal document management (KVKK, sales agreement, privacy policy, ...) ───
+// Admin-authored, versioned legal text. A document (by slug) has many
+// versions; only one version per document is PUBLISHED at a time. Each
+// version holds one content row per locale, with Turkish as the always-
+// present source and other locales translated + approved independently so
+// translation work is never repeated for an unchanged version.
+
+enum LegalDocumentVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TranslationStatus {
+  SOURCE
+  NEEDS_TRANSLATION
+  TRANSLATED
+  APPROVED
+}
+
+// Distinguishes this generic, append-only acceptance log from
+// LeadPrivacyConsent, which is a mutable OTP-gating session object and
+// stays separate from this table (see legal-document.service.ts).
+enum LegalAcceptanceContext {
+  PURCHASE
+  SIGNUP
+  OTHER
+}
+
+model LegalDocument {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions LegalDocumentVersion[]
+}
+
+model LegalDocumentVersion {
+  id               String                     @id @default(cuid())
+  documentId       String
+  versionNumber    Int
+  status           LegalDocumentVersionStatus @default(DRAFT)
+  createdByAdminId String?
+  publishedAt      DateTime?
+  archivedAt       DateTime?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  document    LegalDocument             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  contents    LegalDocumentContent[]
+  acceptances LegalDocumentAcceptance[]
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId, status])
+}
+
+model LegalDocumentContent {
+  id                String            @id @default(cuid())
+  versionId         String
+  locale            String
+  title             String
+  bodyMarkdown      String
+  translationStatus TranslationStatus @default(NEEDS_TRANSLATION)
+  translatedAt      DateTime?
+  approvedAt        DateTime?
+  approvedByAdminId String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  version LegalDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@unique([versionId, locale])
+}
+
+// Immutable audit record for consent captured outside the lead/OTP flow
+// (purchase checkout, signup, etc). Never updated after creation.
+model LegalDocumentAcceptance {
+  id          String                 @id @default(cuid())
+  documentId  String
+  versionId   String
+  locale      String
+  context     LegalAcceptanceContext
+  subjectType String
+  subjectId   String?
+  teamId      String?
+  ipAddress   String?
+  userAgent   String?
+  acceptedAt  DateTime               @default(now())
+  createdAt   DateTime               @default(now())
+
+  version LegalDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Restrict)
+
+  @@index([documentId, versionId])
+  @@index([subjectType, subjectId])
 }
 
 model ChatFeedback {

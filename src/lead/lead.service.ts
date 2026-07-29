@@ -13,6 +13,7 @@ import { RequestSmsVerificationDto } from './dto/request-sms-verification.dto';
 import { VerifySmsDto } from './dto/verify-sms.dto';
 import { RecordPrivacyConsentDto } from './dto/record-privacy-consent.dto';
 import { LeadDestination } from 'src/bot/lead-destination.constants';
+import { LegalDocumentService } from 'src/legal-document/legal-document.service';
 
 const CODE_TTL_MINUTES = 5;
 const VERIFICATION_TOKEN_TTL_SECONDS = 30 * 60;
@@ -20,10 +21,10 @@ const MAX_CODE_REQUESTS_PER_WINDOW = 3;
 const CODE_REQUEST_WINDOW_MINUTES = 15;
 const MAX_VERIFY_ATTEMPTS = 5;
 
-// Bumped whenever the hosted Aydınlatma Metni / Kullanım Şartları pages
-// (chatbu.io, resolved client-side via legalLinks.ts) materially change, so
-// every consent row records which revision the visitor actually saw.
-const KVKK_TEXT_VERSION = process.env.KVKK_TEXT_VERSION || 'v1.0';
+// Fallback used only if no "kvkk" LegalDocument has a published version yet
+// (e.g. before the admin has migrated the legacy static text into the new
+// legal-document editor). Once that seeding is done this is never reached.
+const LEGACY_KVKK_VERSION_FALLBACK = process.env.KVKK_TEXT_VERSION || 'v1.0';
 
 // How long a KVKK consent counts as "fresh enough" to gate an SMS OTP
 // request without requiring the visitor to accept again mid-conversation.
@@ -38,6 +39,7 @@ export class LeadService {
     private mailService: MailService,
     private smsService: SmsService,
     private jwt: JwtService,
+    private legalDocumentService: LegalDocumentService,
   ) { }
 
   async submit(dto: SubmitLeadDto) {
@@ -443,13 +445,27 @@ export class LeadService {
       throw new NotFoundException('Bot not found');
     }
 
+    const locale = 'tr';
+    let legalDocumentVersionId: string | null = null;
+    let privacyVersion = LEGACY_KVKK_VERSION_FALLBACK;
+    try {
+      const published = await this.legalDocumentService.getPublished('kvkk', locale);
+      legalDocumentVersionId = published.versionId;
+      privacyVersion = `v${published.versionNumber}`;
+    } catch {
+      // No published "kvkk" LegalDocumentVersion yet — fall back to the
+      // legacy hardcoded label until the admin publishes one.
+    }
+
     const consent = await this.prisma.leadPrivacyConsent.create({
       data: {
         botId: dto.botId,
         teamId: bot.teamId,
         chatId: dto.chatId,
         source: 'chatbot',
-        privacyVersion: KVKK_TEXT_VERSION,
+        privacyVersion,
+        legalDocumentVersionId,
+        locale,
         privacyAcceptedAt: new Date(),
         ipAddress: ipAddress || null,
         userAgent: userAgent || null,
