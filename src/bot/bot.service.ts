@@ -925,7 +925,16 @@ export class BotService {
     }
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: payload.botId, isDeleted: false },
-      select: { id: true, settings: true, botName: true },
+      // `smsVerificationRequired` is surfaced to the widget so the
+      // client-side KVKK pre-send gate (chatbu-frontend
+      // ChatFormPublic.tsx, P0 Item 3c of the 2026-07-29 security plan)
+      // can decide whether to block a phone-carrying message before it
+      // ever leaves the browser. The flag itself is not a secret — it's
+      // owner-facing config visible in the dashboard — and knowing it
+      // client-side only lets the widget improve UX; the actual KVKK
+      // guarantee is enforced server-side by the gateway pre-agent
+      // scrub (Item 3b) + backend consent gate on requestSmsVerification.
+      select: { id: true, settings: true, botName: true, smsVerificationRequired: true },
     });
     if (!bot) throw new NotFoundException('Bot not found');
     return bot;
