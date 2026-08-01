@@ -601,6 +601,13 @@ export class BotService {
             // about model_tier silently ignore it (Pydantic Optional).
             model_tier: botUser.modelTier,
             session_id: body.chatId, // null veya mevcut session_id
+            // Forward the widget's provisional consent id (widget records
+            // KVKK consent BEFORE the first chat POST, so the row exists
+            // with chatId=null; gateway binds it to session_id before its
+            // own has_fresh_kvkk_consent probe runs, so the check passes
+            // and no short-circuit occurs). Older gateway pods that don't
+            // know about this field ignore it (Pydantic Optional).
+            provisional_consent_id: (body as any).provisionalConsentId,
           })
         );
         data = response.data;
@@ -925,7 +932,16 @@ export class BotService {
     }
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: payload.botId, isDeleted: false },
-      select: { id: true, settings: true, botName: true },
+      // `smsVerificationRequired` is surfaced to the widget so the
+      // client-side KVKK pre-send gate (chatbu-frontend
+      // ChatFormPublic.tsx, P0 Item 3c of the 2026-07-29 security plan)
+      // can decide whether to block a phone-carrying message before it
+      // ever leaves the browser. The flag itself is not a secret — it's
+      // owner-facing config visible in the dashboard — and knowing it
+      // client-side only lets the widget improve UX; the actual KVKK
+      // guarantee is enforced server-side by the gateway pre-agent
+      // scrub (Item 3b) + backend consent gate on requestSmsVerification.
+      select: { id: true, settings: true, botName: true, smsVerificationRequired: true },
     });
     if (!bot) throw new NotFoundException('Bot not found');
     return bot;
@@ -978,6 +994,7 @@ export class BotService {
     chatId: string | undefined,
     ip: string,
     attachments?: any[],
+    provisionalConsentId?: string,
   ) {
     return this.chat(
       {
@@ -988,6 +1005,7 @@ export class BotService {
         sender: 'user',
         date: new Date().toISOString(),
         attachments,
+        provisionalConsentId,
       } as any,
       ip,
     );

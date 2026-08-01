@@ -409,3 +409,59 @@ describe('LeadService — lead verification', () => {
     });
   });
 });
+
+describe('LeadService — hasFreshKvkkConsent (gateway pre-agent probe)', () => {
+  let service: LeadService;
+  let leadPrivacyConsent: { findFirst: jest.Mock };
+
+  beforeEach(async () => {
+    leadPrivacyConsent = { findFirst: jest.fn() };
+    const prisma: any = { leadPrivacyConsent };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LeadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: {} },
+        { provide: JwtService, useValue: {} },
+        { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
+      ],
+    }).compile();
+    service = module.get(LeadService);
+  });
+
+  it('returns fresh:false when botId is empty (short-circuits without a DB call)', async () => {
+    const result = await service.hasFreshKvkkConsent('', 'chat-1');
+    expect(result).toEqual({ fresh: false });
+    expect(leadPrivacyConsent.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns fresh:false when chatId is empty (short-circuits without a DB call)', async () => {
+    const result = await service.hasFreshKvkkConsent('bot-1', '');
+    expect(result).toEqual({ fresh: false });
+    expect(leadPrivacyConsent.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns fresh:false when no consent row exists in the 60-minute window', async () => {
+    leadPrivacyConsent.findFirst.mockResolvedValue(null);
+    const result = await service.hasFreshKvkkConsent('bot-1', 'chat-1');
+    expect(result).toEqual({ fresh: false });
+    // Verify the query used the same 60-min freshness window as requestSmsVerification
+    const call = leadPrivacyConsent.findFirst.mock.calls[0][0];
+    expect(call.where.botId).toBe('bot-1');
+    expect(call.where.chatId).toBe('chat-1');
+    expect(call.where.createdAt.gte).toBeInstanceOf(Date);
+  });
+
+  it('returns fresh:true when a consent row exists in the window', async () => {
+    leadPrivacyConsent.findFirst.mockResolvedValue({ id: 'consent-1' });
+    const result = await service.hasFreshKvkkConsent('bot-1', 'chat-1');
+    expect(result).toEqual({ fresh: true });
+  });
+
+  it('selects only the id field (never leaks PII in the response)', async () => {
+    leadPrivacyConsent.findFirst.mockResolvedValue({ id: 'consent-1' });
+    await service.hasFreshKvkkConsent('bot-1', 'chat-1');
+    const call = leadPrivacyConsent.findFirst.mock.calls[0][0];
+    expect(call.select).toEqual({ id: true });
+  });
+});

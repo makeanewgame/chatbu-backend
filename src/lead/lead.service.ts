@@ -500,7 +500,7 @@ export class LeadService {
       data: {
         botId: dto.botId,
         teamId: bot.teamId,
-        chatId: dto.chatId,
+        chatId: dto.chatId ?? null,
         source: 'chatbot',
         privacyVersion,
         legalDocumentVersionId,
@@ -511,16 +511,69 @@ export class LeadService {
       },
     });
 
-    // Enter LEAD flow at CONSENT_OK. Entry site: `from` is null so
-    // any prior row is overwritten (visitor may accept KVKK twice
-    // in the same chat if they hit the card, dismissed, and hit
-    // it again — the second accept is the source of truth).
+    // Enter LEAD flow at CONSENT_OK — only if we already have a chatId to
+    // key on. In the provisional flow (widget records consent BEFORE the
+    // first chat POST) `dto.chatId` is undefined; the transition is
+    // written later when the chat POST arrives with `provisionalConsentId`
+    // and this row gets bound. `safeTransition` early-returns on falsy
+    // chatId so this is a no-op then.
     await this.safeTransition(dto.botId, dto.chatId, FlowKind.LEAD, {
       to: 'CONSENT_OK',
       payload: { source: 'widget_kvkk_accept', consent_id: consent.id },
     });
 
     return { accepted: true, consentId: consent.id, privacyVersion: consent.privacyVersion };
+  }
+
+  /**
+   * Bind a previously-recorded LeadPrivacyConsent (created with chatId=null
+   * by the widget's provisional flow) to a real chatId. Called from the
+   * chat POST handler as soon as FastAPI has allocated a session_id, so
+   * the gateway's next `has_fresh_kvkk_consent` probe finds the consent
+   * keyed on botId+chatId and stops short-circuiting.
+   */
+  async bindProvisionalConsent(
+    consentId: string,
+    botId: string,
+    chatId: string,
+  ): Promise<boolean> {
+    const consent = await this.prisma.leadPrivacyConsent.findUnique({
+      where: { id: consentId },
+    });
+    if (!consent) return false;
+    // Reject cross-bot binds — a caller MUST NOT be able to steal another
+    // bot's consent row by guessing its id.
+    if (consent.botId !== botId) return false;
+    // Already bound to a chatId — either the same one (idempotent) or a
+    // different one (misuse). Either way, do nothing.
+    if (consent.chatId) return consent.chatId === chatId;
+    await this.prisma.leadPrivacyConsent.update({
+      where: { id: consentId },
+      data: { chatId },
+    });
+    await this.safeTransition(botId, chatId, FlowKind.LEAD, {
+      to: 'CONSENT_OK',
+      payload: { source: 'provisional_bind', consent_id: consentId },
+    });
+    return true;
+  }
+
+  /**
+   * Cheap idempotent probe used by the gateway's pre-agent PII scrub
+   * (chat_endpoint.py) to decide whether it's safe to invoke the agent
+   * on a message that contains a phone-number pattern. Same 60-minute
+   * freshness window as `requestSmsVerification` below, so a `fresh:true`
+   * answer here guarantees the OTP path won't reject on
+   * `KVKK_CONSENT_REQUIRED` a moment later. No PII in the response.
+   */
+  async hasFreshKvkkConsent(botId: string, chatId: string): Promise<{ fresh: boolean }> {
+    if (!botId || !chatId) return { fresh: false };
+    const consentWindowStart = new Date(Date.now() - CONSENT_FRESHNESS_MINUTES * 60 * 1000);
+    const consent = await this.prisma.leadPrivacyConsent.findFirst({
+      where: { botId, chatId, createdAt: { gte: consentWindowStart } },
+      select: { id: true },
+    });
+    return { fresh: !!consent };
   }
 
   /**
