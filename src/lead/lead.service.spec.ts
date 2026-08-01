@@ -5,6 +5,9 @@ import * as crypto from 'crypto';
 import { LeadService } from './lead.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
+import { SmsService } from 'src/sms/sms.service';
+import { LegalDocumentService } from 'src/legal-document/legal-document.service';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 
 describe('LeadService — lead verification', () => {
   let service: LeadService;
@@ -46,6 +49,15 @@ describe('LeadService — lead verification', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: MailService, useValue: mail },
         { provide: JwtService, useValue: jwt },
+        { provide: SmsService, useValue: { sendOtpSms: jest.fn() } },
+        {
+          provide: LegalDocumentService,
+          useValue: { getPublished: jest.fn().mockRejectedValue(new Error('no published version in tests')) },
+        },
+        {
+          provide: ChatFlowService,
+          useValue: { transition: jest.fn().mockResolvedValue(undefined), list: jest.fn().mockResolvedValue([]) },
+        },
       ],
     }).compile();
 
