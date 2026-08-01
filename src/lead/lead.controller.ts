@@ -103,6 +103,27 @@ export class LeadController {
     return this.leadService.hasFreshKvkkConsent(botId, chatId);
   }
 
+  /**
+   * Bind a previously-recorded LeadPrivacyConsent (widget provisional flow:
+   * chatId=null at consent-record time) to the real chatId now that the
+   * gateway has one. Called by the gateway on the first chat POST that
+   * carries a `provisional_consent_id`, so the immediately-following
+   * KVKK check on the same request sees consent=fresh and does NOT
+   * short-circuit. See chicken-and-egg fix, 2026-08-01.
+   */
+  @ApiOperation({ summary: 'Bind a chatId=null consent row to the real chatId (internal)' })
+  @ApiResponse({ status: 200, description: 'Bind outcome' })
+  @UseGuards(InternalApiKeyGuard)
+  @Post('kvkk-consent/bind')
+  async bindKvkkConsent(@Body() body: { consentId: string; botId: string; chatId: string }) {
+    const bound = await this.leadService.bindProvisionalConsent(
+      body.consentId,
+      body.botId,
+      body.chatId,
+    );
+    return { bound };
+  }
+
   //#region list
   @ApiOperation({ summary: 'List leads for a bot' })
   @ApiResponse({ status: 200, description: 'Leads returned' })

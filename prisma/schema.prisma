@@ -552,7 +552,12 @@ model LeadPrivacyConsent {
   id                     String    @id @default(cuid())
   botId                  String
   teamId                 String
-  chatId                 String
+  // Nullable so the widget can record consent BEFORE the first chat
+  // POST has allocated a session_id (chicken-and-egg fix, 2026-08-01).
+  // Backend binds this to a real chatId on the next chat POST via
+  // `provisionalConsentId`, so gateway `has_fresh_kvkk_consent`
+  // (which keys on botId+chatId) sees the consent right after.
+  chatId                 String?
   phone                  String?
   source                 String    @default("chatbot")
   privacyVersion         String

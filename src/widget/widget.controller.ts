@@ -56,6 +56,7 @@ export class WidgetController {
             body.chatId,
             ip,
             body.attachments,
+            body.provisionalConsentId,
         );
     }
 
