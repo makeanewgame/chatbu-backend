@@ -7,6 +7,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/sms/sms.service';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 
 describe('LeadService — lead verification', () => {
   let service: LeadService;
@@ -52,6 +53,10 @@ describe('LeadService — lead verification', () => {
         {
           provide: LegalDocumentService,
           useValue: { getPublished: jest.fn().mockRejectedValue(new Error('no published version in tests')) },
+        },
+        {
+          provide: ChatFlowService,
+          useValue: { transition: jest.fn().mockResolvedValue(undefined), list: jest.fn().mockResolvedValue([]) },
         },
       ],
     }).compile();

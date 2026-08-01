@@ -14,6 +14,8 @@ import { VerifySmsDto } from './dto/verify-sms.dto';
 import { RecordPrivacyConsentDto } from './dto/record-privacy-consent.dto';
 import { LeadDestination } from 'src/bot/lead-destination.constants';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
+import { FlowKind } from '../../generated/prisma/client';
 
 const CODE_TTL_MINUTES = 5;
 const VERIFICATION_TOKEN_TTL_SECONDS = 30 * 60;
@@ -40,7 +42,33 @@ export class LeadService {
     private smsService: SmsService,
     private jwt: JwtService,
     private legalDocumentService: LegalDocumentService,
+    private chatFlowService: ChatFlowService,
   ) { }
+
+  /**
+   * Fire-and-log wrapper for ChatFlowService.transition. The state
+   * store is authoritative for orchestration (P2 refactor, plan Faz 1)
+   * but MUST NOT block or roll back the existing lead-capture path
+   * if it fails — a Prisma error here would drop leads on the floor.
+   * Any failure is logged and swallowed. The next transition attempt
+   * for the same chat will surface the drift via `INVALID_TRANSITION`
+   * (optimistic lock catches stale reads).
+   */
+  private async safeTransition(
+    botId: string,
+    chatId: string | null | undefined,
+    flowKind: FlowKind,
+    args: { from?: string | null; to: string; payload?: any },
+  ): Promise<void> {
+    if (!chatId) return; // flow state is per-chat; entry sites without chatId (email OTP) skip silently
+    try {
+      await this.chatFlowService.transition(botId, chatId, flowKind, args);
+    } catch (err) {
+      console.warn(
+        `[lead-service] chat-flow transition failed for ${botId}/${chatId} ${flowKind} → ${args.to}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   async submit(dto: SubmitLeadDto) {
     const { botId, chatId, leadData, verificationToken, smsVerificationToken } = dto;
@@ -238,6 +266,17 @@ export class LeadService {
         data: { leadId: lead.id },
       });
     }
+
+    // Terminal LEAD transition. `delivered`/`partial` → SUBMITTED
+    // (owner got at least one channel); pure `failed` → FAILED.
+    // `from: null` because this is the terminal write; whatever
+    // state we're leaving is fine (OTP_VERIFIED for the SMS path,
+    // any state at all for the email path where mid-flow transitions
+    // are not wired yet).
+    await this.safeTransition(botId, chatId, FlowKind.LEAD, {
+      to: status === 'failed' ? 'FAILED' : 'SUBMITTED',
+      payload: { lead_id: lead.id, status, channelsSucceeded },
+    });
 
     return {
       status,
@@ -472,6 +511,15 @@ export class LeadService {
       },
     });
 
+    // Enter LEAD flow at CONSENT_OK. Entry site: `from` is null so
+    // any prior row is overwritten (visitor may accept KVKK twice
+    // in the same chat if they hit the card, dismissed, and hit
+    // it again — the second accept is the source of truth).
+    await this.safeTransition(dto.botId, dto.chatId, FlowKind.LEAD, {
+      to: 'CONSENT_OK',
+      payload: { source: 'widget_kvkk_accept', consent_id: consent.id },
+    });
+
     return { accepted: true, consentId: consent.id, privacyVersion: consent.privacyVersion };
   }
 
@@ -526,6 +574,16 @@ export class LeadService {
     });
 
     await this.smsService.sendOtpSms(dto.phone, code, bot.botName, 'tr');
+
+    // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK
+    // — if the state isn't there yet (backfill hasn't seen this
+    // chat, or an older session predates the state machine) the
+    // safeTransition logs and continues.
+    await this.safeTransition(dto.botId, dto.chatId, FlowKind.LEAD, {
+      from: 'CONSENT_OK',
+      to: 'OTP_SENT',
+      payload: { phone: dto.phone, code_sent_at: new Date().toISOString() },
+    });
 
     return { status: 'sent' as const, expiresAt: expiresAt.toISOString() };
   }
@@ -585,6 +643,13 @@ export class LeadService {
       await this.prisma.leadPrivacyConsent.update({
         where: { id: consent.id },
         data: { otpVerified: true, otpVerifiedAt: new Date() },
+      });
+      // Advance LEAD flow to OTP_VERIFIED. Consent row carries the
+      // chatId; verifySmsCode's own DTO doesn't (it's keyed on
+      // botId + phone), so we key the transition on the consent's chat.
+      await this.safeTransition(dto.botId, consent.chatId, FlowKind.LEAD, {
+        from: 'OTP_SENT',
+        to: 'OTP_VERIFIED',
       });
     }
 
