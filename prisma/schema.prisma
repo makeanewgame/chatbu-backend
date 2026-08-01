@@ -573,6 +573,58 @@ model LeadPrivacyConsent {
   @@index([leadId])
 }
 
+// ─── Per-chat flow orchestration state ───
+// Foundation for the P2 state-machine refactor (plan file
+// `.claude/plans/this-is-a-example-ticklish-dove.md`, Phase 1).
+//
+// The gateway (fovi-longa-chat-be) today has NO first-class per-chat
+// state — the 197-line conditional prompt appendix + 30+ sentinel
+// scans in chat_endpoint.py forces the model to infer "which step of
+// which flow am I in?" from message history each turn. This model is:
+//   (a) fragile — model swap or a missed sentinel produces "SMS
+//       gönderdim" fabrications the 848-line LeadCaptureHonestyMiddleware
+//       has to police after the fact
+//   (b) invisible to backend cron / analytics / admin dashboards
+//   (c) expensive — every turn eats ~500 tokens of orchestration prose
+//
+// This table is the authoritative store; the gateway probes
+// `GET /api/chat-flow/:botId/:chatId` at turn start (same
+// InternalApiKeyGuard shape as `hasFreshKvkkConsent`) and injects a
+// ~5-10 line "CURRENT STEP" mini-block into the system prompt
+// instead of the whole appendix.
+//
+// One row per (botId, chatId, flowKind) — independent lifecycles for
+// LEAD vs BOOKING vs HANDOFF vs FEEDBACK on the same chat.
+// `state` is a string (not an enum) on purpose: per-flow states will
+// grow over the 5-phase rollout and schema churn per addition would
+// be noise. Callers (ChatFlowService.transition) enforce the
+// per-flow enum semantically.
+//
+// `payload` carries per-flow metadata (phone that was consented, OTP
+// dispatch time, calendar slot picked, etc.). Kept opt-in so most
+// transitions don't have to write anything beyond the state string.
+model PerChatFlowState {
+  id        String   @id @default(cuid())
+  botId     String
+  chatId    String
+  flowKind  FlowKind
+  state     String
+  enteredAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  payload   Json?
+
+  @@unique([botId, chatId, flowKind])
+  @@index([botId, state, updatedAt])
+  @@index([chatId])
+}
+
+enum FlowKind {
+  LEAD
+  BOOKING
+  HANDOFF
+  FEEDBACK
+}
+
 // ─── Legal document management (KVKK, sales agreement, privacy policy, ...) ───
 // Admin-authored, versioned legal text. A document (by slug) has many
 // versions; only one version per document is PUBLISHED at a time. Each
