@@ -601,6 +601,13 @@ export class BotService {
             // about model_tier silently ignore it (Pydantic Optional).
             model_tier: botUser.modelTier,
             session_id: body.chatId, // null veya mevcut session_id
+            // Forward the widget's provisional consent id (widget records
+            // KVKK consent BEFORE the first chat POST, so the row exists
+            // with chatId=null; gateway binds it to session_id before its
+            // own has_fresh_kvkk_consent probe runs, so the check passes
+            // and no short-circuit occurs). Older gateway pods that don't
+            // know about this field ignore it (Pydantic Optional).
+            provisional_consent_id: (body as any).provisionalConsentId,
           })
         );
         data = response.data;
@@ -987,6 +994,7 @@ export class BotService {
     chatId: string | undefined,
     ip: string,
     attachments?: any[],
+    provisionalConsentId?: string,
   ) {
     return this.chat(
       {
@@ -997,6 +1005,7 @@ export class BotService {
         sender: 'user',
         date: new Date().toISOString(),
         attachments,
+        provisionalConsentId,
       } as any,
       ip,
     );
