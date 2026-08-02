@@ -4,6 +4,7 @@ import { BookingService } from './booking.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/sms/sms.service';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 
 describe('BookingService — kind differentiator', () => {
   let service: BookingService;
@@ -19,6 +20,7 @@ describe('BookingService — kind differentiator', () => {
         { provide: MailService, useValue: {} },
         { provide: SmsService, useValue: {} },
         { provide: JwtService, useValue: jwt },
+        { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
       ],
     }).compile();
 
@@ -104,6 +106,7 @@ describe('BookingService — SMS flow', () => {
         { provide: MailService, useValue: {} },
         { provide: SmsService, useValue: sms },
         { provide: JwtService, useValue: jwt },
+        { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
       ],
     }).compile();
 

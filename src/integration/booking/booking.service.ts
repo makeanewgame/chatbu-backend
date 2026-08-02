@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { FlowKind } from '../../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/sms/sms.service';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 
 const CODE_TTL_MINUTES = 10;
 const VERIFICATION_TOKEN_TTL_SECONDS = 5 * 60;
@@ -17,13 +19,14 @@ export class BookingService {
         private readonly mail: MailService,
         private readonly sms: SmsService,
         private readonly jwt: JwtService,
+        private readonly chatFlow: ChatFlowService,
     ) { }
 
     /**
      * Generate a 6-digit code, persist it, and email the user.
      * Throws if the email has already requested too many codes this hour.
      */
-    async requestVerification(email: string, botCuid: string) {
+    async requestVerification(email: string, botCuid: string, chatId?: string) {
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
         const recentCount = await this.prisma.bookingVerification.count({
             where: { email, botCuid, createdAt: { gte: oneHourAgo } },
@@ -54,6 +57,15 @@ export class BookingService {
 
         await this.mail.sendBookingVerificationMail(email, code, botName, 'en');
 
+        // Enter BOOKING flow at OTP_SENT. Entry site: `from` is null so
+        // any prior row is overwritten (visitor may retry within the
+        // same chat after a stale code). safeTransition swallows
+        // failures — never let a state-store hiccup block the OTP.
+        await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
+            to: 'OTP_SENT',
+            payload: { source: 'booking_email_request', verification_id: record.id, channel: 'email' },
+        }, 'booking:requestVerification');
+
         return {
             verificationId: record.id,
             expiresInSeconds: CODE_TTL_MINUTES * 60,
@@ -64,7 +76,7 @@ export class BookingService {
      * Validate a code. Marks the matching record `used=true` so it can't be replayed.
      * Returns a short-lived signed JWT that mcp-server passes to create_appointment.
      */
-    async verify(email: string, code: string, botCuid: string) {
+    async verify(email: string, code: string, botCuid: string, chatId?: string) {
         const record = await this.prisma.bookingVerification.findFirst({
             where: {
                 email,
@@ -92,6 +104,16 @@ export class BookingService {
                 expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
             },
         );
+
+        // Advance BOOKING flow to OTP_VERIFIED. `from` optimistically
+        // pinned to OTP_SENT — a mismatch means the flow was moved
+        // out from under us (retry after backend restart, concurrent
+        // turn) and safeTransition logs + swallows.
+        await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
+            from: 'OTP_SENT',
+            to: 'OTP_VERIFIED',
+            payload: { source: 'booking_email_verify', verification_id: record.id, channel: 'email' },
+        }, 'booking:verify');
 
         return { verified: true as const, verificationToken };
     }
@@ -140,7 +162,7 @@ export class BookingService {
      * fires; caller (BookingController.request) translates that to
      * HTTP 429.
      */
-    async requestSmsVerification(phone: string, botCuid: string) {
+    async requestSmsVerification(phone: string, botCuid: string, chatId?: string) {
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
         const recentCount = await this.prisma.bookingSmsVerification.count({
             where: { phone, botCuid, createdAt: { gte: oneHourAgo } },
@@ -182,6 +204,14 @@ export class BookingService {
         // agent — same failure surface the email path already produces.
         await this.sms.sendOtpSms(phone, code, botName, 'tr');
 
+        // Enter BOOKING flow at OTP_SENT via SMS channel. `from: null` so
+        // any prior BOOKING row in the same chat is overwritten (visitor
+        // may have started an email-then-SMS retry).
+        await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
+            to: 'OTP_SENT',
+            payload: { source: 'booking_sms_request', verification_id: record.id, channel: 'sms' },
+        }, 'booking:requestSmsVerification');
+
         return {
             verificationId: record.id,
             expiresInSeconds: CODE_TTL_MINUTES * 60,
@@ -201,7 +231,7 @@ export class BookingService {
      * shouldn't have to know which flow the token came from beyond the
      * one they were designed for.
      */
-    async verifySms(phone: string, code: string, botCuid: string) {
+    async verifySms(phone: string, code: string, botCuid: string, chatId?: string) {
         const record = await this.prisma.bookingSmsVerification.findFirst({
             where: {
                 phone,
@@ -229,6 +259,14 @@ export class BookingService {
                 expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
             },
         );
+
+        // Advance BOOKING flow to OTP_VERIFIED (SMS channel). `from`
+        // optimistically pinned to OTP_SENT.
+        await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
+            from: 'OTP_SENT',
+            to: 'OTP_VERIFIED',
+            payload: { source: 'booking_sms_verify', verification_id: record.id, channel: 'sms' },
+        }, 'booking:verifySms');
 
         return { verified: true as const, verificationToken };
     }

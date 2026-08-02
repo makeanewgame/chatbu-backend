@@ -1,6 +1,8 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { FlowKind } from '../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SmsService } from 'src/sms/sms.service';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 
 // Only the two offsets the FE exposes today. Rejecting unknown offsets
 // prevents an attacker (or a wonky proxy) from smuggling a wildly
@@ -39,6 +41,11 @@ export interface AppointmentCreatedPayload {
      *  to `tr` server-side since the vast majority of tenant traffic is
      *  Turkish. */
     lang?: 'tr' | 'en';
+    /** Optional chatId forwarded from the MCP tool call so
+     *  `AppointmentService` can advance `PerChatFlowState BOOKING`
+     *  to `BOOKED`. Older MCP pods (pre-Faz-3a) don't pass this;
+     *  `safeTransition` silently no-ops when absent. */
+    chatId?: string;
 }
 
 @Injectable()
@@ -48,6 +55,7 @@ export class AppointmentService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly sms: SmsService,
+        private readonly chatFlow: ChatFlowService,
     ) { }
 
     /**
@@ -81,6 +89,7 @@ export class AppointmentService {
             description = '',
             timezone,
             lang = 'tr',
+            chatId,
         } = payload;
 
         const startAt = new Date(startIso);
@@ -172,6 +181,24 @@ export class AppointmentService {
                 `Confirmation SMS failed for appointment ${appointment.id} (event=${calendarEventId}): ${e}`,
             );
         }
+
+        // Terminal BOOKING state — this appointment is now booked. `from`
+        // pinned to `OTP_VERIFIED` optimistically; a mismatch means the
+        // BOOKING flow never went through the OTP path for this chat
+        // (agent skipped the SMS step somehow, or the reminder job is
+        // the caller). safeTransition logs + swallows either way — the
+        // Appointment row is already written, state-store is a
+        // secondary index.
+        await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
+            from: 'OTP_VERIFIED',
+            to: 'BOOKED',
+            payload: {
+                source: 'appointment_created',
+                appointment_id: appointment.id,
+                calendar_event_id: calendarEventId,
+                start_iso: startIso,
+            },
+        }, 'appointment:createFromMcp');
 
         return { appointmentId: appointment.id, confirmationSmsSent };
     }
