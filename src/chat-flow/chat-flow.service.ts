@@ -150,6 +150,36 @@ export class ChatFlowService {
   }
 
   /**
+   * Fire-and-log wrapper around `transition` for use at dual-write
+   * sites (LeadService, BookingService, AppointmentService). Never
+   * throws — a state-store failure MUST NOT break the underlying
+   * feature flow (SMS send, appointment insert, …). Silently returns
+   * when `chatId` is falsy so entry sites that can be called without
+   * a chat context (email OTP without chat, MCP tool without chat
+   * forwarding yet) don't error out on the guard.
+   *
+   * `source` is stamped into the log line to keep transition traces
+   * greppable across the multiple services that call this helper.
+   */
+  async safeTransition(
+    botId: string,
+    chatId: string | null | undefined,
+    flowKind: FlowKind,
+    args: TransitionArgs,
+    source?: string,
+  ): Promise<void> {
+    if (!chatId) return;
+    try {
+      await this.transition(botId, chatId, flowKind, args);
+    } catch (err) {
+      const label = source ? ` source=${source}` : '';
+      this.logger.warn(
+        `[chat-flow] safeTransition swallow bot=${botId} chat=${chatId} kind=${flowKind} to=${args.to}${label}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  /**
    * Return every active flow row for a chat, freshest first. Called
    * by the gateway probe endpoint on every turn — must stay fast
    * (O(1) via the (botId, chatId, flowKind) unique index) since it
