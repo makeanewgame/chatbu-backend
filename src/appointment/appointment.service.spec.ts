@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SmsService } from 'src/sms/sms.service';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { AppointmentService, AppointmentCreatedPayload } from './appointment.service';
 
 /**
@@ -57,6 +58,7 @@ describe('AppointmentService.createFromMcp', () => {
                 AppointmentService,
                 { provide: PrismaService, useValue: prisma },
                 { provide: SmsService, useValue: sms },
+                { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
             ],
         }).compile();
 
@@ -229,6 +231,7 @@ describe('AppointmentService.updateReminderOffsets', () => {
                 AppointmentService,
                 { provide: PrismaService, useValue: prisma },
                 { provide: SmsService, useValue: {} },
+                { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
             ],
         }).compile();
 

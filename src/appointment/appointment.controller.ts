@@ -65,6 +65,14 @@ class AppointmentCreatedDto {
     @IsOptional()
     @IsIn(['tr', 'en'])
     lang?: 'tr' | 'en';
+
+    // Optional: forwarded from the MCP tool call so `AppointmentService`
+    // can advance `PerChatFlowState BOOKING → BOOKED`. Older MCP pods
+    // (pre-Faz-3a) don't pass this; the service's `safeTransition`
+    // silently no-ops when absent.
+    @IsString()
+    @IsOptional()
+    chatId?: string;
 }
 
 @ApiTags('Appointment (internal)')

@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { InternalApiKeyGuard } from '../google-calendar/internal-api-key.guard';
 import { BookingService } from './booking.service';
 
@@ -30,6 +30,13 @@ class RequestVerificationDto {
     @IsString()
     @IsNotEmpty()
     botCuid!: string;
+
+    // Optional: forwarded from the MCP tool call so `BookingService`
+    // can write `PerChatFlowState BOOKING: * → OTP_SENT`. When absent
+    // (older MCP pods pre-Faz-3a), `safeTransition` silently no-ops.
+    @IsString()
+    @IsOptional()
+    chatId?: string;
 }
 
 class VerifyDto {
@@ -45,6 +52,10 @@ class VerifyDto {
     @IsString()
     @IsNotEmpty()
     botCuid!: string;
+
+    @IsString()
+    @IsOptional()
+    chatId?: string;
 }
 
 class CheckTokenDto {
@@ -76,6 +87,10 @@ class RequestSmsVerificationDto {
     @IsString()
     @IsNotEmpty()
     botCuid!: string;
+
+    @IsString()
+    @IsOptional()
+    chatId?: string;
 }
 
 class VerifySmsDto {
@@ -90,6 +105,10 @@ class VerifySmsDto {
     @IsString()
     @IsNotEmpty()
     botCuid!: string;
+
+    @IsString()
+    @IsOptional()
+    chatId?: string;
 }
 
 class CheckSmsTokenDto {
@@ -127,7 +146,7 @@ export class BookingController {
             throw new HttpException('email and botCuid are required', HttpStatus.BAD_REQUEST);
         }
         try {
-            return await this.booking.requestVerification(body.email, body.botCuid);
+            return await this.booking.requestVerification(body.email, body.botCuid, body.chatId);
         } catch (e) {
             if ((e as Error).message === 'TOO_MANY_REQUESTS') {
                 throw new HttpException('Too many code requests; try again later', HttpStatus.TOO_MANY_REQUESTS);
@@ -149,7 +168,7 @@ export class BookingController {
         if (!body.email || !body.code || !body.botCuid) {
             throw new HttpException('email, code, and botCuid are required', HttpStatus.BAD_REQUEST);
         }
-        return this.booking.verify(body.email, body.code, body.botCuid);
+        return this.booking.verify(body.email, body.code, body.botCuid, body.chatId);
     }
 
     /**
@@ -199,7 +218,7 @@ export class BookingController {
             throw new HttpException('phone and botCuid are required', HttpStatus.BAD_REQUEST);
         }
         try {
-            return await this.booking.requestSmsVerification(body.phone, body.botCuid);
+            return await this.booking.requestSmsVerification(body.phone, body.botCuid, body.chatId);
         } catch (e) {
             if ((e as Error).message === 'TOO_MANY_REQUESTS') {
                 throw new HttpException('Too many code requests; try again later', HttpStatus.TOO_MANY_REQUESTS);
@@ -222,7 +241,7 @@ export class BookingController {
         if (!body.phone || !body.code || !body.botCuid) {
             throw new HttpException('phone, code, and botCuid are required', HttpStatus.BAD_REQUEST);
         }
-        return this.booking.verifySms(body.phone, body.code, body.botCuid);
+        return this.booking.verifySms(body.phone, body.code, body.botCuid, body.chatId);
     }
 
     /**
