@@ -14,6 +14,8 @@ import { MailService } from '../mail/mail.service';
 import { LeadDestination } from '../bot/lead-destination.constants';
 import { LeadService } from '../lead/lead.service';
 import { EventsGateway } from '../events/events.gateway';
+import { ChatFlowService } from '../chat-flow/chat-flow.service';
+import { FlowKind } from '../../generated/prisma/client';
 
 const FEEDBACK_ANSWER_TO_RATING: Record<'yes' | 'partial' | 'no', number> = {
     yes: 5,
@@ -32,6 +34,7 @@ export class WidgetService {
         private mailService: MailService,
         private eventsGateway: EventsGateway,
         private leadService: LeadService,
+        private chatFlowService: ChatFlowService,
     ) { }
 
     /**
@@ -396,6 +399,30 @@ export class WidgetService {
             where: { chatId, teamId, isDeleted: false },
             data: { feedbackRating: resolvedRating, chatStatus: 'CLOSED' },
         });
+
+        // P2 Faz 4: record the feedback submission in PerChatFlowState so
+        // admin dashboards / analytics / cron have a SQL-queryable view of
+        // "which chats produced feedback" without scraping bare rating
+        // fields. State stays SUBMITTED — no lifecycle after this (feedback
+        // is single-shot per chat), so the row is a permanent audit marker.
+        // Payload carries the resolved rating + optional answer so a single
+        // read of PerChatFlowState is enough for aggregations without
+        // joining CustomerChats/ChatFeedback.
+        await this.chatFlowService.safeTransition(
+            botId,
+            chatId,
+            FlowKind.FEEDBACK,
+            {
+                from: null,
+                to: 'SUBMITTED',
+                payload: {
+                    source: 'widget_feedback_submit',
+                    rating: resolvedRating,
+                    answer: answer ?? null,
+                },
+            },
+            'widget:submitFeedback',
+        );
 
         if (answer === undefined) {
             return { ok: true };
