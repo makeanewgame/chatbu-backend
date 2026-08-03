@@ -38,6 +38,7 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import {
   chatbuHttpRequestDurationSeconds,
   chatbuHttpRequestsTotal,
+  chatbuNetgsmSendTotal,
 } from './prometheus/metrics.providers';
 import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.interceptor';
 
@@ -100,6 +101,7 @@ import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.intercep
     // already covers the Node process side; this layer is HTTP-shape.
     chatbuHttpRequestsTotal,
     chatbuHttpRequestDurationSeconds,
+    chatbuNetgsmSendTotal,
     {
       provide: APP_INTERCEPTOR,
       useClass: PrometheusHttpInterceptor,

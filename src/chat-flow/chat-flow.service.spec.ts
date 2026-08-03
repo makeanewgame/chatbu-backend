@@ -48,8 +48,11 @@ describe('ChatFlowService', () => {
     });
 
     it('rejects empty target state', async () => {
+      // TypeScript's per-FlowKind LeadState literal-union prevents this
+      // at compile time; the runtime guard still needs to be verified
+      // for callers that bypass TS (e.g. JS callers or `any` casts).
       await expect(
-        service.transition(botId, chatId, FlowKind.LEAD, { to: '' }),
+        service.transition(botId, chatId, FlowKind.LEAD, { to: '' as any }),
       ).rejects.toThrow(BadRequestException);
     });
 

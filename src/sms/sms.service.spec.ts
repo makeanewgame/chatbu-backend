@@ -20,18 +20,23 @@ describe('SmsService', () => {
   let service: SmsService;
   let http: { post: jest.Mock };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
+  let counter: { inc: jest.Mock };
 
   const originalEnv = { ...process.env };
 
   beforeEach(async () => {
     http = { post: jest.fn() };
     logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    // Prom counter injected by the retry envelope. `inc` receives
+    // {context, outcome} — assert directly in the retry-path tests.
+    counter = { inc: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SmsService,
         { provide: HttpService, useValue: http },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
+        { provide: 'PROM_METRIC_CHATBU_NETGSM_SEND_TOTAL', useValue: counter },
       ],
     }).compile();
 
@@ -42,6 +47,7 @@ describe('SmsService', () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     jest.clearAllMocks();
+    jest.useRealTimers();
   });
 
   // ---------------------------------------------------------------------
@@ -89,21 +95,32 @@ describe('SmsService', () => {
       );
     });
 
-    it('throws when NETGSM returns a non-success code', async () => {
+    it('throws when NETGSM returns a non-success code (after retry)', async () => {
+      // Non-success codes are classified transient — retry fires, second
+      // attempt also returns non-success, exhausted path throws.
       process.env.NETGSM_MOCK = 'false';
       process.env.NETGSM_USERNAME = 'u';
       process.env.NETGSM_PASSWORD = 'p';
       process.env.NETGSM_MSGHEADER = 'h';
+      // Silence the 3s backoff in tests without touching production code.
+      jest
+        .spyOn(global, 'setTimeout')
+        .mockImplementation(((cb: any) => cb()) as any);
       http.post.mockReturnValue(
         of({ data: { code: '80', jobid: 'j1' } } as AxiosResponse),
       );
 
-      await expect(service.sendSms('05321112233', 'x')).rejects.toThrow(
+      await expect(service.sendSms('05321112233', 'x', 'otp')).rejects.toThrow(
         /NETGSM rejected/,
       );
+      expect(http.post).toHaveBeenCalledTimes(2);
+      expect(counter.inc).toHaveBeenCalledWith({
+        context: 'otp',
+        outcome: 'exhausted',
+      });
     });
 
-    it('accepts NETGSM success code "00"', async () => {
+    it('accepts NETGSM success code "00" (no retry needed)', async () => {
       process.env.NETGSM_MOCK = 'false';
       process.env.NETGSM_USERNAME = 'u';
       process.env.NETGSM_PASSWORD = 'p';
@@ -112,20 +129,102 @@ describe('SmsService', () => {
         of({ data: { code: '00', jobid: 'j1' } } as AxiosResponse),
       );
 
-      await expect(service.sendSms('05321112233', 'x')).resolves.toBeUndefined();
+      await expect(service.sendSms('05321112233', 'x', 'otp')).resolves.toBeUndefined();
       expect(http.post).toHaveBeenCalledTimes(1);
+      expect(counter.inc).toHaveBeenCalledWith({
+        context: 'otp',
+        outcome: 'success_on_first',
+      });
     });
 
-    it('propagates HTTP transport errors', async () => {
+    it('propagates HTTP transport errors (Error without .code — non-retryable)', async () => {
+      // Bare `Error('timeout')` has no .code, so isTransientFailure
+      // returns false → no retry, permanent_fail path.
       process.env.NETGSM_MOCK = 'false';
       process.env.NETGSM_USERNAME = 'u';
       process.env.NETGSM_PASSWORD = 'p';
       process.env.NETGSM_MSGHEADER = 'h';
       http.post.mockReturnValue(throwError(() => new Error('timeout')));
 
-      await expect(service.sendSms('05321112233', 'x')).rejects.toThrow(
+      await expect(service.sendSms('05321112233', 'x', 'otp')).rejects.toThrow(
         'timeout',
       );
+      expect(http.post).toHaveBeenCalledTimes(1);
+      expect(counter.inc).toHaveBeenCalledWith({
+        context: 'otp',
+        outcome: 'permanent_fail',
+      });
+    });
+
+    // ─── Retry envelope (2026-08-03 follow-up to hotfix #133) ─────────
+
+    it('retries once on ECONNABORTED and succeeds on the second attempt', async () => {
+      process.env.NETGSM_MOCK = 'false';
+      process.env.NETGSM_USERNAME = 'u';
+      process.env.NETGSM_PASSWORD = 'p';
+      process.env.NETGSM_MSGHEADER = 'h';
+      jest
+        .spyOn(global, 'setTimeout')
+        .mockImplementation(((cb: any) => cb()) as any);
+      const timeoutErr: any = new Error('cancelled');
+      timeoutErr.code = 'ECONNABORTED';
+      http.post
+        .mockReturnValueOnce(throwError(() => timeoutErr))
+        .mockReturnValueOnce(of({ data: { code: '00', jobid: 'j2' } } as AxiosResponse));
+
+      await expect(service.sendSms('05321112233', 'x', 'otp')).resolves.toBeUndefined();
+      expect(http.post).toHaveBeenCalledTimes(2);
+      expect(counter.inc).toHaveBeenCalledWith({
+        context: 'otp',
+        outcome: 'success_on_retry',
+      });
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('transient fail'),
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.stringContaining('recovered on retry'),
+      );
+    });
+
+    it('retries once on HTTP 5xx and succeeds on the second attempt', async () => {
+      process.env.NETGSM_MOCK = 'false';
+      process.env.NETGSM_USERNAME = 'u';
+      process.env.NETGSM_PASSWORD = 'p';
+      process.env.NETGSM_MSGHEADER = 'h';
+      jest
+        .spyOn(global, 'setTimeout')
+        .mockImplementation(((cb: any) => cb()) as any);
+      const serverErr: any = new Error('bad gateway');
+      serverErr.response = { status: 502 };
+      http.post
+        .mockReturnValueOnce(throwError(() => serverErr))
+        .mockReturnValueOnce(of({ data: { code: '00', jobid: 'j3' } } as AxiosResponse));
+
+      await expect(service.sendSms('05321112233', 'x', 'booking_confirmation')).resolves.toBeUndefined();
+      expect(http.post).toHaveBeenCalledTimes(2);
+      expect(counter.inc).toHaveBeenCalledWith({
+        context: 'booking_confirmation',
+        outcome: 'success_on_retry',
+      });
+    });
+
+    it('does NOT retry on HTTP 4xx (permanent — bad credentials / malformed)', async () => {
+      process.env.NETGSM_MOCK = 'false';
+      process.env.NETGSM_USERNAME = 'u';
+      process.env.NETGSM_PASSWORD = 'p';
+      process.env.NETGSM_MSGHEADER = 'h';
+      const authErr: any = new Error('unauthorized');
+      authErr.response = { status: 401 };
+      http.post.mockReturnValueOnce(throwError(() => authErr));
+
+      await expect(service.sendSms('05321112233', 'x', 'otp')).rejects.toThrow(
+        'unauthorized',
+      );
+      expect(http.post).toHaveBeenCalledTimes(1);
+      expect(counter.inc).toHaveBeenCalledWith({
+        context: 'otp',
+        outcome: 'permanent_fail',
+      });
     });
   });
 
