@@ -22,6 +22,8 @@ import { MailService } from '../mail/mail.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
 import { EventsGateway } from 'src/events/events.gateway';
+import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
+import { FlowKind } from '../../generated/prisma/client';
 
 @Injectable()
 export class BotService {
@@ -35,6 +37,7 @@ export class BotService {
     private minioClientService: MinioClientService,
     private systemLogService: SystemLogService,
     private eventsGateway: EventsGateway,
+    private chatFlowService: ChatFlowService,
   ) { }
 
   async createBot(body: CreateBotRequest, userId?: string, userEmail?: string) {
@@ -732,6 +735,19 @@ export class BotService {
 
       // ── Auto-handover: if LLM signals human_handover and bot has a defaultAgentId ──
       if (data.human_handover && activeChat) {
+        // P2 Faz 4: record the handover request in PerChatFlowState so
+        // downstream consumers (admin dashboards, cron, analytics)
+        // observe HANDOFF activity without scraping gateway logs. The
+        // first transition covers "requested" — whether or not the
+        // assignment path below actually succeeds. safeTransition
+        // swallows any error so it can't derail the handover flow.
+        await this.chatFlowService.safeTransition(
+          botUser.id,
+          sessionId,
+          FlowKind.HANDOFF,
+          { from: null, to: 'REQUESTED', payload: { source: 'auto_handover_signal' } },
+          'bot:autoHandover:requested',
+        );
         const settings = botUser.settings as any;
         const defaultAgentId = settings?.defaultAgentId;
         if (defaultAgentId) {
@@ -749,6 +765,26 @@ export class BotService {
                 where: { id: activeChat.id },
                 data: { chatStatus: 'HUMAN_ACTIVE', agentUserId: defaultAgentId },
               });
+              // P2 Faz 4: promote REQUESTED → ASSIGNED once the chat
+              // row is flipped to HUMAN_ACTIVE and the agent is being
+              // notified. optimistic-lock from='REQUESTED' guards
+              // against the unlikely case where a second concurrent
+              // handover leaked past.
+              await this.chatFlowService.safeTransition(
+                botUser.id,
+                sessionId,
+                FlowKind.HANDOFF,
+                {
+                  from: 'REQUESTED',
+                  to: 'ASSIGNED',
+                  payload: {
+                    source: 'auto_handover_assigned',
+                    agentUserId: defaultAgentId,
+                    chatRowId: activeChat.id,
+                  },
+                },
+                'bot:autoHandover:assigned',
+              );
               this.eventsGateway.notifyAgent(defaultAgentId, {
                 chatId: activeChat.id,
                 type: 'auto_handover',
