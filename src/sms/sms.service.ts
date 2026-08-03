@@ -116,7 +116,18 @@ export class SmsService {
               'Content-Type': 'application/json',
               Authorization: `Basic ${basicAuth}`,
             },
-            timeout: 10000,
+            // Hotfix 2026-08-03 (Usta Guvenlik prod lead lost): NETGSM
+            // API observed hanging 10-20s under load — the previous 10s
+            // ceiling was cancelling requests axios-side and returning
+            // LEAD_SMS_VERIFICATION_UNAVAILABLE to the visitor even
+            // when NETGSM would have eventually accepted the OTP.
+            // Success rate over the last 6h was 2/6 (33%). Bumping to
+            // 25s gives NETGSM the full envelope it needs on slow
+            // days. Callers (MCP lead_tools.py / calendar_tools.py)
+            // were bumped to 30s in the same hotfix so they don't
+            // cancel this call before it can reply. Follow-up: SMS
+            // retry logic (planned) + circuit breaker (backlog).
+            timeout: 25000,
           },
         ),
       );
