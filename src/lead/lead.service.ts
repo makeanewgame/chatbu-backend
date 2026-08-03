@@ -14,7 +14,7 @@ import { VerifySmsDto } from './dto/verify-sms.dto';
 import { RecordPrivacyConsentDto } from './dto/record-privacy-consent.dto';
 import { LeadDestination } from 'src/bot/lead-destination.constants';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
-import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
+import { ChatFlowService, TransitionArgs } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
 
 const CODE_TTL_MINUTES = 5;
@@ -57,8 +57,8 @@ export class LeadService {
   private async safeTransition(
     botId: string,
     chatId: string | null | undefined,
-    flowKind: FlowKind,
-    args: { from?: string | null; to: string; payload?: any },
+    flowKind: typeof FlowKind.LEAD,
+    args: TransitionArgs<typeof FlowKind.LEAD>,
   ): Promise<void> {
     if (!chatId) return; // flow state is per-chat; entry sites without chatId (email OTP) skip silently
     try {

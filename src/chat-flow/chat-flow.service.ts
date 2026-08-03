@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { FlowKind, Prisma } from '../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { FlowStateFor } from './flow-states';
+
+export { LeadState, BookingState, HandoffState, FeedbackState, FlowStateFor } from './flow-states';
 
 /**
  * Authoritative store for per-chat, per-flow orchestration state.
@@ -43,9 +46,20 @@ export interface FlowStateReadDto {
   payload: Prisma.JsonValue | null;
 }
 
-export interface TransitionArgs {
-  from?: string | null;
-  to: string;
+/**
+ * Args for a single state transition. Generic over the FlowKind so
+ * callers get compile-time narrowing: `TransitionArgs<'LEAD'>` accepts
+ * only `LeadState` values, `TransitionArgs<'BOOKING'>` only
+ * `BookingState`, etc. Prevents typos and accidental cross-flow state
+ * mix-ups at the call site.
+ *
+ * Defaults to `FlowKind` (widened) for the loose call site — this is
+ * only really used by generic passthrough code that doesn't know the
+ * concrete FlowKind at authoring time.
+ */
+export interface TransitionArgs<F extends FlowKind = FlowKind> {
+  from?: FlowStateFor<F> | null;
+  to: FlowStateFor<F>;
   payload?: Prisma.InputJsonValue | null;
 }
 
@@ -70,11 +84,11 @@ export class ChatFlowService {
    * regardless of prior state — used at flow-entry sites where the
    * caller doesn't know or care about the previous state.
    */
-  async transition(
+  async transition<F extends FlowKind>(
     botId: string,
     chatId: string,
-    flowKind: FlowKind,
-    args: TransitionArgs,
+    flowKind: F,
+    args: TransitionArgs<F>,
   ): Promise<void> {
     if (!botId || !chatId) {
       throw new BadRequestException('botId and chatId are required');
@@ -161,11 +175,11 @@ export class ChatFlowService {
    * `source` is stamped into the log line to keep transition traces
    * greppable across the multiple services that call this helper.
    */
-  async safeTransition(
+  async safeTransition<F extends FlowKind>(
     botId: string,
     chatId: string | null | undefined,
-    flowKind: FlowKind,
-    args: TransitionArgs,
+    flowKind: F,
+    args: TransitionArgs<F>,
     source?: string,
   ): Promise<void> {
     if (!chatId) return;
