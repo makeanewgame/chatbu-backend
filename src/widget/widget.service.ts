@@ -14,6 +14,7 @@ import { MailService } from '../mail/mail.service';
 import { LeadDestination } from '../bot/lead-destination.constants';
 import { LeadService } from '../lead/lead.service';
 import { EventsGateway } from '../events/events.gateway';
+import { AppointmentAvailabilityService } from '../appointment/appointment-availability.service';
 import { ChatFlowService } from '../chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
 
@@ -34,8 +35,31 @@ export class WidgetService {
         private mailService: MailService,
         private eventsGateway: EventsGateway,
         private leadService: LeadService,
+        private appointmentAvailabilityService: AppointmentAvailabilityService,
         private chatFlowService: ChatFlowService,
     ) { }
+
+    /**
+     * Bookable appointment slots for the inline calendar picker. botId is
+     * resolved from sessionToken (same widget-session JWT `chat()` verifies
+     * below) — the widget never sends botId directly for this call, so a
+     * tampered body can't probe another tenant's calendar.
+     */
+    async getAppointmentAvailability(sessionToken: string) {
+        let payload: any;
+        try {
+            payload = await this.jwtService.verifyAsync(sessionToken, {
+                secret: this.configService.get('JWT_SECRET'),
+            });
+        } catch {
+            throw new UnauthorizedException('Session expired');
+        }
+        if (payload.type !== 'widget-session') {
+            throw new UnauthorizedException('Invalid session token type');
+        }
+
+        return this.appointmentAvailabilityService.getAvailableSlots(payload.botId);
+    }
 
     /**
      * Records that a widget visitor accepted the KVKK Aydınlatma Metni /

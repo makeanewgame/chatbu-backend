@@ -6,12 +6,13 @@ import { MinioClientModule } from '../minio-client/minio-client.module';
 import { MailModule } from '../mail/mail.module';
 import { EventsModule } from '../events/events.module';
 import { LeadModule } from '../lead/lead.module';
+import { AppointmentModule } from '../appointment/appointment.module';
 import { ChatFlowModule } from '../chat-flow/chat-flow.module';
 import { WidgetController } from './widget.controller';
 import { WidgetService } from './widget.service';
 
 @Module({
-    imports: [PrismaModule, JwtModule, BotModule, MinioClientModule, MailModule, EventsModule, LeadModule, ChatFlowModule],
+    imports: [PrismaModule, JwtModule, BotModule, MinioClientModule, MailModule, EventsModule, LeadModule, AppointmentModule, ChatFlowModule],
     controllers: [WidgetController],
     providers: [WidgetService],
 })

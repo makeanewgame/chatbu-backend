@@ -15,6 +15,6 @@ import { ShopifyModule } from './shopify/shopify.module';
     imports: [PrismaModule, BookingModule, ShopifyModule],
     controllers: [IntegrationController, GoogleCalendarController, WhatsAppEmbeddedController, MetaEmbeddedController],
     providers: [IntegrationService, GoogleCalendarService, WhatsAppEmbeddedService, MetaEmbeddedService],
-    exports: [WhatsAppEmbeddedService, MetaEmbeddedService],
+    exports: [WhatsAppEmbeddedService, MetaEmbeddedService, GoogleCalendarService],
 })
 export class IntegrationModule { }

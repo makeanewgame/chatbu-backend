@@ -3,6 +3,11 @@ import { FlowKind } from '../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SmsService } from 'src/sms/sms.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
+import {
+    ALLOWED_SLOT_MINUTES,
+    WEEKDAY_KEYS,
+    WorkingHours,
+} from './appointment.constants';
 
 // Only the two offsets the FE exposes today. Rejecting unknown offsets
 // prevents an attacker (or a wonky proxy) from smuggling a wildly
@@ -254,5 +259,68 @@ export class AppointmentService {
             `Updated appointmentReminderOffsets for bot ${botId} → [${cleaned.join(', ')}]`,
         );
         return updated;
+    }
+
+    /**
+     * Update the per-bot appointment working-hours window used by the
+     * inline calendar picker (AppointmentAvailabilityService intersects
+     * this with Google Calendar freebusy). Validated imperatively rather
+     * than via class-validator nested-DTO decorators — the same tradeoff
+     * `settings: Json?` makes elsewhere in this model — because the
+     * shape is a fixed 7-key day map that's easier to walk by hand than
+     * to express as a decorator tree.
+     */
+    async updateWorkingHours(botId: string, teamId: string, workingHours: WorkingHours) {
+        this.validateWorkingHours(workingHours);
+
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: botId },
+            select: { id: true, teamId: true },
+        });
+        if (!bot) {
+            throw new NotFoundException(`Bot ${botId} not found`);
+        }
+        if (bot.teamId !== teamId) {
+            throw new ForbiddenException(`Bot ${botId} does not belong to your team`);
+        }
+
+        const updated = await this.prisma.customerBots.update({
+            where: { id: botId },
+            data: { appointmentWorkingHours: workingHours as any },
+            select: { id: true, appointmentWorkingHours: true },
+        });
+        this.logger.log(`Updated appointmentWorkingHours for bot ${botId}`);
+        return updated;
+    }
+
+    private validateWorkingHours(workingHours: WorkingHours) {
+        if (!workingHours || typeof workingHours !== 'object') {
+            throw new ForbiddenException('workingHours is required');
+        }
+        if (!ALLOWED_SLOT_MINUTES.has(workingHours.slotMinutes)) {
+            throw new ForbiddenException(
+                `Unsupported slotMinutes ${workingHours.slotMinutes}. Allowed: ${[...ALLOWED_SLOT_MINUTES].join(', ')}.`,
+            );
+        }
+        try {
+            // Throws RangeError for an invalid IANA zone name.
+            new Intl.DateTimeFormat(undefined, { timeZone: workingHours.timezone });
+        } catch {
+            throw new ForbiddenException(`Invalid timezone "${workingHours.timezone}"`);
+        }
+
+        const timeRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
+        for (const key of WEEKDAY_KEYS) {
+            const day = workingHours.days?.[key];
+            if (!day) {
+                throw new ForbiddenException(`Missing day "${key}" in workingHours.days`);
+            }
+            if (!timeRegex.test(day.start) || !timeRegex.test(day.end)) {
+                throw new ForbiddenException(`Invalid time format for day "${key}", expected HH:mm`);
+            }
+            if (day.enabled && day.start >= day.end) {
+                throw new ForbiddenException(`Day "${key}" has start >= end`);
+            }
+        }
     }
 }
