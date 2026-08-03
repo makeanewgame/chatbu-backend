@@ -34,3 +34,27 @@ export const chatbuHttpRequestDurationSeconds = makeHistogramProvider({
   labelNames: ['method', 'route'] as const,
   buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
 });
+
+/**
+ * NETGSM send outcomes after the SmsService retry envelope. Labels:
+ *   context: 'otp' | 'booking_confirmation' | 'booking_reminder' | 'generic'
+ *     — the same short label the sendSms caller already logs, so a
+ *     Grafana panel can slice by SMS purpose without joining logs.
+ *   outcome:
+ *     'success_on_first' — attempt 1 accepted (00/01), no retry needed
+ *     'success_on_retry' — attempt 1 transient-failed, attempt 2 succeeded
+ *     'exhausted'        — both attempts transient-failed (permanent from
+ *                          caller's perspective)
+ *     'permanent_fail'   — attempt 1 hit a non-retryable error (bad
+ *                          credentials, malformed request, 4xx) — no
+ *                          retry attempted since a second call would fail
+ *                          the same way
+ * Sustained non-zero on 'success_on_retry' means NETGSM is intermittent
+ * (retry earning its keep); sustained non-zero on 'exhausted' means
+ * NETGSM is degraded — page ops.
+ */
+export const chatbuNetgsmSendTotal = makeCounterProvider({
+  name: 'chatbu_netgsm_send_total',
+  help: 'NETGSM SMS send outcomes after the SmsService retry envelope',
+  labelNames: ['context', 'outcome'] as const,
+});
