@@ -61,6 +61,20 @@ export class WidgetController {
     }
 
     /**
+     * Returns bookable appointment slots (working hours ∩ Google Calendar
+     * freebusy) for the bot resolved from sessionToken — see
+     * WidgetService.getAppointmentAvailability. Same throttle band as
+     * /widget/chat since it's called right after the agent emits an
+     * APPOINTMENT_BOOKING action, i.e. roughly once per booking attempt.
+     */
+    @ApiOperation({ summary: 'Get bookable appointment slots for the widget session\'s bot' })
+    @Post('appointment/availability')
+    @Throttle({ default: { ttl: 60000, limit: 20 } })
+    async appointmentAvailability(@Body() body: any) {
+        return this.widgetService.getAppointmentAvailability(body.sessionToken);
+    }
+
+    /**
      * Records KVKK consent (Aydınlatma Metni + Kullanım Şartları acceptance)
      * for a widget visitor, before their phone number is collected for SMS
      * lead verification. Public like the rest of this controller - bot-scoped

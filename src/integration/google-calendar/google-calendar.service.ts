@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OAuth2Client } from 'google-auth-library';
+import axios from 'axios';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
 
@@ -224,6 +225,38 @@ export class GoogleCalendarService {
             expiry: config.expiry,
             calendar_id: config.calendar_id || 'primary',
         };
+    }
+
+    /**
+     * Fetch busy intervals for a bot's calendar between timeMin/timeMax
+     * (ISO-8601, timezone offset required). Direct REST call to Google's
+     * freeBusy endpoint — no `googleapis` client needed for this one-shot
+     * call, mirrors what MCP's `check_availability` does via
+     * `svc.freebusy().query()` (mcp-server/calendar_tools.py), but this
+     * is the synchronous-widget-endpoint path (see
+     * AppointmentAvailabilityService), not the LLM tool-calling path.
+     */
+    async getFreeBusy(
+        botId: string,
+        timeMinIso: string,
+        timeMaxIso: string,
+    ): Promise<{ start: string; end: string }[]> {
+        const { access_token, calendar_id } = await this.getTokenForBot(botId);
+
+        const response = await axios.post(
+            'https://www.googleapis.com/calendar/v3/freeBusy',
+            {
+                timeMin: timeMinIso,
+                timeMax: timeMaxIso,
+                items: [{ id: calendar_id }],
+            },
+            {
+                headers: { Authorization: `Bearer ${access_token}` },
+            },
+        );
+
+        const busy = response.data?.calendars?.[calendar_id]?.busy ?? [];
+        return busy as { start: string; end: string }[];
     }
 
     /**

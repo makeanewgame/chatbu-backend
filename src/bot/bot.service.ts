@@ -22,6 +22,7 @@ import { MailService } from '../mail/mail.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
 import { EventsGateway } from 'src/events/events.gateway';
+import { DEFAULT_WORKING_HOURS } from 'src/appointment/appointment.constants';
 
 @Injectable()
 export class BotService {
@@ -84,6 +85,7 @@ export class BotService {
             settings: body.settings,
             purpose: body.purpose,
             active: true,
+            appointmentWorkingHours: DEFAULT_WORKING_HOURS as any,
             team: {
               connect: {
                 id: body.user,

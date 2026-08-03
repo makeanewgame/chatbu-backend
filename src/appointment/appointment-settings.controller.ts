@@ -15,11 +15,13 @@ import {
     IsArray,
     IsInt,
     IsNotEmpty,
+    IsObject,
     IsString,
 } from 'class-validator';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { IUser } from 'src/util/interfaces';
 import { AppointmentService } from './appointment.service';
+import { WorkingHours } from './appointment.constants';
 
 /**
  * DTO for the FE bot-settings surface. `offsets` mirrors the two
@@ -40,6 +42,21 @@ class UpdateReminderOffsetsDto {
     @ArrayMaxSize(2)
     @ArrayUnique()
     offsets!: number[];
+}
+
+/**
+ * DTO for the FE working-hours form (inline calendar picker, Faz 1).
+ * `workingHours` is validated imperatively in AppointmentService — see
+ * `validateWorkingHours` — rather than via a nested class-validator tree,
+ * matching the `settings: Json?` precedent elsewhere on this model.
+ */
+class UpdateWorkingHoursDto {
+    @IsString()
+    @IsNotEmpty()
+    botId!: string;
+
+    @IsObject()
+    workingHours!: WorkingHours;
 }
 
 /**
@@ -82,6 +99,31 @@ export class AppointmentSettingsController {
             body.botId,
             user.teamId,
             body.offsets,
+        );
+    }
+
+    /**
+     * POST /api/bot/updateAppointmentWorkingHours
+     * Body: { botId: string, workingHours: WorkingHours }
+     * Response: { id: string, appointmentWorkingHours: WorkingHours }
+     */
+    @ApiOperation({ summary: 'Update per-bot appointment working hours (inline calendar picker)' })
+    @ApiResponse({ status: 200, description: 'Working hours updated' })
+    @ApiResponse({ status: 403, description: 'Invalid working hours or wrong team' })
+    @ApiResponse({ status: 404, description: 'Bot not found' })
+    @ApiBearerAuth()
+    @Post('updateAppointmentWorkingHours')
+    @UseGuards(AccessTokenGuard)
+    @HttpCode(200)
+    async updateWorkingHours(
+        @Body() body: UpdateWorkingHoursDto,
+        @Req() req: Request,
+    ) {
+        const user = req.user as IUser;
+        return this.appointment.updateWorkingHours(
+            body.botId,
+            user.teamId,
+            body.workingHours,
         );
     }
 }

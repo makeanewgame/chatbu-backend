@@ -155,6 +155,13 @@ model CustomerBots {
   // matches the two checkboxes the FE bot-settings surface exposes
   // (24 hours before / 1 hour before). Owner picks 0, 1, or 2.
   appointmentReminderOffsets Int[]        @default([1440, 60])
+  // Per-bot appointment availability window (inline calendar picker,
+  // Faz 1). Nullable so application code keeps a `?? DEFAULT_WORKING_HOURS`
+  // fallback (see appointment.constants.ts), but in practice every row is
+  // backfilled to that same default by this field's migration, and
+  // BotService.createBot writes it explicitly on create — NULL should not
+  // occur in steady state, this is a belt-and-suspenders fallback only.
+  appointmentWorkingHours   Json?
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
   isDeleted                Boolean        @default(false)
