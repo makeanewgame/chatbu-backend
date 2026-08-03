@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
 import { randomUUID } from 'crypto';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
@@ -670,6 +670,40 @@ export class AuthenticationService {
       termsAccepted: userFull?.termsAccepted ?? false,
       onboardingCompleted: !!team?.onboardingCompletedAt,
     };
+  }
+
+  // Mobile has no web browser redirect to bounce through, so the app gets a
+  // Google ID token directly from the native/Expo Google sign-in flow and
+  // hands it to us here. We verify it server-side (same as connectGoogleAccount)
+  // before ever trusting the email it contains, then reuse the same
+  // find-or-create logic as the web OAuth redirect flow (googleLogin).
+  async googleMobileLogin(idToken: string) {
+    if (!idToken) {
+      return { success: false, message: 'Missing Google credential' };
+    }
+
+    const audience = [
+      this.configService.get<string>('GOOGLE_CLIENT_ID'),
+      this.configService.get<string>('GOOGLE_IOS_CLIENT_ID'),
+      this.configService.get<string>('GOOGLE_ANDROID_CLIENT_ID'),
+    ].filter((id): id is string => !!id);
+
+    const oauthClient = new OAuth2Client();
+
+    let payload: TokenPayload | undefined;
+    try {
+      const ticket = await oauthClient.verifyIdToken({ idToken, audience });
+      payload = ticket.getPayload();
+    } catch (verifyError) {
+      this.logger.warn('Invalid Google ID token on mobile auth', verifyError);
+      return { success: false, message: 'Invalid Google credential' };
+    }
+
+    if (!payload?.email || !payload.email_verified) {
+      return { success: false, message: 'Google account could not be verified' };
+    }
+
+    return this.googleLogin(payload.email, { displayName: payload.name });
   }
 
   async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {

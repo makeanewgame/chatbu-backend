@@ -122,6 +122,14 @@ export class AuthenticationController {
     return await this.authService.login(body.email, body.password);
   }
 
+  // Used by the mobile app: it gets a Google ID token from the on-device
+  // sign-in flow (no browser redirect available there) and hands it to us
+  // for verification, instead of going through GoogleGuard's redirect dance.
+  @Post('google/mobile')
+  async googleMobileAuth(@Body() body: { idToken: string }) {
+    return await this.authService.googleMobileLogin(body.idToken);
+  }
+
   @Post('accept-terms')
   @UseGuards(AccessTokenGuard)
   async acceptTerms(@Req() req, @Body() body: { phoneNumber?: string }) {
