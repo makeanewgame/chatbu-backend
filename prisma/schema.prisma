@@ -41,6 +41,20 @@ model User {
   TicketMessage        TicketMessage[]
   Notification         Notification[]
   AssignedChats        CustomerChats[] @relation("AssignedAgent")
+  PushTokens           PushToken[]
+}
+
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Team {

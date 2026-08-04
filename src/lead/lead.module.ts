@@ -7,9 +7,10 @@ import { MailModule } from 'src/mail/mail.module';
 import { SmsModule } from 'src/sms/sms.module';
 import { LegalDocumentModule } from 'src/legal-document/legal-document.module';
 import { ChatFlowModule } from 'src/chat-flow/chat-flow.module';
+import { PushNotificationModule } from 'src/push-notification/push-notification.module';
 
 @Module({
-  imports: [PrismaModule, MailModule, SmsModule, JwtModule.register({}), LegalDocumentModule, ChatFlowModule],
+  imports: [PrismaModule, MailModule, SmsModule, JwtModule.register({}), LegalDocumentModule, ChatFlowModule, PushNotificationModule],
   controllers: [LeadController],
   providers: [LeadService],
   exports: [LeadService],

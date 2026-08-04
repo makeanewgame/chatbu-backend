@@ -8,6 +8,7 @@ import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/sms/sms.service';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
+import { PushNotificationService } from 'src/push-notification/push-notification.service';
 
 describe('LeadService — lead verification', () => {
   let service: LeadService;
@@ -58,6 +59,7 @@ describe('LeadService — lead verification', () => {
           provide: ChatFlowService,
           useValue: { transition: jest.fn().mockResolvedValue(undefined), list: jest.fn().mockResolvedValue([]) },
         },
+        { provide: PushNotificationService, useValue: { sendToUsers: jest.fn(), sendToUser: jest.fn() } },
       ],
     }).compile();
 

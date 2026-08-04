@@ -11,6 +11,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
 import { randomUUID } from 'crypto';
 import { OAuth2Client, TokenPayload } from 'google-auth-library';
+import appleSigninAuth from 'apple-signin-auth';
 import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
@@ -806,6 +807,47 @@ export class AuthenticationService {
     }
 
     return this.googleLogin(payload.email, { displayName: payload.name });
+  }
+
+  // Same shape as googleMobileLogin: the app gets a signed identityToken
+  // straight from Apple's native on-device sign-in (expo-apple-authentication),
+  // we verify it against Apple's JWKS before trusting the email, then reuse
+  // googleLogin's find-or-create — email is the account key regardless of
+  // provider, same as the Google path.
+  async appleMobileLogin(
+    identityToken: string,
+    fullName?: string,
+    fallbackEmail?: string,
+  ) {
+    if (!identityToken) {
+      return { success: false, message: 'Missing Apple credential' };
+    }
+
+    const audience = [
+      this.configService.get<string>('APPLE_CLIENT_ID'),
+      this.configService.get<string>('APPLE_IOS_CLIENT_ID'),
+    ].filter((id): id is string => !!id);
+
+    let payload: Awaited<ReturnType<typeof appleSigninAuth.verifyIdToken>>;
+    try {
+      payload = await appleSigninAuth.verifyIdToken(identityToken, { audience });
+    } catch (verifyError) {
+      this.logger.warn('Invalid Apple ID token on mobile auth', verifyError);
+      return { success: false, message: 'Invalid Apple credential' };
+    }
+
+    // Apple only includes the email in the identityToken (or omits it
+    // entirely for a private-relay user on repeat sign-ins); the client
+    // passes the one-time `email` field from its first authorization as a
+    // fallback so the account can still be resolved by email server-side.
+    // Apple sometimes sends email_verified as the string 'false' rather than
+    // a boolean, so it can't be compared with strict equality.
+    const email = payload.email ?? fallbackEmail;
+    if (!email || String(payload.email_verified) === 'false') {
+      return { success: false, message: 'Apple account could not be verified' };
+    }
+
+    return this.googleLogin(email, { displayName: fullName });
   }
 
   async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {

@@ -16,6 +16,7 @@ import { LeadDestination } from 'src/bot/lead-destination.constants';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
 import { ChatFlowService, TransitionArgs } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
+import { PushNotificationService } from 'src/push-notification/push-notification.service';
 
 const CODE_TTL_MINUTES = 5;
 const VERIFICATION_TOKEN_TTL_SECONDS = 30 * 60;
@@ -43,6 +44,7 @@ export class LeadService {
     private jwt: JwtService,
     private legalDocumentService: LegalDocumentService,
     private chatFlowService: ChatFlowService,
+    private pushNotificationService: PushNotificationService,
   ) { }
 
   /**
@@ -265,6 +267,31 @@ export class LeadService {
         where: { id: privacyConsentId },
         data: { leadId: lead.id },
       });
+    }
+
+    // Push notification: unlike leadDestinations (arbitrary configured
+    // emails, not necessarily tied to any User account), push always
+    // targets the team's actual app users, so an agent gets alerted on
+    // their phone regardless of where the email routing points.
+    try {
+      const teamMembers = await this.prisma.teamMember.findMany({
+        where: { teamId: bot.teamId, userId: { not: null }, status: 'active' },
+        select: { userId: true },
+      });
+      const team = await this.prisma.team.findUnique({
+        where: { id: bot.teamId },
+        select: { ownerId: true },
+      });
+      const recipientIds = new Set(teamMembers.map((m) => m.userId as string));
+      if (team?.ownerId) recipientIds.add(team.ownerId);
+
+      await this.pushNotificationService.sendToUsers([...recipientIds], {
+        title: 'Yeni lead',
+        body: `${bot.botName} için yeni bir lead alındı.`,
+        data: { type: 'new_lead', botId, leadId: lead.id },
+      });
+    } catch (pushError) {
+      console.warn('[lead-service] push notification failed:', pushError);
     }
 
     // Terminal LEAD transition. `delivered`/`partial` → SUBMITTED
