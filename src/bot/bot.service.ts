@@ -979,7 +979,19 @@ export class BotService {
       // client-side only lets the widget improve UX; the actual KVKK
       // guarantee is enforced server-side by the gateway pre-agent
       // scrub (Item 3b) + backend consent gate on requestSmsVerification.
-      select: { id: true, settings: true, botName: true, smsVerificationRequired: true },
+      // `streamingEnabled` (voice agent plan Faz 2b, 2026-08-04) tells
+      // the widget frontend whether to send `Accept: text/event-stream`
+      // and consume the SSE token stream. Default false — operator
+      // flips per pilot bot after dev soak. Every other consumer
+      // (Meta/WhatsApp adapters, embed test panel) ignores this and
+      // stays on the batch path.
+      select: {
+        id: true,
+        settings: true,
+        botName: true,
+        smsVerificationRequired: true,
+        streamingEnabled: true,
+      },
     });
     if (!bot) throw new NotFoundException('Bot not found');
     return bot;

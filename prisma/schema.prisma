@@ -148,6 +148,17 @@ model CustomerBots {
   leadDestinations         Json           @default("[]")
   leadVerificationRequired Boolean        @default(false)
   smsVerificationRequired  Boolean        @default(false)
+  // Per-bot toggle for the widget SSE streaming path (voice agent
+  // plan Faz 2b, 2026-08-04). When true, the frontend widget sends
+  // `Accept: text/event-stream` on `/widget/chat` and the backend
+  // proxies the gateway SSE stream token-by-token instead of
+  // buffering into a batch JSON body — perceived TTFB drops from
+  // 3-5s to under a second. Default false for rollout gate: dev
+  // enables it per pilot bot, prod flips per tenant after soak.
+  // The batch path stays wired for `Accept: application/json` and
+  // for every non-widget consumer (Meta/WhatsApp adapters) — those
+  // never read this flag and always get the batch response.
+  streamingEnabled         Boolean        @default(false)
   // Minutes-before-appointment offsets at which the reminder cron
   // should fire an SMS to the visitor. Introduced Faz E of the
   // SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
