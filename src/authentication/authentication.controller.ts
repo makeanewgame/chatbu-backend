@@ -131,6 +131,20 @@ export class AuthenticationController {
     return await this.authService.googleMobileLogin(body.idToken);
   }
 
+  // Apple only hands the client the user's name/email on their very first
+  // authorization on this device — the app forwards those along with the
+  // identityToken so a first-time login can still be attributed correctly.
+  @Post('apple/mobile')
+  async appleMobileAuth(
+    @Body() body: { identityToken: string; fullName?: string; email?: string },
+  ) {
+    return await this.authService.appleMobileLogin(
+      body.identityToken,
+      body.fullName,
+      body.email,
+    );
+  }
+
   @Post('accept-terms')
   @UseGuards(AccessTokenGuard)
   async acceptTerms(@Req() req, @Body() body: { phoneNumber?: string }) {
