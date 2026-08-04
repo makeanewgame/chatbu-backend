@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
 import { randomUUID } from 'crypto';
-import { OAuth2Client } from 'google-auth-library';
+import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
@@ -363,13 +363,10 @@ export class AuthenticationService {
       onboardingCompleted: !!team?.onboardingCompletedAt,
     };
   }
-  async lostPassword(user: any, lang: string) {
-    user.refreshToken = '';
-    user.updatedAt = new Date().toISOString();
-
+  async lostPassword(email: string, lang: string) {
     const findUser = await this.prisma.user.findFirst({
       where: {
-        email: user.email,
+        email,
       },
     });
 
@@ -398,14 +395,119 @@ export class AuthenticationService {
       '&uId=' +
       findUser.id;
     this.mail.sendActivateLostPasswordMail(
-      user.email,
+      email,
       uuidVerificationCode,
       lang,
       redirectUrl,
     );
-    this.logger.info(`Password reset mail sent to ${user.email}`);
+    this.logger.info(`Password reset mail sent to ${email}`);
     return true;
   }
+
+  // Mobile-only counterpart of lostPassword: the web reset link relies on a
+  // URL the app can't deep-link into (no Universal/App Links configured), so
+  // mobile gets a short numeric code to type into the app instead. Reuses
+  // the same resetCode column/format — only the payload (code vs uuid) and
+  // the mail template differ.
+  async lostPasswordMobile(email: string, lang: string = 'en') {
+    const findUser = await this.prisma.user.findFirst({
+      where: { email },
+    });
+
+    if (!findUser) {
+      return false;
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Shorter TTL than the web link (1h): a 6-digit code is far more
+    // brute-forceable, so it also gets the attempt lockout below.
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+
+    await this.prisma.user.update({
+      where: { id: findUser.id },
+      data: { resetCode: `${expiresAt}:${code}` },
+    });
+
+    await this.mail.sendLostPasswordCodeMail(email, code, lang);
+    this.logger.info(`Password reset code sent to ${email}`);
+    return true;
+  }
+
+  async resetPasswordByCode(
+    email: string,
+    code: string,
+    newPassword: string,
+    confirmPassword: string,
+    lang: string = 'en',
+  ) {
+    // Mirrors activateRegistration's brute-force guard: a 6-digit code needs
+    // a per-email lockout or it's trivially guessable.
+    const LOCK_KEY = `pwd_reset_lock:${email}`;
+    const ATTEMPTS_KEY = `pwd_reset_attempts:${email}`;
+    const MAX_ATTEMPTS = 5;
+    const LOCK_TTL_MS = 15 * 60 * 1000;
+
+    const isLocked = await this.cacheManager.get(LOCK_KEY);
+    if (isLocked) {
+      this.logger.warn(`Blocked password reset attempt for locked email: ${email}`);
+      return { success: false, locked: true, retryAfter: 900 };
+    }
+
+    if (newPassword !== confirmPassword) {
+      return { success: false, message: 'Şifreler uyuşmuyor.' };
+    }
+
+    const findUser = await this.prisma.user.findFirst({ where: { email } });
+
+    const registerFailedAttempt = async () => {
+      const attempts: number =
+        ((await this.cacheManager.get<number>(ATTEMPTS_KEY)) || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.cacheManager.set(LOCK_KEY, true, LOCK_TTL_MS);
+        await this.cacheManager.del(ATTEMPTS_KEY);
+        this.logger.warn(
+          `Password reset locked for ${email} after ${MAX_ATTEMPTS} failed attempts`,
+        );
+        return { success: false, locked: true, retryAfter: 900 };
+      }
+      await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
+      return { success: false };
+    };
+
+    const storedCode = findUser?.resetCode;
+    if (!findUser || !storedCode) {
+      return registerFailedAttempt();
+    }
+
+    const [expiresAtStr, storedToken] = storedCode.split(':');
+    const expiresAt = parseInt(expiresAtStr, 10);
+
+    if (Date.now() > expiresAt) {
+      await this.prisma.user.update({ where: { id: findUser.id }, data: { resetCode: null } });
+      return { success: false, message: 'Kodun süresi doldu. Lütfen yeni bir kod isteyin.' };
+    }
+
+    if (storedToken !== code) {
+      return registerFailedAttempt();
+    }
+
+    await this.cacheManager.del(ATTEMPTS_KEY);
+    await this.cacheManager.del(LOCK_KEY);
+
+    const bcrypt = require('bcrypt');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: findUser.id },
+      data: { password: hashedPassword, resetCode: null, updatedAt: new Date().toISOString() },
+    });
+
+    await this.cacheManager.del(findUser.id);
+    await this.mail.sendPasswordChangedMail(findUser.email, findUser.email, lang);
+
+    return { success: true, message: 'Şifreniz başarıyla güncellendi.' };
+  }
+
   async login(email: string, password: string) {
     const LOCK_KEY = `bf_lock:${email}`;
     const ATTEMPTS_KEY = `bf_attempts:${email}`;
@@ -670,6 +772,40 @@ export class AuthenticationService {
       termsAccepted: userFull?.termsAccepted ?? false,
       onboardingCompleted: !!team?.onboardingCompletedAt,
     };
+  }
+
+  // Mobile has no web browser redirect to bounce through, so the app gets a
+  // Google ID token directly from the native/Expo Google sign-in flow and
+  // hands it to us here. We verify it server-side (same as connectGoogleAccount)
+  // before ever trusting the email it contains, then reuse the same
+  // find-or-create logic as the web OAuth redirect flow (googleLogin).
+  async googleMobileLogin(idToken: string) {
+    if (!idToken) {
+      return { success: false, message: 'Missing Google credential' };
+    }
+
+    const audience = [
+      this.configService.get<string>('GOOGLE_CLIENT_ID'),
+      this.configService.get<string>('GOOGLE_IOS_CLIENT_ID'),
+      this.configService.get<string>('GOOGLE_ANDROID_CLIENT_ID'),
+    ].filter((id): id is string => !!id);
+
+    const oauthClient = new OAuth2Client();
+
+    let payload: TokenPayload | undefined;
+    try {
+      const ticket = await oauthClient.verifyIdToken({ idToken, audience });
+      payload = ticket.getPayload();
+    } catch (verifyError) {
+      this.logger.warn('Invalid Google ID token on mobile auth', verifyError);
+      return { success: false, message: 'Invalid Google credential' };
+    }
+
+    if (!payload?.email || !payload.email_verified) {
+      return { success: false, message: 'Google account could not be verified' };
+    }
+
+    return this.googleLogin(payload.email, { displayName: payload.name });
   }
 
   async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {
