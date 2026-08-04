@@ -363,13 +363,10 @@ export class AuthenticationService {
       onboardingCompleted: !!team?.onboardingCompletedAt,
     };
   }
-  async lostPassword(user: any, lang: string) {
-    user.refreshToken = '';
-    user.updatedAt = new Date().toISOString();
-
+  async lostPassword(email: string, lang: string) {
     const findUser = await this.prisma.user.findFirst({
       where: {
-        email: user.email,
+        email,
       },
     });
 
@@ -398,12 +395,12 @@ export class AuthenticationService {
       '&uId=' +
       findUser.id;
     this.mail.sendActivateLostPasswordMail(
-      user.email,
+      email,
       uuidVerificationCode,
       lang,
       redirectUrl,
     );
-    this.logger.info(`Password reset mail sent to ${user.email}`);
+    this.logger.info(`Password reset mail sent to ${email}`);
     return true;
   }
   async login(email: string, password: string) {
