@@ -25,6 +25,7 @@ import { EventsGateway } from 'src/events/events.gateway';
 import { DEFAULT_WORKING_HOURS } from 'src/appointment/appointment.constants';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
+import { PushNotificationService } from 'src/push-notification/push-notification.service';
 
 @Injectable()
 export class BotService {
@@ -39,6 +40,7 @@ export class BotService {
     private systemLogService: SystemLogService,
     private eventsGateway: EventsGateway,
     private chatFlowService: ChatFlowService,
+    private pushNotificationService: PushNotificationService,
   ) { }
 
   async createBot(body: CreateBotRequest, userId?: string, userEmail?: string) {
@@ -814,6 +816,16 @@ export class BotService {
                 }
               } catch (mailError) {
                 console.log('Handoff notification email failed:', mailError);
+              }
+
+              try {
+                await this.pushNotificationService.sendToUser(defaultAgentId, {
+                  title: 'Yeni canlı sohbet',
+                  body: `${botUser.botName} bir görüşmeyi size aktardı.`,
+                  data: { type: 'handoff_requested', chatId: activeChat.id },
+                });
+              } catch (pushError) {
+                console.log('Handoff push notification failed:', pushError);
               }
             }
           } catch (e) {
