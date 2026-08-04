@@ -21,6 +21,7 @@ import { ResendVerificationRequest } from './dto/resendverification.request';
 import { LoginRequest } from './dto/login.request';
 import { Language } from 'src/lang';
 import { PasswordRequestChange } from './dto/passwordChangeRequest';
+import { ResetPasswordByCodeRequest } from './dto/resetPasswordByCode.request';
 import { ChangePasswordRequest } from './dto/change-password.request';
 
 @Controller('auth')
@@ -199,6 +200,33 @@ export class AuthenticationController {
   @Post('activate-lost-password')
   async activateLostPassword(@Body() body: ActivateLostPasswordRequest) {
     return await this.authService.lostPassword(body.email, body.code);
+  }
+
+  // Mobile can't deep-link into the web reset-password page (no Universal
+  // Links / App Links configured), so it gets a numeric code by email
+  // instead of a link. Web's lost-password/reset-password flow above is
+  // untouched.
+  @Post('lost-password/mobile')
+  async lostPasswordMobile(@Body() body: LostRequest) {
+    const result = await this.authService.lostPasswordMobile(
+      body.email,
+      body.lang || 'en',
+    );
+
+    return result
+      ? { success: true, message: 'Şifre sıfırlama kodu e-posta adresinize gönderildi.' }
+      : { success: false, message: 'Bu e-posta adresi sistemde kayıtlı değil.' };
+  }
+
+  @Post('reset-password/mobile')
+  async resetPasswordMobile(@Body() body: ResetPasswordByCodeRequest) {
+    return await this.authService.resetPasswordByCode(
+      body.email,
+      body.code,
+      body.newPassword,
+      body.confirmPassword,
+      body.lang || 'en',
+    );
   }
   @Post('activate-registration')
   async activateRegistration(@Body() body: ActivateRegistrationRequest) {

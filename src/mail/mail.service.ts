@@ -98,6 +98,38 @@ export class MailService {
       console.error(error);
     }
   }
+  async sendLostPasswordCodeMail(email: string, code: string, lang: string) {
+    const rootDir = process.cwd();
+
+    const templatePath = path.join(
+      rootDir,
+      'dist',
+      'templates',
+      lang === 'en' ? 'forgot-password-code.html' : 'forgot-password-code_tr.html',
+    );
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    const template = handlebars.compile(templateSource);
+    const html = template({
+      code: code,
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+      end_subscription: process.env.FRONTEND_END_SUBSCRIPTION,
+    });
+
+    const mailOptions = {
+      from: process.env.ADMIN_EMAIL,
+      to: email,
+      subject: lang === 'en' ? 'Your password reset code' : 'Şifre sıfırlama kodunuz',
+      html: html,
+    };
+
+    try {
+      await this.mailerService.sendMail(mailOptions);
+      this.logger.info(`Password reset code mail sent to ${email}`);
+    } catch (error) {
+      console.error(error);
+    }
+  }
   async sendPasswordChangedMail(email: string, code: string, lang: string) {
     const rootDir = process.cwd();
 

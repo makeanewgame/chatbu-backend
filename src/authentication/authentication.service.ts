@@ -403,6 +403,111 @@ export class AuthenticationService {
     this.logger.info(`Password reset mail sent to ${email}`);
     return true;
   }
+
+  // Mobile-only counterpart of lostPassword: the web reset link relies on a
+  // URL the app can't deep-link into (no Universal/App Links configured), so
+  // mobile gets a short numeric code to type into the app instead. Reuses
+  // the same resetCode column/format — only the payload (code vs uuid) and
+  // the mail template differ.
+  async lostPasswordMobile(email: string, lang: string = 'en') {
+    const findUser = await this.prisma.user.findFirst({
+      where: { email },
+    });
+
+    if (!findUser) {
+      return false;
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Shorter TTL than the web link (1h): a 6-digit code is far more
+    // brute-forceable, so it also gets the attempt lockout below.
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+
+    await this.prisma.user.update({
+      where: { id: findUser.id },
+      data: { resetCode: `${expiresAt}:${code}` },
+    });
+
+    await this.mail.sendLostPasswordCodeMail(email, code, lang);
+    this.logger.info(`Password reset code sent to ${email}`);
+    return true;
+  }
+
+  async resetPasswordByCode(
+    email: string,
+    code: string,
+    newPassword: string,
+    confirmPassword: string,
+    lang: string = 'en',
+  ) {
+    // Mirrors activateRegistration's brute-force guard: a 6-digit code needs
+    // a per-email lockout or it's trivially guessable.
+    const LOCK_KEY = `pwd_reset_lock:${email}`;
+    const ATTEMPTS_KEY = `pwd_reset_attempts:${email}`;
+    const MAX_ATTEMPTS = 5;
+    const LOCK_TTL_MS = 15 * 60 * 1000;
+
+    const isLocked = await this.cacheManager.get(LOCK_KEY);
+    if (isLocked) {
+      this.logger.warn(`Blocked password reset attempt for locked email: ${email}`);
+      return { success: false, locked: true, retryAfter: 900 };
+    }
+
+    if (newPassword !== confirmPassword) {
+      return { success: false, message: 'Şifreler uyuşmuyor.' };
+    }
+
+    const findUser = await this.prisma.user.findFirst({ where: { email } });
+
+    const registerFailedAttempt = async () => {
+      const attempts: number =
+        ((await this.cacheManager.get<number>(ATTEMPTS_KEY)) || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.cacheManager.set(LOCK_KEY, true, LOCK_TTL_MS);
+        await this.cacheManager.del(ATTEMPTS_KEY);
+        this.logger.warn(
+          `Password reset locked for ${email} after ${MAX_ATTEMPTS} failed attempts`,
+        );
+        return { success: false, locked: true, retryAfter: 900 };
+      }
+      await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
+      return { success: false };
+    };
+
+    const storedCode = findUser?.resetCode;
+    if (!findUser || !storedCode) {
+      return registerFailedAttempt();
+    }
+
+    const [expiresAtStr, storedToken] = storedCode.split(':');
+    const expiresAt = parseInt(expiresAtStr, 10);
+
+    if (Date.now() > expiresAt) {
+      await this.prisma.user.update({ where: { id: findUser.id }, data: { resetCode: null } });
+      return { success: false, message: 'Kodun süresi doldu. Lütfen yeni bir kod isteyin.' };
+    }
+
+    if (storedToken !== code) {
+      return registerFailedAttempt();
+    }
+
+    await this.cacheManager.del(ATTEMPTS_KEY);
+    await this.cacheManager.del(LOCK_KEY);
+
+    const bcrypt = require('bcrypt');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.user.update({
+      where: { id: findUser.id },
+      data: { password: hashedPassword, resetCode: null, updatedAt: new Date().toISOString() },
+    });
+
+    await this.cacheManager.del(findUser.id);
+    await this.mail.sendPasswordChangedMail(findUser.email, findUser.email, lang);
+
+    return { success: true, message: 'Şifreniz başarıyla güncellendi.' };
+  }
+
   async login(email: string, password: string) {
     const LOCK_KEY = `bf_lock:${email}`;
     const ATTEMPTS_KEY = `bf_attempts:${email}`;
