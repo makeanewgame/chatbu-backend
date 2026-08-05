@@ -1220,7 +1220,18 @@ export class BotService {
         console.error(
           '[chatStream] no session_id in metadata event — skipping persistence',
         );
-        return;
+        // Contract fix (2026-08-05 prod incident): this used to be a
+        // bare `return;` which resolved the outer Promise to
+        // `undefined`, crashing WidgetService.chatStream on
+        // `streamResult.tokenCount`. Return the zero-shape so the
+        // caller sees a valid metadata object even when persistence
+        // is skipped. Trigger case observed: gateway returned batch
+        // JSON on an SSE request (KVKK short-circuit / throttled /
+        // Bedrock Guardrails paths on `chat_endpoint.py`), so the SSE
+        // parser never captured a metadata event and session_id fell
+        // through null. The gateway-side fix (SSE-formatted early
+        // returns) is on a separate PR; this one just stops the crash.
+        return { tokenCount: 0, humanHandover: false, sessionId: null };
       }
       const tokenCount =
         metadata.tokens?.total_tokens ||
