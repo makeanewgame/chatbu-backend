@@ -29,6 +29,7 @@ import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
+import { UpdateStreamingEnabledRequest } from './dto/updateStreamingEnabledRequest';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -494,6 +495,21 @@ export class BotController {
   ) {
     const user = req.user as IUser;
     return this.botService.updateSmsVerification(body, user.teamId, user.sub, user.email);
+  }
+  //#endregion
+
+  //#region updateStreamingEnabled
+  @ApiOperation({ summary: 'Toggle widget SSE streaming for bot (voice plan Faz 2b)' })
+  @ApiResponse({ status: 200, description: 'Streaming setting updated' })
+  @ApiBearerAuth()
+  @Post('updateStreamingEnabled')
+  @UseGuards(AccessTokenGuard)
+  async updateStreamingEnabled(
+    @Body() body: UpdateStreamingEnabledRequest,
+    @Req() req: Request,
+  ) {
+    const user = req.user as IUser;
+    return this.botService.updateStreamingEnabled(body, user.teamId, user.sub, user.email);
   }
   //#endregion
 

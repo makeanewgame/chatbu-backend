@@ -12,6 +12,7 @@ import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
+import { UpdateStreamingEnabledRequest } from './dto/updateStreamingEnabledRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -1854,6 +1855,54 @@ export class BotService {
     });
 
     return { message: 'SMS verification setting updated', bot: updated };
+  }
+
+  /**
+   * Per-bot toggle for the widget SSE streaming path (voice plan
+   * Faz 2b, 2026-08-04). Structurally identical to
+   * updateSmsVerification — same team-ownership check, same audit log
+   * shape. Frontend renders a toggle in bot settings that hits this
+   * endpoint; there is no derived state and no side effects beyond
+   * the Prisma write, so a bad flip is a one-request rollback.
+   */
+  async updateStreamingEnabled(
+    body: UpdateStreamingEnabledRequest,
+    teamId: string,
+    userId?: string,
+    userEmail?: string,
+  ) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    const oldValue = bot.streamingEnabled;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { streamingEnabled: body.streamingEnabled },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_STREAMING_ENABLED',
+      status: 'SUCCESS',
+      userId,
+      userEmail,
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot streaming-enabled: ${oldValue} -> ${body.streamingEnabled}`,
+    });
+
+    return { message: 'Streaming setting updated', bot: updated };
   }
 
   async getLeadVerificationStatus(botId: string) {
