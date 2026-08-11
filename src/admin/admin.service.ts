@@ -144,6 +144,15 @@ export class AdminService {
                             status: true,
                         },
                     },
+                    BillingInfo: {
+                        select: {
+                            address: true,
+                            country: true,
+                            stateRegion: true,
+                            city: true,
+                            zipPostalCode: true,
+                        },
+                    },
                 },
                 orderBy: {
                     createdAt: 'desc',
