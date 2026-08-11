@@ -1,8 +1,8 @@
-import { Body, Controller, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { IUser } from 'src/util/interfaces';
 import { WidgetService } from './widget.service';
@@ -40,17 +40,54 @@ export class WidgetController {
     /**
      * Sends a chat message.
      * Throttled to 20 req/min per IP (additional layer on top of visitor daily limits).
+     *
+     * Content-type routing (voice agent plan Faz 2b PR 2, 2026-08-04):
+     *   - `Accept: text/event-stream` → SSE stream via widgetService.chatStream
+     *     (per-bot `streamingEnabled` gate enforced inside the service; a
+     *     client that requests SSE for a batch-only bot gets a 400).
+     *   - anything else → batch JSON via widgetService.chat (unchanged from
+     *     pre-Faz-2b behavior; every widget in the wild that hasn't opted
+     *     into streaming lands here byte-for-byte identically).
+     *
+     * `@Res({ passthrough: false })` on the SSE branch tells Nest we're
+     * writing to the response directly — Nest must NOT auto-serialize the
+     * return value. The batch branch still needs an explicit `res.json()`
+     * because we lost the auto-serializer for the whole route.
      */
     @ApiOperation({ summary: 'Send a chat message through the widget' })
     @Post('chat')
     @Throttle({ default: { ttl: 60000, limit: 20 } })
-    async chat(@Body() body: any, @Req() req: Request) {
+    async chat(
+        @Body() body: any,
+        @Req() req: Request,
+        @Res({ passthrough: false }) res: Response,
+    ) {
         const ip =
             ((req.headers['x-forwarded-for'] as string) ?? '')
                 .split(',')[0]
                 .trim() || req.socket?.remoteAddress || '127.0.0.1';
 
-        return this.widgetService.chat(
+        const wantsSse = (req.headers.accept ?? '')
+            .toLowerCase()
+            .includes('text/event-stream');
+
+        if (wantsSse) {
+            // chatStream writes SSE frames + ends the response itself;
+            // we just await so throttle/logging/etc downstream in the
+            // pipeline see the request has fully drained.
+            await this.widgetService.chatStream(
+                body.sessionToken,
+                body.message,
+                body.chatId,
+                ip,
+                res,
+                body.attachments,
+                body.provisionalConsentId,
+            );
+            return;
+        }
+
+        const result = await this.widgetService.chat(
             body.sessionToken,
             body.message,
             body.chatId,
@@ -58,6 +95,7 @@ export class WidgetController {
             body.attachments,
             body.provisionalConsentId,
         );
+        res.status(200).json(result);
     }
 
     /**

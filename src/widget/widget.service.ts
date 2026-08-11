@@ -1,8 +1,10 @@
 import {
+    BadRequestException,
     ForbiddenException,
     Injectable,
     UnauthorizedException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { Cron } from '@nestjs/schedule';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -301,6 +303,141 @@ export class WidgetService {
         });
 
         return result;
+    }
+
+    // ---------------------------------------------------------------------------
+    // POST /widget/chat  (SSE variant — voice agent plan Faz 2b PR 2)
+    //
+    // Same pre-check chain as `chat()` above (JWT + visitor + daily reset +
+    // bot load + quota) but delegates to `botService.publicChatStreamInternal`
+    // which pipes gateway SSE frames through to `res` verbatim. The bot must
+    // have `streamingEnabled=true` — enforced here as a fail-closed 400 so a
+    // client that sent `Accept: text/event-stream` without checking the flag
+    // gets a clear error instead of a silent fallback that mis-parses.
+    //
+    // Post-stream visitor counter update (WidgetVisitor row) uses the token
+    // count returned by publicChatStreamInternal so the per-bot daily message
+    // and token limits enforced in the pre-check block above stay accurate.
+    // Without this update, a streaming client could bypass the daily quota
+    // by never appearing in the counter — the batch path L275-302 exists for
+    // exactly this reason.
+    // ---------------------------------------------------------------------------
+
+    async chatStream(
+        sessionToken: string,
+        message: string,
+        chatId: string | undefined,
+        ip: string,
+        res: Response,
+        attachments?: any[],
+        provisionalConsentId?: string,
+    ): Promise<void> {
+        // 1. Verify session token (mirror of chat())
+        let payload: any;
+        try {
+            payload = await this.jwtService.verifyAsync(sessionToken, {
+                secret: this.configService.get('JWT_SECRET'),
+            });
+        } catch {
+            throw new UnauthorizedException('Session expired');
+        }
+        if (payload.type !== 'widget-session') {
+            throw new UnauthorizedException('Invalid session token type');
+        }
+
+        const { visitorId, botId, teamId } = payload;
+
+        // 2. Visitor load
+        const visitor = await this.prisma.widgetVisitor.findUnique({
+            where: { visitorId },
+        });
+        if (!visitor) throw new UnauthorizedException('Visitor not found');
+        if (visitor.isBlocked) throw new ForbiddenException('Access denied');
+
+        // 3. Daily counter reset check
+        const now = new Date();
+        const needsReset = !this.isSameUtcDay(visitor.dailyResetAt, now);
+        const messageCountToday = needsReset ? 0 : visitor.messageCountToday;
+        const tokenUsageToday = needsReset ? 0 : visitor.tokenUsageToday;
+        const currentRiskScore = needsReset ? 0 : visitor.riskScore;
+
+        // 4. Bot load — includes `streamingEnabled` (Faz 2b feature flag)
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: botId, isDeleted: false },
+            select: { active: true, settings: true, streamingEnabled: true },
+        });
+        if (!bot || !bot.active) throw new ForbiddenException('Bot is not active');
+
+        // 5. Fail-closed: SSE requires the per-bot flag. Frontend widget
+        //    reads getPublicBotSettings.streamingEnabled BEFORE sending
+        //    Accept: text/event-stream, so hitting this path means the
+        //    client is buggy or the flag was flipped off between the
+        //    settings fetch and this request. Explicit 400 makes the
+        //    mismatch visible instead of a silent Content-Type surprise.
+        if (!bot.streamingEnabled) {
+            throw new BadRequestException(
+                'Bot does not have streaming enabled — send Accept: application/json instead.',
+            );
+        }
+
+        // 6. Per-bot daily limits
+        const botSettings: any = bot.settings || {};
+        const maxMessagesPerDay: number = botSettings.maxMessagesPerDay ?? 50;
+        const maxTokensPerDay: number = botSettings.maxTokensPerDay ?? 10000;
+
+        if (messageCountToday >= maxMessagesPerDay) {
+            throw new ForbiddenException('Daily message limit reached');
+        }
+        if (tokenUsageToday >= maxTokensPerDay) {
+            throw new ForbiddenException('Daily token limit reached');
+        }
+
+        // 7. Delegate to bot service streaming path. This method pipes
+        //    the gateway SSE bytes to `res` verbatim and ends the response
+        //    itself; on return the client has already seen everything.
+        //    We only await it so the post-stream persistence + the token
+        //    accounting below both complete before this handler returns.
+        const normalizedIp = ip === '::1' ? '127.0.0.1' : ip;
+        const streamResult = await this.botService.publicChatStreamInternal(
+            botId,
+            teamId,
+            message,
+            chatId,
+            normalizedIp,
+            res,
+            attachments,
+            provisionalConsentId,
+        );
+
+        // 8. Visitor counter + risk score (mirror of batch chat L275-302).
+        //    Skipping this in streaming would let a streaming visitor
+        //    bypass the daily message/token limits enforced at step 6 —
+        //    those limits read from these very fields.
+        const tokensUsed: number = streamResult.tokenCount;
+        const newMessageCount = messageCountToday + 1;
+        const newTokenCount = tokenUsageToday + tokensUsed;
+
+        let riskDelta = 0;
+        if (message.length > 1500) riskDelta += 5;
+        if (newMessageCount > maxMessagesPerDay * 0.8) riskDelta += 10;
+        if (newMessageCount > maxMessagesPerDay * 0.9) riskDelta += 20;
+
+        const newRiskScore = Math.min(100, currentRiskScore + riskDelta);
+        const shouldBlock = newRiskScore >= 80;
+
+        await this.prisma.widgetVisitor.update({
+            where: { id: visitor.id },
+            data: {
+                messageCountToday: newMessageCount,
+                tokenUsageToday: newTokenCount,
+                riskScore: newRiskScore,
+                ...(needsReset ? { dailyResetAt: now } : {}),
+                ...(shouldBlock
+                    ? { isBlocked: true, blockedReason: 'Auto-blocked: risk threshold exceeded' }
+                    : {}),
+            },
+        });
+        // No return value — `res` was ended by publicChatStreamInternal.
     }
 
     // ---------------------------------------------------------------------------

@@ -12,10 +12,14 @@ import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
+import { UpdateStreamingEnabledRequest } from './dto/updateStreamingEnabledRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { AxiosError } from 'axios';
+import { Response } from 'express';
+import { Readable } from 'stream';
+import { SseFrameParser } from './sse-frame-parser';
 import { JwtService } from '@nestjs/jwt';
 import { SubscriptionService } from '../subscription/subscription.service';
 import { MailService } from '../mail/mail.service';
@@ -926,6 +930,561 @@ export class BotService {
 
   }
 
+  // ─── Streaming (SSE) chat path — voice agent plan Faz 2b PR 2 ────
+  //
+  // Widget SSE proxy for `/chat`. Structurally parallel to `chat()`
+  // above; the pre-check chain (message validation → bot lookup →
+  // activeChat lookup → HUMAN_ACTIVE bypass → quota → geo) is
+  // duplicated intentionally rather than extracted, so the existing
+  // batch `chat()` stays untouched and Meta/WhatsApp adapters that
+  // call it never notice this PR exists. A follow-up refactor can
+  // extract `_persistTranscript()` + `_maybeAutoHandover()` helpers
+  // once both paths are in prod and the drift risk is measured.
+  //
+  // HUMAN_ACTIVE bypass returns a batch JSON (user decision 2026-08-04
+  // karar C): visitor's message is stored, live agent is notified via
+  // websocket, and the widget receives `{ agent_active: true }` — the
+  // exact shape the frontend already handles. No SSE headers are sent
+  // in this branch, so the response Content-Type stays application/json.
+  //
+  // The gateway (fovi-longa-chat-be PR #396) emits five SSE event
+  // types: token/tool_call/tool_result/metadata/end (+ error). The
+  // widget cares about token + metadata + end; everything else is
+  // forwarded verbatim and can be observed by voice pods in later
+  // phases without a protocol change here.
+  //
+  // Every write to `res` before `res.end()` is a *pass-through* of a
+  // gateway byte; the shadow parser (`SseFrameParser`) reads a copy
+  // for post-stream persistence + auto-handover. Client never sees
+  // any frame the accumulator invented.
+  async chatStream(
+    body: ChatRequest,
+    ip: string,
+    res: Response,
+  ): Promise<{
+    tokenCount: number;
+    humanHandover: boolean;
+    sessionId: string | null;
+  }> {
+    const rawMessage = body.message ?? '';
+    if (rawMessage.length > 2000) {
+      throw new BadRequestException('Message exceeds the 2000-character limit.');
+    }
+    const wordCount = rawMessage.trim().split(/\s+/).filter(Boolean).length;
+    if (wordCount > 300) {
+      throw new BadRequestException('Message exceeds the 300-word limit.');
+    }
+
+    const botUser = await this.prisma.customerBots.findFirst({
+      where: { id: body.botId },
+    });
+    if (!botUser) {
+      throw new Error('Error acuring bot');
+    }
+
+    let activeChat = null;
+    let isNewChat = false;
+    let geoData: any = null;
+
+    if (body.chatId) {
+      activeChat = await this.prisma.customerChats.findFirst({
+        where: {
+          botId: body.botId,
+          teamId: body.teamId,
+          chatId: body.chatId,
+          isDeleted: false,
+        },
+      });
+    }
+
+    // Auto-reopen a CLOSED chat when the visitor returns (mirrors
+    // batch path). Safe to run before we've committed to SSE headers.
+    if (activeChat && activeChat.chatStatus === 'CLOSED') {
+      await this.prisma.customerChats.update({
+        where: { id: activeChat.id },
+        data: { chatStatus: 'BOT_ACTIVE', updatedAt: new Date() },
+      });
+      activeChat = { ...activeChat, chatStatus: 'BOT_ACTIVE' };
+    }
+
+    // HUMAN_ACTIVE bypass: no SSE, batch JSON response. The frontend
+    // widget's existing `agent_active: true` handler catches this —
+    // no protocol changes needed on the client for the takeover case.
+    if (activeChat && activeChat.chatStatus === 'HUMAN_ACTIVE') {
+      await this.prisma.customerChatDetails.create({
+        data: {
+          chatId: activeChat.id,
+          sender: 'user',
+          message: body.message,
+          attachments: body.attachments ? (body.attachments as any) : undefined,
+          createdAt: new Date(body.date),
+        },
+      });
+      await this.prisma.customerChats.update({
+        where: { id: activeChat.id },
+        data: { updatedAt: new Date() },
+      });
+      if (activeChat.agentUserId) {
+        this.eventsGateway.notifyAgent(activeChat.agentUserId, {
+          chatId: activeChat.id,
+          sender: 'user',
+          message: body.message,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      res.status(200).json({ agent_active: true, session_id: body.chatId });
+      // HUMAN_ACTIVE bypass: no tokens consumed against subscription
+      // and no auto-handover check needed — the chat is already with
+      // a human. Widget quota counters increment by messageCount only.
+      return { tokenCount: 0, humanHandover: false, sessionId: body.chatId ?? null };
+    }
+
+    if (!activeChat) {
+      isNewChat = true;
+      const ipAddress = ip === '::1' ? '176.40.241.220' : ip;
+      try {
+        const geo = await firstValueFrom(
+          this.httpService.get(
+            `https://get.geojs.io/v1/ip/geo/${ipAddress}.json`,
+          ),
+        );
+        geoData = geo.data;
+      } catch (e) {
+        console.warn('[chatStream] geo lookup failed:', (e as any)?.message ?? e);
+        geoData = {};
+      }
+    }
+
+    const ingestUrl = this.configService.get('INGEST_ENPOINT');
+
+    const team = await this.prisma.team.findUnique({
+      where: { id: body.teamId },
+      include: { owner: true },
+    });
+    if (!team) {
+      throw new Error('Team not found');
+    }
+
+    // Same subscription quota gate as batch. Throws BEFORE we commit
+    // to SSE headers so the widget receives a normal 403 (which its
+    // existing quota-exceeded banner handles).
+    const quotaCheck = await this.subscriptionService.checkTokenQuota(
+      team.ownerId,
+      {
+        teamId: body.teamId,
+        entityId: body.botId,
+        entityName: botUser.botName,
+      },
+    );
+    if (!quotaCheck.allowed) {
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { userId: team.ownerId },
+      });
+      if (subscription?.tier === 'FREE') {
+        await this.mailService.sendTokenLimitReachedEmail(
+          team.owner.email,
+          team.owner.name,
+          'en',
+        );
+      }
+      throw new ForbiddenException(
+        quotaCheck.message || 'Token quota exceeded',
+      );
+    }
+
+    // ─── SSE headers committed from here on ───
+    // Everything above could still throw a 403/400/500 with a JSON
+    // body. Once we call flushHeaders(), the response is locked into
+    // text/event-stream and any error must surface as an `event: error`
+    // SSE frame (or connection close), NOT an HTTP error status.
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    // Tell any intermediate proxy (NGINX/ALB) NOT to buffer — SSE
+    // depends on immediate flush of each frame. Matches the gateway's
+    // own header set (app-gateway/routers/chat_endpoint.py).
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    // Open upstream stream to the gateway. `responseType: 'stream'`
+    // gives us a Node Readable instead of accumulating into memory.
+    let gatewayResponse: any;
+    try {
+      gatewayResponse = await firstValueFrom(
+        this.httpService.post(
+          `${ingestUrl}/chat`,
+          {
+            bot_cuid: botUser.id,
+            customer_cuid: botUser.teamId,
+            messages: [body.message],
+            system_prompt: botUser.systemPrompt,
+            model_tier: botUser.modelTier,
+            session_id: body.chatId,
+            provisional_consent_id: (body as any).provisionalConsentId,
+          },
+          {
+            responseType: 'stream',
+            headers: { Accept: 'text/event-stream' },
+          },
+        ),
+      );
+    } catch (error) {
+      // Upstream failed to even open — emit one error frame the
+      // frontend can render as a friendly message + close the stream.
+      const msg =
+        error instanceof AxiosError && error.response?.status === 503
+          ? 'Service busy, retry later'
+          : 'Upstream chat service unavailable';
+      console.error('[chatStream] gateway open failed:', msg, error);
+      res.write(
+        `event: error\ndata: ${JSON.stringify({ message: msg })}\n\n`,
+      );
+      res.write('event: end\ndata: {}\n\n');
+      res.end();
+      return { tokenCount: 0, humanHandover: false, sessionId: body.chatId ?? null };
+    }
+
+    // The gateway sometimes fails INSIDE the stream (e.g. Bedrock
+    // rate-limit mid-generation). axios stream error handler is
+    // registered below; on failure we emit an error frame and close.
+    const gatewayStream = gatewayResponse.data as Readable;
+    const parser = new SseFrameParser();
+    let contentBuf = '';
+    let metadata: any = {};
+
+    gatewayStream.on('data', (chunk: Buffer) => {
+      // 1. Forward the raw bytes VERBATIM to the widget client so it
+      //    sees the exact gateway protocol — this preserves the
+      //    contract for voice pods that come later.
+      res.write(chunk);
+      // 2. Shadow-parse for post-stream persistence. Malformed frames
+      //    are silently dropped by the parser (see its doc); we only
+      //    use the parsed data to observe, never to rewrite forwarded
+      //    bytes.
+      for (const frame of parser.feed(chunk)) {
+        if (frame.event === 'token' && typeof frame.data === 'object') {
+          contentBuf += frame.data.delta || '';
+        } else if (frame.event === 'metadata' && typeof frame.data === 'object') {
+          metadata = frame.data;
+        }
+      }
+    });
+
+    // Wait for the gateway stream to finish (end or error). We do NOT
+    // return until this settles — even though the widget already has
+    // its bytes, we still owe the DB a transcript + handover check.
+    try {
+      await new Promise<void>((resolve, reject) => {
+        gatewayStream.on('end', () => resolve());
+        gatewayStream.on('error', reject);
+      });
+    } catch (streamErr) {
+      console.error('[chatStream] gateway stream errored:', streamErr);
+      // Best-effort: tell the client we lost the stream. The `end`
+      // frame is what closes the reader loop on the frontend.
+      try {
+        res.write(
+          `event: error\ndata: ${JSON.stringify({ message: 'stream interrupted' })}\n\n`,
+        );
+        res.write('event: end\ndata: {}\n\n');
+      } catch {
+        /* connection already dead */
+      }
+      res.end();
+      return { tokenCount: 0, humanHandover: false, sessionId: body.chatId ?? null };
+    }
+
+    // Drain any trailing partial frame (rare — gateway is well-
+    // behaved — but if the connection closed on an odd byte boundary
+    // the last metadata event could still be recoverable).
+    for (const frame of parser.flush()) {
+      if (frame.event === 'metadata' && typeof frame.data === 'object') {
+        metadata = frame.data;
+      }
+    }
+
+    // The widget's part is done. End the response IMMEDIATELY so the
+    // frontend's reader loop settles and the "typing..." spinner
+    // clears; every post-stream side effect (transcript persistence,
+    // auto-handover, token accounting) happens AFTER — the widget
+    // does not wait on the DB write.
+    res.end();
+
+    // ─── Post-stream side effects (best-effort, not awaited by client) ───
+    // Any exception here is logged but never re-thrown — the widget
+    // already got its response, and re-throwing would only pollute
+    // the request log.
+    try {
+      const sessionId = metadata.session_id || body.chatId;
+      if (!sessionId) {
+        console.error(
+          '[chatStream] no session_id in metadata event — skipping persistence',
+        );
+        // Contract fix (2026-08-05 prod incident): this used to be a
+        // bare `return;` which resolved the outer Promise to
+        // `undefined`, crashing WidgetService.chatStream on
+        // `streamResult.tokenCount`. Return the zero-shape so the
+        // caller sees a valid metadata object even when persistence
+        // is skipped. Trigger case observed: gateway returned batch
+        // JSON on an SSE request (KVKK short-circuit / throttled /
+        // Bedrock Guardrails paths on `chat_endpoint.py`), so the SSE
+        // parser never captured a metadata event and session_id fell
+        // through null. The gateway-side fix (SSE-formatted early
+        // returns) is on a separate PR; this one just stops the crash.
+        return { tokenCount: 0, humanHandover: false, sessionId: null };
+      }
+      const tokenCount =
+        metadata.tokens?.total_tokens ||
+        contentBuf.split(/\s+/).filter(Boolean).length;
+
+      // Track subscription tokens (mirror of batch L642-646).
+      if (tokenCount > 0) {
+        await this.subscriptionService.trackTokenUsage(
+          team.ownerId,
+          tokenCount,
+          body.teamId,
+        );
+      }
+
+      // Persist transcript. Structurally identical to batch L657-734,
+      // but sourced from the shadow accumulator instead of a batch
+      // JSON response. Widget-only path — channel is always WIDGET
+      // (Meta/WhatsApp adapters call the batch `chat()` and never
+      // reach this method).
+      if (isNewChat) {
+        activeChat = await this.prisma.customerChats.create({
+          data: {
+            botId: body.botId,
+            teamId: body.teamId,
+            chatId: sessionId,
+            isDeleted: false,
+            totalTokens: tokenCount,
+            channel: 'WIDGET',
+            externalContactId: null,
+            externalContactName: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            CustomerChatDetails: {
+              create: [
+                {
+                  sender: 'user',
+                  message: body.message,
+                  attachments: body.attachments
+                    ? (body.attachments as any)
+                    : undefined,
+                  createdAt: new Date(body.date),
+                },
+                {
+                  sender: 'bot',
+                  message: contentBuf,
+                  tokenDetails: metadata.tokens || null,
+                  createdAt: new Date(),
+                },
+              ],
+            },
+            GeoLocation: {
+              create: {
+                ip: geoData?.ip || '',
+                country: geoData?.country || '',
+                countryCode: geoData?.country_code || '',
+                region: geoData?.region || '',
+                city: geoData?.city || '',
+                latitude: parseFloat(geoData?.latitude) || 0,
+                longitude: parseFloat(geoData?.longitude) || 0,
+                timezone: geoData?.timezone || '',
+                organization: geoData?.organization || '',
+                organization_name: geoData?.organization_name || '',
+                accuracy: Number(geoData?.accuracy) || 0,
+              },
+            },
+          },
+        });
+      } else {
+        await this.prisma.customerChatDetails.createMany({
+          data: [
+            {
+              chatId: activeChat.id,
+              sender: 'user',
+              message: body.message,
+              attachments: body.attachments
+                ? (body.attachments as any)
+                : undefined,
+              createdAt: new Date(body.date),
+            },
+            {
+              chatId: activeChat.id,
+              sender: 'bot',
+              message: contentBuf,
+              tokenDetails: metadata.tokens || null,
+              createdAt: new Date(),
+            },
+          ],
+        });
+        await this.prisma.customerChats.update({
+          where: { id: activeChat.id },
+          data: {
+            updatedAt: new Date(),
+            totalTokens: { increment: tokenCount },
+          },
+        });
+      }
+
+      // Auto-handover — mirror of batch L737-822. Same P2 Faz 4 flow-
+      // state transitions, same events gateway notifications, same
+      // agent email. Duplicated inline for now; extract to
+      // `_maybeAutoHandover(...)` in the follow-up refactor.
+      if (metadata.human_handover && activeChat) {
+        await this.chatFlowService.safeTransition(
+          botUser.id,
+          sessionId,
+          FlowKind.HANDOFF,
+          {
+            from: null,
+            to: 'REQUESTED',
+            payload: { source: 'auto_handover_signal_stream' },
+          },
+          'bot:autoHandover:requested:stream',
+        );
+        const settings = botUser.settings as any;
+        const defaultAgentId = settings?.defaultAgentId;
+        if (defaultAgentId) {
+          try {
+            const teamRow = await this.prisma.team.findUnique({
+              where: { id: body.teamId },
+              select: { ownerId: true },
+            });
+            const isOwner = teamRow?.ownerId === defaultAgentId;
+            const isMember = isOwner
+              ? true
+              : !!(await this.prisma.teamMember.findFirst({
+                  where: {
+                    teamId: body.teamId,
+                    userId: defaultAgentId,
+                    status: 'active',
+                  },
+                }));
+            if (isMember) {
+              await this.prisma.customerChats.update({
+                where: { id: activeChat.id },
+                data: {
+                  chatStatus: 'HUMAN_ACTIVE',
+                  agentUserId: defaultAgentId,
+                },
+              });
+              await this.chatFlowService.safeTransition(
+                botUser.id,
+                sessionId,
+                FlowKind.HANDOFF,
+                {
+                  from: 'REQUESTED',
+                  to: 'ASSIGNED',
+                  payload: {
+                    source: 'auto_handover_assigned_stream',
+                    agentUserId: defaultAgentId,
+                    chatRowId: activeChat.id,
+                  },
+                },
+                'bot:autoHandover:assigned:stream',
+              );
+              this.eventsGateway.notifyAgent(defaultAgentId, {
+                chatId: activeChat.id,
+                type: 'auto_handover',
+                message: 'New live chat conversation assigned to you.',
+              });
+              const sessionLink = `${process.env.FRONTEND_URL}/live-chat/${activeChat.id}`;
+              this.eventsGateway.notifyHandoffRequested(defaultAgentId, {
+                chatId: activeChat.id,
+                botName: botUser.botName,
+                sessionLink,
+              });
+              try {
+                const agentUser = await this.prisma.user.findUnique({
+                  where: { id: defaultAgentId },
+                  select: { email: true },
+                });
+                if (agentUser?.email) {
+                  await this.mailService.sendHandoffNotification(
+                    agentUser.email,
+                    botUser.botName,
+                    sessionLink,
+                  );
+                }
+              } catch (mailError) {
+                console.log(
+                  '[chatStream] handoff notification email failed:',
+                  mailError,
+                );
+              }
+            }
+          } catch (e) {
+            console.log('[chatStream] auto-handover failed:', e);
+          }
+        }
+      }
+    } catch (persistErr) {
+      // Persistence failures do NOT propagate — widget already got its
+      // response. Log with structured context so ops can spot patterns
+      // (chat missing from history, but visitor did have a conversation).
+      console.error('[chatStream.persistence]', {
+        botId: body?.botId,
+        teamId: body?.teamId,
+        chatId: body?.chatId,
+        errorClass: (persistErr as any)?.constructor?.name,
+        errorMessage: (persistErr as any)?.message,
+      });
+    }
+
+    // Return the accumulated metadata so widget.service.ts can update
+    // its own visitor counter (messageCountToday, tokenUsageToday,
+    // riskScore) — those live on WidgetVisitor which the bot module
+    // must not touch. Values reflect what the client actually saw:
+    // metadata.tokens counted at the gateway, fallback to whitespace
+    // split if the gateway didn't emit a token count.
+    const finalTokenCount =
+      metadata.tokens?.total_tokens ||
+      contentBuf.split(/\s+/).filter(Boolean).length;
+    return {
+      tokenCount: finalTokenCount,
+      humanHandover: !!metadata.human_handover,
+      sessionId: metadata.session_id || body.chatId || null,
+    };
+  }
+
+  /**
+   * Wrapper that matches the arg shape of `publicChatInternal` so
+   * `WidgetService.chatStream` can call this the same way its batch
+   * sibling calls `publicChatInternal`.
+   */
+  async publicChatStreamInternal(
+    botId: string,
+    teamId: string,
+    message: string,
+    chatId: string | undefined,
+    ip: string,
+    res: Response,
+    attachments?: any[],
+    provisionalConsentId?: string,
+  ): Promise<{
+    tokenCount: number;
+    humanHandover: boolean;
+    sessionId: string | null;
+  }> {
+    return this.chatStream(
+      {
+        botId,
+        teamId,
+        message,
+        chatId: chatId ?? null,
+        sender: 'user',
+        date: new Date().toISOString(),
+        attachments,
+        provisionalConsentId,
+      } as any,
+      ip,
+      res,
+    );
+  }
+
   async getBotAppearance(botId: string, teamId: string) {
 
     const bot = await this.prisma.customerBots.findFirst({
@@ -991,7 +1550,19 @@ export class BotService {
       // client-side only lets the widget improve UX; the actual KVKK
       // guarantee is enforced server-side by the gateway pre-agent
       // scrub (Item 3b) + backend consent gate on requestSmsVerification.
-      select: { id: true, settings: true, botName: true, smsVerificationRequired: true },
+      // `streamingEnabled` (voice agent plan Faz 2b, 2026-08-04) tells
+      // the widget frontend whether to send `Accept: text/event-stream`
+      // and consume the SSE token stream. Default false — operator
+      // flips per pilot bot after dev soak. Every other consumer
+      // (Meta/WhatsApp adapters, embed test panel) ignores this and
+      // stays on the batch path.
+      select: {
+        id: true,
+        settings: true,
+        botName: true,
+        smsVerificationRequired: true,
+        streamingEnabled: true,
+      },
     });
     if (!bot) throw new NotFoundException('Bot not found');
     return bot;
@@ -1295,6 +1866,54 @@ export class BotService {
     });
 
     return { message: 'SMS verification setting updated', bot: updated };
+  }
+
+  /**
+   * Per-bot toggle for the widget SSE streaming path (voice plan
+   * Faz 2b, 2026-08-04). Structurally identical to
+   * updateSmsVerification — same team-ownership check, same audit log
+   * shape. Frontend renders a toggle in bot settings that hits this
+   * endpoint; there is no derived state and no side effects beyond
+   * the Prisma write, so a bad flip is a one-request rollback.
+   */
+  async updateStreamingEnabled(
+    body: UpdateStreamingEnabledRequest,
+    teamId: string,
+    userId?: string,
+    userEmail?: string,
+  ) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    const oldValue = bot.streamingEnabled;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { streamingEnabled: body.streamingEnabled },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_STREAMING_ENABLED',
+      status: 'SUCCESS',
+      userId,
+      userEmail,
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot streaming-enabled: ${oldValue} -> ${body.streamingEnabled}`,
+    });
+
+    return { message: 'Streaming setting updated', bot: updated };
   }
 
   async getLeadVerificationStatus(botId: string) {
