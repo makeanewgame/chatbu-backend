@@ -17,6 +17,12 @@ export interface AvailabilityResponse {
     timezone: string;
     slotMinutes: number;
     days: AvailabilityDay[];
+    // Full per-weekday config (which days are open, start/end), so the FE's
+    // "custom date" picker (a date outside AVAILABILITY_RANGE_DAYS, or one
+    // the visitor wants to pick free-form) can restrict itself to the same
+    // window `days[].slots` was computed from, instead of only being able
+    // to offer whatever's already in the fetched 14-day list.
+    workingHours: WorkingHours;
 }
 
 // Sentinel error codes shared verbatim with the MCP-side connectivity
@@ -105,6 +111,6 @@ export class AppointmentAvailabilityService {
             days.push({ date: day.toISODate()!, slots });
         }
 
-        return { timezone: zone, slotMinutes: workingHours.slotMinutes, days };
+        return { timezone: zone, slotMinutes: workingHours.slotMinutes, days, workingHours };
     }
 }
