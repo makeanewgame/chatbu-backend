@@ -40,3 +40,19 @@ spec:
               value: "https://dev.chatbu.io/api/auth/google/redirect"
             - name: GOOGLE_CALENDAR_REDIRECT_URI
               value: "https://dev.chatbu.io/api/integration/google-calendar/callback"
+            # SMS provider routing (Slice 2, 2026-08-13). When set to
+            # `route_by_country`, `SmsService.pickProvider` sends TR
+            # phones to NETGSM and everything else to Twilio. The
+            # `TwilioSmsProvider` picks up its credentials from
+            # `backend-secrets` (populated by the Twilio ExternalSecret
+            # in fovi-longa-chat-be/k8s/secret-mirror-dev/external-
+            # secrets.yaml). Prod stays on the default `netgsm_only`
+            # (unset here → SmsService constructor default) until the
+            # Slice 4 prod-flip PR.
+            - name: SMS_PROVIDER_STRATEGY
+              value: "route_by_country"
+            # Twilio dev escape hatch (mirror of NETGSM_MOCK). Leave
+            # UNSET to hit the real Twilio API — user provisioned real
+            # dev credentials in `chatbu/dev/twilio` (2026-08-13). Set
+            # to "true" temporarily when iterating on routing changes
+            # to avoid burning real Twilio credit on smoke tests.
