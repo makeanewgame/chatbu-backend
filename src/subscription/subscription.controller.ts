@@ -7,6 +7,39 @@ import { JwtGuard } from '../authentication/utils/google.guard';
 import Stripe from 'stripe';
 import { ConfigService } from '@nestjs/config';
 
+// Maps the 2-letter billing country to the Stripe tax ID type it expects
+// (see Stripe's `Customer Tax IDs` docs). Only covers the countries offered
+// in the frontend's billing country selects.
+const TAX_ID_TYPE_BY_COUNTRY: Record<string, Stripe.TaxIdCreateParams.Type> = {
+    US: 'us_ein',
+    GB: 'gb_vat',
+    CA: 'ca_bn',
+    DE: 'eu_vat',
+    FR: 'eu_vat',
+    IT: 'eu_vat',
+    ES: 'eu_vat',
+    NL: 'eu_vat',
+    BE: 'eu_vat',
+    AT: 'eu_vat',
+    CH: 'ch_vat',
+    SE: 'eu_vat',
+    NO: 'no_vat',
+    DK: 'eu_vat',
+    FI: 'eu_vat',
+    PL: 'eu_vat',
+    TR: 'tr_tin',
+    AU: 'au_abn',
+    NZ: 'nz_gst',
+    JP: 'jp_trn',
+    KR: 'kr_brn',
+    SG: 'sg_gst',
+    IN: 'in_gst',
+    BR: 'br_cnpj',
+    MX: 'mx_rfc',
+    AR: 'ar_cuit',
+    CL: 'cl_tin',
+};
+
 @Controller('subscription')
 export class SubscriptionController {
     private stripe: Stripe;
@@ -135,11 +168,67 @@ export class SubscriptionController {
             isCompany: body.isCompany || false,
             vatIdentificationNumber: body.vatIdentificationNumber || null,
         };
-        return this.prisma.billingInfo.upsert({
+        const billingInfo = await this.prisma.billingInfo.upsert({
             where: { userId },
             create: { userId, ...safeData },
             update: safeData,
         });
+
+        // Keep the Stripe customer in sync so future invoices/receipts use
+        // the updated name, email and address instead of the stale ones
+        // captured when the subscription was first created.
+        const subscription = await this.prisma.subscription.findUnique({ where: { userId } });
+        if (this.stripe && subscription?.stripeCustomerId) {
+            await this.stripe.customers.update(subscription.stripeCustomerId, {
+                name: `${safeData.firstName} ${safeData.lastName}`.trim(),
+                email: safeData.email,
+                address: {
+                    line1: safeData.address,
+                    city: safeData.city,
+                    state: safeData.stateRegion,
+                    postal_code: safeData.zipPostalCode,
+                    country: safeData.country,
+                },
+            });
+
+            try {
+                await this.syncStripeTaxId(subscription.stripeCustomerId, safeData);
+            } catch (err: any) {
+                // Don't fail the whole save over a rejected tax ID (e.g. bad
+                // checksum) — the name/email/address sync above already went
+                // through, which is what fixes wrong invoice addresses.
+                console.warn('Failed to sync Stripe tax ID:', err?.message);
+            }
+        }
+
+        return billingInfo;
+    }
+
+    private async syncStripeTaxId(
+        stripeCustomerId: string,
+        safeData: { isCompany: boolean; vatIdentificationNumber: string | null; country: string },
+    ) {
+        const taxIdType = TAX_ID_TYPE_BY_COUNTRY[safeData.country];
+        const shouldHaveTaxId = safeData.isCompany && !!safeData.vatIdentificationNumber && !!taxIdType;
+
+        const existingTaxIds = await this.stripe.customers.listTaxIds(stripeCustomerId);
+        const alreadyInSync = shouldHaveTaxId && existingTaxIds.data.some(
+            (taxId) => taxId.type === taxIdType && taxId.value === safeData.vatIdentificationNumber,
+        );
+        if (alreadyInSync) {
+            return;
+        }
+
+        for (const taxId of existingTaxIds.data) {
+            await this.stripe.customers.deleteTaxId(stripeCustomerId, taxId.id);
+        }
+
+        if (shouldHaveTaxId) {
+            await this.stripe.customers.createTaxId(stripeCustomerId, {
+                type: taxIdType,
+                value: safeData.vatIdentificationNumber,
+            });
+        }
     }
 
     @Get('billing-info')
