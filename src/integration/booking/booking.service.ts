@@ -9,6 +9,13 @@ import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 const CODE_TTL_MINUTES = 10;
 const VERIFICATION_TOKEN_TTL_SECONDS = 5 * 60;
 const MAX_CODE_REQUESTS_PER_HOUR = 5;
+// Separate from MAX_CODE_REQUESTS_PER_HOUR: that guards against SMS-credit
+// abuse over an hour, this guards against a *duplicate* send seconds apart
+// — the class of bug observed 2026-08-11 where the agent called
+// capture_lead/create_appointment's verification step twice in the same
+// turn sequence (once via the auto-send path, once via an explicit retry)
+// and both cleared the hourly cap easily.
+const SMS_RESEND_COOLDOWN_SECONDS = 60;
 
 @Injectable()
 export class BookingService {
@@ -169,6 +176,22 @@ export class BookingService {
         });
         if (recentCount >= MAX_CODE_REQUESTS_PER_HOUR) {
             this.logger.warn(`Too many SMS verification requests for ${phone} on bot ${botCuid}`);
+            throw new Error('TOO_MANY_REQUESTS');
+        }
+
+        // Cooldown gate: block a second SMS for the same (phone, botCuid)
+        // within SMS_RESEND_COOLDOWN_SECONDS of the last one, regardless of
+        // whether that code is still valid. Sits before code generation so
+        // a duplicate call within the window never reaches SmsService.
+        const lastRequest = await this.prisma.bookingSmsVerification.findFirst({
+            where: { phone, botCuid },
+            orderBy: { createdAt: 'desc' },
+        });
+        if (
+            lastRequest &&
+            Date.now() - lastRequest.createdAt.getTime() < SMS_RESEND_COOLDOWN_SECONDS * 1000
+        ) {
+            this.logger.warn(`SMS resend cooldown active for ${phone} on bot ${botCuid}`);
             throw new Error('TOO_MANY_REQUESTS');
         }
 

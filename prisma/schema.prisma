@@ -214,6 +214,7 @@ model CustomerChats {
   externalContactId   String? // WhatsApp: wa_id (phone number), Messenger: PSID
   externalContactName String? // Best-effort display name fetched from the channel's profile API (currently: Instagram only)
   feedbackRating      Int? // 1-5 star rating submitted by the visitor after chat closes
+  detectedLanguage    String? // ISO-639-1-ish code (tr/en/ru/ar/...) detected from the first user message; locked for the life of the chat so the gateway's per-turn language enforcement doesn't drift on later structured input (phone numbers, OTP codes)
   agent               User?                 @relation("AssignedAgent", fields: [agentUserId], references: [id])
   CustomerChatDetails CustomerChatDetails[]
   team                Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)

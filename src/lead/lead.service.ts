@@ -23,6 +23,11 @@ const VERIFICATION_TOKEN_TTL_SECONDS = 30 * 60;
 const MAX_CODE_REQUESTS_PER_WINDOW = 3;
 const CODE_REQUEST_WINDOW_MINUTES = 15;
 const MAX_VERIFY_ATTEMPTS = 5;
+// Separate from the 15-minute/3-request abuse window: that guards SMS
+// credit, this blocks a *duplicate* send seconds apart — the class of bug
+// observed 2026-08-11 where the agent re-triggered SMS verification twice
+// in close succession within the same window, well under the abuse cap.
+const SMS_RESEND_COOLDOWN_SECONDS = 60;
 
 // Fallback used only if no "kvkk" LegalDocument has a published version yet
 // (e.g. before the admin has migrated the legacy static text into the new
@@ -637,6 +642,21 @@ export class LeadService {
     });
 
     if (recentCount >= MAX_CODE_REQUESTS_PER_WINDOW) {
+      return { status: 'rate_limited' as const };
+    }
+
+    // Cooldown gate: block a second SMS for the same (botId, phone) within
+    // SMS_RESEND_COOLDOWN_SECONDS of the last one, independent of the
+    // 15-minute abuse window above. Reuses the 'rate_limited' status so
+    // gateway callers (already handling that status) need no changes.
+    const lastRequest = await this.prisma.leadSmsVerification.findFirst({
+      where: { botId: dto.botId, phone: dto.phone },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (
+      lastRequest &&
+      Date.now() - lastRequest.createdAt.getTime() < SMS_RESEND_COOLDOWN_SECONDS * 1000
+    ) {
       return { status: 'rate_limited' as const };
     }
 

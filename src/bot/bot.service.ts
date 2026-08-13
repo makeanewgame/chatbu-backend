@@ -670,6 +670,11 @@ export class BotService {
             channel: chatChannel,
             externalContactId: externalContactId,
             externalContactName: body.externalContactName ?? null,
+            // Gateway detects this once from the first user message
+            // (LanguageEnforcementMiddleware's heuristic) and returns it
+            // on the very first /chat response for a session; locked here
+            // at row-creation and never overwritten afterward.
+            detectedLanguage: data.detected_language ?? null,
             createdAt: new Date(),
             updatedAt: new Date(),
             CustomerChatDetails: {
@@ -1262,6 +1267,9 @@ export class BotService {
             channel: 'WIDGET',
             externalContactId: null,
             externalContactName: null,
+            // Same first-turn detection as the batch path (L677), sourced
+            // from the SSE metadata event instead of a batch JSON body.
+            detectedLanguage: metadata.detected_language ?? null,
             createdAt: new Date(),
             updatedAt: new Date(),
             CustomerChatDetails: {
@@ -1984,5 +1992,20 @@ export class BotService {
       queryUrlDenyGlobs: asStringArray(settings.queryUrlDenyGlobs),
       queryUrlBoostGlobs: asBoostArray(settings.queryUrlBoostGlobs),
     };
+  }
+
+  /**
+   * Locked conversation language for a chat, read-only. `chatId` is the
+   * gateway's session_id, not CustomerChats.id — the row may not exist
+   * yet on a chat's first turn (Nest creates it only after the gateway's
+   * response comes back), so "not found" is a normal, expected outcome
+   * here, not an error.
+   */
+  async getChatLanguage(botId: string, chatId: string) {
+    const chat = await this.prisma.customerChats.findFirst({
+      where: { botId, chatId },
+      select: { detectedLanguage: true },
+    });
+    return { language: chat?.detectedLanguage ?? null };
   }
 }
