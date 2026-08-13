@@ -4,7 +4,7 @@ import { FlowKind } from '../../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/sms/sms.service';
-import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
+import { ChatFlowService, normalizePhoneForDedup } from 'src/chat-flow/chat-flow.service';
 
 const CODE_TTL_MINUTES = 10;
 const VERIFICATION_TOKEN_TTL_SECONDS = 5 * 60;
@@ -170,6 +170,27 @@ export class BookingService {
      * HTTP 429.
      */
     async requestSmsVerification(phone: string, botCuid: string, chatId?: string) {
+        // Cross-flow SMS dedup: this phone may already have been
+        // SMS-verified earlier in this same conversation, via booking OR
+        // the generic lead-capture flow (PerChatFlowState.verifiedPhone,
+        // see ChatFlowService.getVerifiedPhoneForChat). Skip sending a new
+        // OTP and issue a token directly — avoids re-billing NETGSM and a
+        // redundant OTP prompt for the visitor.
+        if (chatId) {
+            const alreadyVerifiedPhone = await this.chatFlow.getVerifiedPhoneForChat(botCuid, chatId, phone);
+            if (alreadyVerifiedPhone) {
+                const verificationToken = await this.jwt.signAsync(
+                    { phone, botCuid, kind: 'booking', sub: 'cross-flow-verified' },
+                    {
+                        secret: process.env.BOOKING_VERIFICATION_SECRET || process.env.JWT_SECRET,
+                        expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
+                    },
+                );
+                this.logger.log(`[booking:requestSmsVerification] phone already verified this chat, skipping SMS (bot=${botCuid} chat=${chatId})`);
+                return { alreadyVerified: true as const, verificationToken };
+            }
+        }
+
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
         const recentCount = await this.prisma.bookingSmsVerification.count({
             where: { phone, botCuid, createdAt: { gte: oneHourAgo } },
@@ -289,6 +310,7 @@ export class BookingService {
             from: 'OTP_SENT',
             to: 'OTP_VERIFIED',
             payload: { source: 'booking_sms_verify', verification_id: record.id, channel: 'sms' },
+            verifiedPhone: normalizePhoneForDedup(phone),
         }, 'booking:verifySms');
 
         return { verified: true as const, verificationToken };
