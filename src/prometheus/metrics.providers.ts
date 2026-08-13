@@ -58,3 +58,37 @@ export const chatbuNetgsmSendTotal = makeCounterProvider({
   help: 'NETGSM SMS send outcomes after the SmsService retry envelope',
   labelNames: ['context', 'outcome'] as const,
 });
+
+/**
+ * Provider-agnostic SMS send counter (2026-08-13, alongside the
+ * `SmsProvider` abstraction that ships NETGSM + Twilio as sibling
+ * transports). Labels:
+ *   provider: 'netgsm' | 'twilio' — routed per phone country by
+ *             `SmsService.pickProvider`.
+ *   context:  same taxonomy as the legacy counter ('otp', 'booking_
+ *             confirmation', 'booking_reminder', 'generic') so
+ *             existing Grafana queries carry over one-for-one when
+ *             pointed at the new metric name.
+ *   country:  ISO alpha-2 destination country of the parsed E.164
+ *             phone. Cardinality is bounded — every send is
+ *             classifiable by libphonenumber; we route by this label
+ *             upstream so unbounded free-form is not possible.
+ *   outcome:  'success' | 'failure' — the SmsService router increments
+ *             AFTER the provider's retry envelope has resolved, so
+ *             transient-recovered sends count as success. Detailed
+ *             retry breakdown lives on the legacy `chatbu_netgsm_send_
+ *             total{outcome}` for now; a follow-up cleanup will bring
+ *             the finer-grained outcomes onto this counter and delete
+ *             the legacy one.
+ *
+ * The legacy `chatbu_netgsm_send_total` counter is kept in PARALLEL —
+ * do NOT delete it until the alerts + Grafana panels are migrated to
+ * `chatbu_sms_send_total`. The overlap costs one extra `inc()` call
+ * per send (negligible) and shields the ops surface from a rename
+ * during a live rollout.
+ */
+export const chatbuSmsSendTotal = makeCounterProvider({
+  name: 'chatbu_sms_send_total',
+  help: 'SMS send outcomes across all providers, sliced by provider + country + context',
+  labelNames: ['provider', 'context', 'country', 'outcome'] as const,
+});
