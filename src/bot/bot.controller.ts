@@ -549,4 +549,23 @@ export class BotController {
     return this.botService.getRetrievalSettings(botId);
   }
   //#endregion
+
+  //#region chatLanguage
+  /**
+   * GET /api/bot/chat-language/:botId/:chatId
+   * FastAPI-gateway-facing probe (same internal-key pattern as
+   * verification-status). Returns the language locked for this chat at
+   * creation time, or null when the chat row doesn't exist yet (still on
+   * its first turn) or predates this feature. The gateway uses a non-null
+   * result as its language-enforcement signal instead of re-detecting
+   * from the full transcript every turn.
+   */
+  @ApiOperation({ summary: 'Get locked conversation language for a chat (internal)' })
+  @ApiResponse({ status: 200, description: 'Detected language returned (nullable)' })
+  @UseGuards(InternalApiKeyGuard)
+  @Get('chat-language/:botId/:chatId')
+  async getChatLanguage(@Param('botId') botId: string, @Param('chatId') chatId: string) {
+    return this.botService.getChatLanguage(botId, chatId);
+  }
+  //#endregion
 }

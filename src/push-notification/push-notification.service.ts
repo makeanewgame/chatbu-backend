@@ -97,6 +97,10 @@ export class PushNotificationService {
         }
         if (messages.length === 0) return;
 
+        this.logger.info(
+            `Sending Expo push notification "${notification.title}" to ${messages.length} device(s) for user(s): ${uniqueUserIds.join(', ')}`,
+        );
+
         const staleTokens: string[] = [];
 
         for (const batch of chunk(messages, MAX_MESSAGES_PER_REQUEST)) {
@@ -112,14 +116,22 @@ export class PushNotificationService {
                 });
                 const json = (await response.json()) as { data?: ExpoPushTicket[] };
                 const tickets = json.data ?? [];
+                let okCount = 0;
                 tickets.forEach((ticket, i) => {
                     if (ticket.status === 'error') {
-                        this.logger.warn(`Expo push ticket error: ${ticket.message}`);
+                        this.logger.warn(
+                            `Expo push ticket error for ${batch[i].to}: ${ticket.message}`,
+                        );
                         if (ticket.details?.error === 'DeviceNotRegistered') {
                             staleTokens.push(batch[i].to);
                         }
+                    } else {
+                        okCount++;
                     }
                 });
+                this.logger.info(
+                    `Expo push batch result: ${okCount}/${tickets.length} ticket(s) accepted`,
+                );
             } catch (error) {
                 this.logger.error(`Failed to send push notification batch: ${error}`);
             }
