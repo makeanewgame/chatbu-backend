@@ -1,7 +1,9 @@
 import {
     Body,
     Controller,
+    ForbiddenException,
     HttpCode,
+    NotFoundException,
     Post,
     Req,
     UseGuards,
@@ -19,9 +21,17 @@ import {
     IsString,
 } from 'class-validator';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { IUser } from 'src/util/interfaces';
 import { AppointmentService } from './appointment.service';
+import { AppointmentAvailabilityService } from './appointment-availability.service';
 import { WorkingHours } from './appointment.constants';
+
+class GetAvailabilityDto {
+    @IsString()
+    @IsNotEmpty()
+    botId!: string;
+}
 
 /**
  * DTO for the FE bot-settings surface. `offsets` mirrors the two
@@ -70,7 +80,11 @@ class UpdateWorkingHoursDto {
 @ApiTags('Bot appointment settings')
 @Controller('bot')
 export class AppointmentSettingsController {
-    constructor(private readonly appointment: AppointmentService) { }
+    constructor(
+        private readonly appointment: AppointmentService,
+        private readonly appointmentAvailability: AppointmentAvailabilityService,
+        private readonly prisma: PrismaService,
+    ) { }
 
     /**
      * POST /api/bot/updateAppointmentReminderOffsets
@@ -125,5 +139,43 @@ export class AppointmentSettingsController {
             user.teamId,
             body.workingHours,
         );
+    }
+
+    /**
+     * POST /api/bot/appointment/availability
+     * Body: { botId: string }
+     * Response: AvailabilityResponse | AvailabilityError (see
+     * AppointmentAvailabilityService.getAvailableSlots)
+     *
+     * Dashboard-authenticated counterpart to the widget's public
+     * POST /widget/appointment/availability (widget.controller.ts), so the
+     * "test your chatbot" panel's inline calendar picker can fetch the same
+     * bookable slots without a widget session token — the AccessTokenGuard
+     * JWT already authenticates the caller here.
+     */
+    @ApiOperation({ summary: 'Get bookable appointment slots for a bot (dashboard test-chat picker)' })
+    @ApiResponse({ status: 200, description: 'Availability returned' })
+    @ApiResponse({ status: 403, description: 'Wrong team' })
+    @ApiResponse({ status: 404, description: 'Bot not found' })
+    @ApiBearerAuth()
+    @Post('appointment/availability')
+    @UseGuards(AccessTokenGuard)
+    @HttpCode(200)
+    async getAvailability(
+        @Body() body: GetAvailabilityDto,
+        @Req() req: Request,
+    ) {
+        const user = req.user as IUser;
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: body.botId },
+            select: { id: true, teamId: true },
+        });
+        if (!bot) {
+            throw new NotFoundException(`Bot ${body.botId} not found`);
+        }
+        if (bot.teamId !== user.teamId) {
+            throw new ForbiddenException(`Bot ${body.botId} does not belong to your team`);
+        }
+        return this.appointmentAvailability.getAvailableSlots(body.botId);
     }
 }

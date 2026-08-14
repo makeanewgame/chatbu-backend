@@ -6,6 +6,21 @@ import { FlowStateFor } from './flow-states';
 export { LeadState, BookingState, HandoffState, FeedbackState, FlowStateFor } from './flow-states';
 
 /**
+ * Canonical comparison key for cross-flow SMS dedup (`verifiedPhone`).
+ * Both BookingService (which normalizes to `90XXXXXXXXXX` before this
+ * point) and LeadService (which stores whatever raw shape the visitor
+ * typed) need to agree on ONE key so `getVerifiedPhoneForChat` actually
+ * matches. Last-10-digits is deliberately country-agnostic — it doesn't
+ * assume TR shape — so it keeps working once the backend's SMS
+ * provider stops being TR-only (see chatbu-frontend's ContactFormCard,
+ * which already accepts international numbers today).
+ */
+export function normalizePhoneForDedup(phone: string): string {
+  const digits = (phone || '').replace(/\D/g, '');
+  return digits.slice(-10);
+}
+
+/**
  * Authoritative store for per-chat, per-flow orchestration state.
  *
  * Foundation for the P2 state-machine refactor (plan file
@@ -61,6 +76,11 @@ export interface TransitionArgs<F extends FlowKind = FlowKind> {
   from?: FlowStateFor<F> | null;
   to: FlowStateFor<F>;
   payload?: Prisma.InputJsonValue | null;
+  // Digits-only phone this transition SMS-verified, written at each
+  // flow's OTP_VERIFIED-equivalent transition. Read cross-flow by
+  // `getVerifiedPhoneForChat` so a phone verified via one flow (LEAD or
+  // BOOKING) isn't re-verified via the other in the same conversation.
+  verifiedPhone?: string | null;
 }
 
 @Injectable()
@@ -125,9 +145,14 @@ export class ChatFlowService {
       }
     }
 
-    // Idempotent no-op when the state hasn't changed and no payload
-    // update was requested. Preserves `enteredAt`.
-    if (existing && existing.state === args.to && args.payload === undefined) {
+    // Idempotent no-op when the state hasn't changed and no payload/
+    // verifiedPhone update was requested. Preserves `enteredAt`.
+    if (
+      existing &&
+      existing.state === args.to &&
+      args.payload === undefined &&
+      args.verifiedPhone === undefined
+    ) {
       return;
     }
 
@@ -143,6 +168,7 @@ export class ChatFlowService {
         state: args.to,
         enteredAt: now,
         payload: args.payload ?? Prisma.DbNull,
+        verifiedPhone: args.verifiedPhone ?? null,
       },
       update: {
         state: args.to,
@@ -154,6 +180,9 @@ export class ChatFlowService {
           : {}),
         ...(args.payload !== undefined
           ? { payload: args.payload ?? Prisma.DbNull }
+          : {}),
+        ...(args.verifiedPhone !== undefined
+          ? { verifiedPhone: args.verifiedPhone }
           : {}),
       },
     });
@@ -212,5 +241,33 @@ export class ChatFlowService {
       },
     });
     return rows;
+  }
+
+  /**
+   * Cross-flow SMS dedup: return a phone number this chat has already
+   * SMS-verified via ANY flow (LEAD or BOOKING today), or null. Callers —
+   * `BookingService.requestSmsVerification` and
+   * `LeadService.requestSmsVerification` — check this before sending a
+   * new OTP, so a phone verified via one flow isn't re-verified (and
+   * re-billed) via the other in the same conversation.
+   *
+   * Comparison is on whatever normalized form the caller passes in
+   * `targetPhone` — both writers (BookingService, LeadService) must use
+   * the same normalization for this to match reliably.
+   */
+  async getVerifiedPhoneForChat(
+    botId: string,
+    chatId: string,
+    targetPhone: string,
+  ): Promise<string | null> {
+    if (!botId || !chatId || !targetPhone) return null;
+    const key = normalizePhoneForDedup(targetPhone);
+    if (!key) return null;
+    const rows = await this.prisma.perChatFlowState.findMany({
+      where: { botId, chatId, verifiedPhone: key },
+      select: { verifiedPhone: true },
+      take: 1,
+    });
+    return rows[0]?.verifiedPhone ?? null;
   }
 }

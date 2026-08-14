@@ -14,7 +14,7 @@ import { VerifySmsDto } from './dto/verify-sms.dto';
 import { RecordPrivacyConsentDto } from './dto/record-privacy-consent.dto';
 import { LeadDestination } from 'src/bot/lead-destination.constants';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
-import { ChatFlowService, TransitionArgs } from 'src/chat-flow/chat-flow.service';
+import { ChatFlowService, TransitionArgs, normalizePhoneForDedup } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
 
@@ -636,6 +636,31 @@ export class LeadService {
       throw new BadRequestException({ code: 'KVKK_CONSENT_REQUIRED' });
     }
 
+    // Cross-flow SMS dedup: this phone may already have been
+    // SMS-verified earlier in this same conversation, via the booking
+    // flow (PerChatFlowState.verifiedPhone, see
+    // ChatFlowService.getVerifiedPhoneForChat). Consent is still
+    // required above (chat-scoped, not phone-scoped) — this only skips
+    // a redundant OTP send once that's confirmed.
+    if (dto.chatId) {
+      const alreadyVerifiedPhone = await this.chatFlowService.getVerifiedPhoneForChat(
+        dto.botId,
+        dto.chatId,
+        dto.phone,
+      );
+      if (alreadyVerifiedPhone) {
+        const verificationToken = await this.jwt.signAsync(
+          { phone: dto.phone, botId: dto.botId, kind: 'lead_sms_verification', sub: 'cross-flow-verified' },
+          {
+            secret: process.env.BOOKING_VERIFICATION_SECRET || process.env.JWT_SECRET,
+            expiresIn: VERIFICATION_TOKEN_TTL_SECONDS,
+          },
+        );
+        console.log(`[lead:requestSmsVerification] phone already verified this chat, skipping SMS (bot=${dto.botId} chat=${dto.chatId})`);
+        return { status: 'already_verified' as const, verificationToken };
+      }
+    }
+
     const windowStart = new Date(Date.now() - CODE_REQUEST_WINDOW_MINUTES * 60 * 1000);
     const recentCount = await this.prisma.leadSmsVerification.count({
       where: { botId: dto.botId, phone: dto.phone, createdAt: { gte: windowStart } },
@@ -773,6 +798,7 @@ export class LeadService {
       await this.safeTransition(dto.botId, consent.chatId, FlowKind.LEAD, {
         from: 'OTP_SENT',
         to: 'OTP_VERIFIED',
+        verifiedPhone: normalizePhoneForDedup(dto.phone),
       });
     }
 

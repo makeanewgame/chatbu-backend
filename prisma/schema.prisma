@@ -150,18 +150,18 @@ model Content {
 }
 
 model CustomerBots {
-  id                       String         @id @default(cuid())
-  teamId                   String
-  botName                  String
-  botAvatar                String
-  systemPrompt             String         @default("")
-  settings                 Json?
-  purpose                  String?
-  active                   Boolean        @default(false)
-  modelTier                String         @default("haiku")
-  leadDestinations         Json           @default("[]")
-  leadVerificationRequired Boolean        @default(false)
-  smsVerificationRequired  Boolean        @default(false)
+  id                         String         @id @default(cuid())
+  teamId                     String
+  botName                    String
+  botAvatar                  String
+  systemPrompt               String         @default("")
+  settings                   Json?
+  purpose                    String?
+  active                     Boolean        @default(false)
+  modelTier                  String         @default("haiku")
+  leadDestinations           Json           @default("[]")
+  leadVerificationRequired   Boolean        @default(false)
+  smsVerificationRequired    Boolean        @default(false)
   // Per-bot toggle for the widget SSE streaming path (voice agent
   // plan Faz 2b, 2026-08-04). When true, the frontend widget sends
   // `Accept: text/event-stream` on `/widget/chat` and the backend
@@ -172,30 +172,30 @@ model CustomerBots {
   // The batch path stays wired for `Accept: application/json` and
   // for every non-widget consumer (Meta/WhatsApp adapters) — those
   // never read this flag and always get the batch response.
-  streamingEnabled         Boolean        @default(false)
+  streamingEnabled           Boolean        @default(false)
   // Minutes-before-appointment offsets at which the reminder cron
   // should fire an SMS to the visitor. Introduced Faz E of the
   // SMS-booking migration (plan file: this-is-a-example-ticklish-dove.md).
   // Empty array disables reminders for this bot. Default [1440, 60]
   // matches the two checkboxes the FE bot-settings surface exposes
   // (24 hours before / 1 hour before). Owner picks 0, 1, or 2.
-  appointmentReminderOffsets Int[]        @default([1440, 60])
+  appointmentReminderOffsets Int[]          @default([1440, 60])
   // Per-bot appointment availability window (inline calendar picker,
   // Faz 1). Nullable so application code keeps a `?? DEFAULT_WORKING_HOURS`
   // fallback (see appointment.constants.ts), but in practice every row is
   // backfilled to that same default by this field's migration, and
   // BotService.createBot writes it explicitly on create — NULL should not
   // occur in steady state, this is a belt-and-suspenders fallback only.
-  appointmentWorkingHours   Json?
-  createdAt                DateTime       @default(now())
-  updatedAt                DateTime       @updatedAt
-  isDeleted                Boolean        @default(false)
-  deletedAt                DateTime?
-  team                     Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  BotLeads                 BotLeads[]
-  ChatFeedback             ChatFeedback[]
-  integrations             Integrations[]
-  appointments             Appointment[]
+  appointmentWorkingHours    Json?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+  isDeleted                  Boolean        @default(false)
+  deletedAt                  DateTime?
+  team                       Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  BotLeads                   BotLeads[]
+  ChatFeedback               ChatFeedback[]
+  integrations               Integrations[]
+  appointments               Appointment[]
 }
 
 model CustomerChats {
@@ -651,14 +651,22 @@ model LeadPrivacyConsent {
 // dispatch time, calendar slot picked, etc.). Kept opt-in so most
 // transitions don't have to write anything beyond the state string.
 model PerChatFlowState {
-  id        String   @id @default(cuid())
-  botId     String
-  chatId    String
-  flowKind  FlowKind
-  state     String
-  enteredAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  payload   Json?
+  id            String   @id @default(cuid())
+  botId         String
+  chatId        String
+  flowKind      FlowKind
+  state         String
+  // Digits-only phone this flow SMS-verified for this chat, written by
+  // BookingService/LeadService at their respective OTP_VERIFIED
+  // transitions. Lets EITHER flow's request-SMS step check across BOTH
+  // flowKinds for this (botId, chatId) before sending a new OTP — a
+  // phone already verified via one flow doesn't need re-verifying via
+  // the other in the same conversation. Nullable: most rows never reach
+  // a verified phone state.
+  verifiedPhone String?
+  enteredAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  payload       Json?
 
   @@unique([botId, chatId, flowKind])
   @@index([botId, state, updatedAt])
@@ -856,13 +864,13 @@ model Appointment {
   reminderStates  Json         @default("{}")
   bot             CustomerBots @relation(fields: [botId], references: [id], onDelete: Cascade)
 
-  @@index([botId])
-  @@index([startAt])
   // A single Google Calendar event should map to at most one Appointment
   // row per bot. The MCP hop is idempotent (fail-open, but a retry could
   // still fire twice); a unique key here catches any duplicate hop
   // attempt at the DB layer rather than doubling reminders downstream.
   @@unique([botId, calendarEventId])
+  @@index([botId])
+  @@index([startAt])
 }
 
 model WidgetVisitor {
