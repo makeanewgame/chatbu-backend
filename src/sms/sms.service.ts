@@ -7,13 +7,18 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
 import { SmsProvider } from './providers/sms-provider.interface';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
-import { TwilioSmsProvider } from './providers/twilio.provider';
 
 // Router strategy — read once at boot for hot-path efficiency. Flip via
 // ConfigMap + Reloader restart:
 //   'netgsm_only'      — every send goes to NETGSM (default, mirrors
 //                        pre-2026-08-13 behaviour, prod-safe).
-//   'route_by_country' — TR phones → NETGSM, everything else → Twilio.
+//   'route_by_country' — TR phones → NETGSM, everything else → the
+//                        international provider. Until the international
+//                        provider is registered (Slice 2 follow-up PR
+//                        introducing AWS SNS), `route_by_country` still
+//                        routes everything through NETGSM — the router
+//                        shape is present so the flag flip doesn't
+//                        require a code change once SNS lands.
 // Any unknown value falls back to `netgsm_only` (fail-closed to the
 // working transport). See `.claude/plans/this-is-a-example-ticklish-
 // dove.md` Slice 2 for the dev-first rollout of `route_by_country`.
@@ -53,7 +58,6 @@ export class SmsService {
 
   constructor(
     private readonly netgsmProvider: NetgsmSmsProvider,
-    private readonly twilioProvider: TwilioSmsProvider,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     // New provider-agnostic counter. Populated on every send AFTER the
     // provider's own retry envelope resolves. The provider's own more
@@ -70,14 +74,16 @@ export class SmsService {
 
   /**
    * Decide which transport handles this send. TR → NETGSM (cheaper +
-   * regulator-registered sender), else → Twilio (international coverage).
-   * When the strategy flag is `netgsm_only` (default, prod baseline)
-   * every send goes to NETGSM regardless of country — the router is
-   * present but inert until Slice 2 flips the flag.
+   * regulator-registered sender), else → the international provider
+   * (registered separately when it lands). Until that provider ships
+   * (Slice 2 follow-up), every send resolves to NETGSM regardless of
+   * strategy — a non-TR phone under `route_by_country` still lands on
+   * NETGSM (which will reject it at the transport layer, same as the
+   * pre-router behaviour). The router shape is retained so the
+   * follow-up PR only needs to inject a second provider here.
    */
-  private pickProvider(country: string): SmsProvider {
-    if (this.strategy === 'netgsm_only') return this.netgsmProvider;
-    return country === 'TR' ? this.netgsmProvider : this.twilioProvider;
+  private pickProvider(_country: string): SmsProvider {
+    return this.netgsmProvider;
   }
 
   /**
@@ -90,9 +96,9 @@ export class SmsService {
    *
    * Failure surface: throws on unparsable phone (`INVALID_PHONE_E164`
    * `BadRequestException`) OR on provider transport failure (whatever
-   * the provider raised, e.g. NETGSM logical failure, Twilio API
-   * error). Callers decide what to do — for LEAD OTP, fail loud so
-   * the visitor sees a sentinel; for the reminder cron, log-and-move-on.
+   * the provider raised, e.g. NETGSM logical failure). Callers decide
+   * what to do — for LEAD OTP, fail loud so the visitor sees a
+   * sentinel; for the reminder cron, log-and-move-on.
    */
   async sendSms(
     phone: string,

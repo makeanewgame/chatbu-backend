@@ -61,10 +61,14 @@ export const chatbuNetgsmSendTotal = makeCounterProvider({
 
 /**
  * Provider-agnostic SMS send counter (2026-08-13, alongside the
- * `SmsProvider` abstraction that ships NETGSM + Twilio as sibling
- * transports). Labels:
- *   provider: 'netgsm' | 'twilio' — routed per phone country by
- *             `SmsService.pickProvider`.
+ * `SmsProvider` abstraction). NETGSM ships as the sole transport
+ * today; the router shape accepts additional providers behind the
+ * same interface — an international provider (AWS SNS in the current
+ * plan) will register in a follow-up Slice 2 PR. Labels:
+ *   provider: e.g. 'netgsm' — the transport picked per send by
+ *             `SmsService.pickProvider`. Additional label values
+ *             ('sns', ...) appear when the router registers new
+ *             providers; existing Grafana panels widen automatically.
  *   context:  same taxonomy as the legacy counter ('otp', 'booking_
  *             confirmation', 'booking_reminder', 'generic') so
  *             existing Grafana queries carry over one-for-one when

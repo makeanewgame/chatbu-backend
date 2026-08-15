@@ -4,7 +4,6 @@ import { BadRequestException } from '@nestjs/common';
 
 import { SmsService, parsePhoneToE164 } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
-import { TwilioSmsProvider } from './providers/twilio.provider';
 
 /**
  * Post-2026-08-13 tests: `SmsService` is a thin router that parses a
@@ -16,12 +15,17 @@ import { TwilioSmsProvider } from './providers/twilio.provider';
  * These tests focus on the routing decision, the parse-vs-legacy fallback,
  * and the counter's provider/country labels. Providers are mocked so we
  * can assert `sendSms` was called on the RIGHT provider with the RIGHT
- * shape without hitting HTTP or the Twilio SDK.
+ * shape without hitting HTTP.
+ *
+ * Until the international provider (AWS SNS) is registered, both strategies
+ * resolve to NETGSM — the router shape is retained so the SNS follow-up PR
+ * only needs to add a provider injection + `pickProvider` branch. Tests
+ * that exercise the "route to a non-NETGSM provider" path will be added
+ * back alongside SNS in that follow-up PR.
  */
 describe('SmsService (router)', () => {
   let service: SmsService;
   let netgsm: { sendSms: jest.Mock; name: string };
-  let twilio: { sendSms: jest.Mock; name: string };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
   let smsCounter: { inc: jest.Mock };
 
@@ -34,7 +38,6 @@ describe('SmsService (router)', () => {
       delete process.env.SMS_PROVIDER_STRATEGY;
     }
     netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
-    twilio = { name: 'twilio', sendSms: jest.fn().mockResolvedValue(undefined) };
     logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
     smsCounter = { inc: jest.fn() };
 
@@ -42,7 +45,6 @@ describe('SmsService (router)', () => {
       providers: [
         SmsService,
         { provide: NetgsmSmsProvider, useValue: netgsm },
-        { provide: TwilioSmsProvider, useValue: twilio },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
         { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
       ],
@@ -108,7 +110,8 @@ describe('SmsService (router)', () => {
     it('returns null for shape-valid but unparsable input (e.g. +99 999)', () => {
       // libphonenumber rejects unknown country codes / too-short national
       // parts. This is the negative test that Slice 2's route_by_country
-      // strategy relies on to raise INVALID_PHONE_E164.
+      // strategy relies on to raise INVALID_PHONE_E164 once the international
+      // provider is registered.
       expect(parsePhoneToE164('+99 999')).toBeNull();
     });
   });
@@ -128,18 +131,16 @@ describe('SmsService (router)', () => {
         message: 'hello',
         context: 'otp',
       });
-      expect(twilio.sendSms).not.toHaveBeenCalled();
     });
 
     it('ALSO routes US phones to NETGSM (strategy blocks routing)', async () => {
       // The whole point of `netgsm_only` — even if we parse a US number
-      // the router does NOT delegate to Twilio yet. This is the prod
-      // safety guarantee: Slice 1 ships without behavioural change.
+      // the router does NOT delegate elsewhere. This is the prod safety
+      // guarantee: Slice 1 ships without behavioural change.
       await service.sendSms('+14155551234', 'hello', 'otp');
       expect(netgsm.sendSms).toHaveBeenCalledWith(
         expect.objectContaining({ country: 'US' }),
       );
-      expect(twilio.sendSms).not.toHaveBeenCalled();
     });
 
     it('legacy passthrough: unparsable phone falls back to NETGSM', async () => {
@@ -179,7 +180,8 @@ describe('SmsService (router)', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Router — route_by_country (Slice 2 dev)
+  // Router — route_by_country (Slice 2 dev; NETGSM-only until the
+  // international provider lands in the SNS follow-up PR)
   // ---------------------------------------------------------------------
 
   describe('strategy=route_by_country', () => {
@@ -190,32 +192,17 @@ describe('SmsService (router)', () => {
       expect(netgsm.sendSms).toHaveBeenCalledWith(
         expect.objectContaining({ country: 'TR' }),
       );
-      expect(twilio.sendSms).not.toHaveBeenCalled();
     });
 
-    it('routes US phones to Twilio', async () => {
+    it('routes US phones to NETGSM until the international provider ships', async () => {
+      // With no international provider registered, non-TR phones still
+      // land on NETGSM (which will reject them at transport). The SNS
+      // follow-up PR flips this expectation to expect the international
+      // provider mock instead.
       await service.sendSms('+14155551234', 'hi', 'otp');
-      expect(twilio.sendSms).toHaveBeenCalledWith(
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
         expect.objectContaining({ country: 'US', e164: '+14155551234' }),
       );
-      expect(netgsm.sendSms).not.toHaveBeenCalled();
-    });
-
-    it('routes UK phones to Twilio', async () => {
-      await service.sendSms('+447400900123', 'hi', 'otp');
-      expect(twilio.sendSms).toHaveBeenCalledWith(
-        expect.objectContaining({ country: 'GB' }),
-      );
-    });
-
-    it('counter labels reflect the picked provider for US', async () => {
-      await service.sendSms('+14155551234', 'hi', 'otp');
-      expect(smsCounter.inc).toHaveBeenCalledWith({
-        provider: 'twilio',
-        context: 'otp',
-        country: 'US',
-        outcome: 'success',
-      });
     });
 
     it('rejects unparsable phone with INVALID_PHONE_E164', async () => {
@@ -226,7 +213,6 @@ describe('SmsService (router)', () => {
         service.sendSms('hello world', 'hi'),
       ).rejects.toThrow(BadRequestException);
       expect(netgsm.sendSms).not.toHaveBeenCalled();
-      expect(twilio.sendSms).not.toHaveBeenCalled();
     });
   });
 
@@ -234,26 +220,23 @@ describe('SmsService (router)', () => {
     it('falls back to netgsm_only when SMS_PROVIDER_STRATEGY is unset', async () => {
       await buildService(undefined);
       await service.sendSms('+14155551234', 'x', 'otp');
-      expect(netgsm.sendSms).toHaveBeenCalled(); // NETGSM, not Twilio
+      expect(netgsm.sendSms).toHaveBeenCalled();
     });
 
     it('falls back to netgsm_only when SMS_PROVIDER_STRATEGY is garbage', async () => {
       process.env.SMS_PROVIDER_STRATEGY = 'blahblah';
-      await buildService(undefined);
-      // re-init with garbage in env
-      process.env.SMS_PROVIDER_STRATEGY = 'blahblah';
       const module: TestingModule = await Test.createTestingModule({
         providers: [
           SmsService,
-          { provide: NetgsmSmsProvider, useValue: netgsm },
-          { provide: TwilioSmsProvider, useValue: twilio },
-          { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
-          { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
+          { provide: NetgsmSmsProvider, useValue: { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) } },
+          { provide: WINSTON_MODULE_PROVIDER, useValue: { info: jest.fn(), error: jest.fn(), warn: jest.fn() } },
+          { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: { inc: jest.fn() } },
         ],
       }).compile();
-      service = module.get(SmsService);
-      await service.sendSms('+14155551234', 'x', 'otp');
-      expect(netgsm.sendSms).toHaveBeenCalled();
+      const svc = module.get(SmsService);
+      const netgsmProv = module.get(NetgsmSmsProvider) as any;
+      await svc.sendSms('+14155551234', 'x', 'otp');
+      expect(netgsmProv.sendSms).toHaveBeenCalled();
     });
   });
 
