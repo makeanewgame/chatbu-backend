@@ -7,18 +7,13 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 
 import { SmsProvider } from './providers/sms-provider.interface';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
+import { SnsSmsProvider } from './providers/sns.provider';
 
 // Router strategy — read once at boot for hot-path efficiency. Flip via
 // ConfigMap + Reloader restart:
 //   'netgsm_only'      — every send goes to NETGSM (default, mirrors
 //                        pre-2026-08-13 behaviour, prod-safe).
-//   'route_by_country' — TR phones → NETGSM, everything else → the
-//                        international provider. Until the international
-//                        provider is registered (Slice 2 follow-up PR
-//                        introducing AWS SNS), `route_by_country` still
-//                        routes everything through NETGSM — the router
-//                        shape is present so the flag flip doesn't
-//                        require a code change once SNS lands.
+//   'route_by_country' — TR phones → NETGSM, everything else → SNS.
 // Any unknown value falls back to `netgsm_only` (fail-closed to the
 // working transport). See `.claude/plans/this-is-a-example-ticklish-
 // dove.md` Slice 2 for the dev-first rollout of `route_by_country`.
@@ -58,6 +53,7 @@ export class SmsService {
 
   constructor(
     private readonly netgsmProvider: NetgsmSmsProvider,
+    private readonly snsProvider: SnsSmsProvider,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     // New provider-agnostic counter. Populated on every send AFTER the
     // provider's own retry envelope resolves. The provider's own more
@@ -74,16 +70,15 @@ export class SmsService {
 
   /**
    * Decide which transport handles this send. TR → NETGSM (cheaper +
-   * regulator-registered sender), else → the international provider
-   * (registered separately when it lands). Until that provider ships
-   * (Slice 2 follow-up), every send resolves to NETGSM regardless of
-   * strategy — a non-TR phone under `route_by_country` still lands on
-   * NETGSM (which will reject it at the transport layer, same as the
-   * pre-router behaviour). The router shape is retained so the
-   * follow-up PR only needs to inject a second provider here.
+   * regulator-registered sender), else → SNS (international coverage
+   * via IRSA, no separate account). When the strategy flag is
+   * `netgsm_only` (default, prod baseline) every send goes to NETGSM
+   * regardless of country — the router is present but inert until the
+   * dev overlay flips the flag to `route_by_country`.
    */
-  private pickProvider(_country: string): SmsProvider {
-    return this.netgsmProvider;
+  private pickProvider(country: string): SmsProvider {
+    if (this.strategy === 'netgsm_only') return this.netgsmProvider;
+    return country === 'TR' ? this.netgsmProvider : this.snsProvider;
   }
 
   /**

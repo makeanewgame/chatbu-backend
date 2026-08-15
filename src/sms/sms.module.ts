@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { SmsService } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
+import { SnsSmsProvider } from './providers/sns.provider';
 import {
   chatbuNetgsmSendTotal,
   chatbuSmsSendTotal,
@@ -14,15 +15,20 @@ import {
 // second register()) so we reuse the same provider object here — it's
 // idempotent when referenced from multiple modules.
 //
-// 2026-08-13 provider abstraction: `NetgsmSmsProvider` is the sole
-// registered transport for now; `SmsService` (the router) is shaped to
-// accept additional providers behind the same interface. The second
-// provider (AWS SNS in the current plan) will register here in the
-// follow-up Slice 2 PR.
+// 2026-08-13 provider abstraction: `NetgsmSmsProvider` handles TR sends,
+// `SnsSmsProvider` handles everything else. `SmsService` (the router)
+// injects both and picks per-send based on the parsed phone's country +
+// `SMS_PROVIDER_STRATEGY` env. SNS uses IRSA — the backend pod's service
+// account carries an `sns:Publish` policy (Terraform patch in the
+// `fovi-longa-chat-be` sibling PR) so no credentials appear in code or
+// ExternalSecrets. The SNS client is lazily instantiated inside the
+// provider so a pod that never routes internationally stays healthy
+// even before the SNS sandbox → prod access ticket clears.
 @Module({
   imports: [HttpModule],
   providers: [
     NetgsmSmsProvider,
+    SnsSmsProvider,
     SmsService,
     chatbuNetgsmSendTotal,
     chatbuSmsSendTotal,
