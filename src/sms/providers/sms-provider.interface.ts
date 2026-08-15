@@ -7,11 +7,11 @@
  * NETGSM is a Turkish domestic gateway and can only reach `+90…` numbers,
  * so a bot with `smsVerificationRequired=true` that hits a UK/US/DE
  * visitor was silently misdelivering (or corrupting the MSISDN into a
- * fake TR one via the old `normalizeTurkishPhone` fallback). Adding
- * Twilio as a second provider requires this seam so both live behind
- * the same `SmsService.sendSms` funnel every existing caller already
- * uses. See `.claude/plans/this-is-a-example-ticklish-dove.md` for the
- * full rollout doc.
+ * fake TR one via the old `normalizeTurkishPhone` fallback). A second
+ * provider (AWS SNS in the current plan) is added behind this seam so
+ * both live behind the same `SmsService.sendSms` funnel every existing
+ * caller already uses. See `.claude/plans/this-is-a-example-ticklish-
+ * dove.md` for the full rollout doc.
  *
  * Contract:
  *   - Inputs are already normalized. E.164 (`+…`) with a valid country
@@ -38,7 +38,7 @@ export interface SmsProvider {
    * Short identifier for logs, metrics label, and per-request routing
    * decisions. MUST match the string used in `SmsService.pickProvider`.
    */
-  readonly name: 'netgsm' | 'twilio' | 'mock';
+  readonly name: 'netgsm' | 'mock';
 
   /**
    * Send one SMS message. Returns void on success, throws on failure.

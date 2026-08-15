@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { SmsService } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
-import { TwilioSmsProvider } from './providers/twilio.provider';
 import {
   chatbuNetgsmSendTotal,
   chatbuSmsSendTotal,
@@ -15,17 +14,15 @@ import {
 // second register()) so we reuse the same provider object here — it's
 // idempotent when referenced from multiple modules.
 //
-// 2026-08-13 provider abstraction: both `NetgsmSmsProvider` and
-// `TwilioSmsProvider` are registered here so `SmsService` (the router)
-// can inject both. The router picks at request time based on phone
-// country + `SMS_PROVIDER_STRATEGY` env. Twilio's SDK is `require`d
-// lazily inside the provider so a pod without Twilio credentials
-// stays healthy until the first international send.
+// 2026-08-13 provider abstraction: `NetgsmSmsProvider` is the sole
+// registered transport for now; `SmsService` (the router) is shaped to
+// accept additional providers behind the same interface. The second
+// provider (AWS SNS in the current plan) will register here in the
+// follow-up Slice 2 PR.
 @Module({
   imports: [HttpModule],
   providers: [
     NetgsmSmsProvider,
-    TwilioSmsProvider,
     SmsService,
     chatbuNetgsmSendTotal,
     chatbuSmsSendTotal,
