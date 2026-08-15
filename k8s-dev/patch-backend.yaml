@@ -52,17 +52,23 @@ spec:
             # prod-flip PR.
             - name: SMS_PROVIDER_STRATEGY
               value: "route_by_country"
-            # SNS dev escape hatch (mirror of NETGSM_MOCK). Default
-            # "true" while the SNS sandbox → prod-access ticket is
-            # pending — sandbox mode only delivers to whitelisted
-            # phone numbers, so a smoke test to an arbitrary US/UK
-            # number would silently fail. Log-only mock keeps dev
-            # exercising the router + provider code path end-to-end
-            # without the whitelist dance. Flip to "false" once the
-            # SNS prod-access ticket clears and you want real
-            # deliveries on dev.
+            # SNS dev escape hatch (mirror of NETGSM_MOCK). "false"
+            # (this line) → real SNS Publish calls. IMPORTANT: the
+            # account is in SNS SMS sandbox until the prod-access
+            # ticket clears, so real sends will FAIL with a
+            # "destination phone number is not verified" error
+            # unless the target number is whitelisted first via
+            # `aws sns create-sms-sandbox-phone-number --phone-number
+            # +… --profile datalonga --region eu-central-1` (round-
+            # trip: an SMS with a 6-digit code arrives at the target,
+            # `verify-sms-sandbox-phone-number` completes the pair).
+            # Whitelisted numbers work end-to-end; unwhitelisted ones
+            # surface the sandbox error to `SmsService.sendSms`
+            # (counter increments outcome=failure, LeadService turns
+            # it into the LEAD_SMS_VERIFICATION_UNAVAILABLE sentinel
+            # the same way NETGSM transport failures do).
             - name: SNS_MOCK
-              value: "true"
+              value: "false"
             # Alphanumeric sender ID for countries that support it
             # (most of EU/APAC). US ignores this and falls back to
             # SNS-picked long code automatically. Kept short + branded.
