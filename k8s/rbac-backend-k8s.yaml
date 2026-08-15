@@ -1,10 +1,17 @@
 ---
-# ServiceAccount for the NestJS backend
+# ServiceAccount for the NestJS backend. IRSA-annotated so the pod
+# picks up an AWS IAM identity for `sns:Publish` (SmsService's
+# SnsSmsProvider for non-TR SMS routing). The role itself lives in
+# `fovi-longa-chat-be/terraform/chatbu-backend-iam.tf` and its trust
+# policy allows both `chatbu:backend-sa` (this file, prod) and
+# `chatbu-dev:backend-sa` (k8s-dev/rbac.yaml).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: backend-sa
   namespace: chatbu
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::152100380489:role/chatbu-backend-sns-role
 
 ---
 # Role: read pods/logs + restart deployments in chatbu namespace

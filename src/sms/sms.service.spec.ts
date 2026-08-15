@@ -4,28 +4,25 @@ import { BadRequestException } from '@nestjs/common';
 
 import { SmsService, parsePhoneToE164 } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
+import { SnsSmsProvider } from './providers/sns.provider';
 
 /**
  * Post-2026-08-13 tests: `SmsService` is a thin router that parses a
  * user-typed phone into `{e164, country}`, picks a provider based on the
  * country + `SMS_PROVIDER_STRATEGY` env, and delegates. Retry envelope
- * + NETGSM-specific error classification moved into `NetgsmSmsProvider`
- * and lives in `providers/netgsm.provider.spec.ts`.
+ * + provider-specific error classification live inside each provider
+ * class (`providers/netgsm.provider.spec.ts`, provider-specific SNS
+ * tests can be added if/when the AWS SDK mock surface grows).
  *
- * These tests focus on the routing decision, the parse-vs-legacy fallback,
- * and the counter's provider/country labels. Providers are mocked so we
- * can assert `sendSms` was called on the RIGHT provider with the RIGHT
- * shape without hitting HTTP.
- *
- * Until the international provider (AWS SNS) is registered, both strategies
- * resolve to NETGSM — the router shape is retained so the SNS follow-up PR
- * only needs to add a provider injection + `pickProvider` branch. Tests
- * that exercise the "route to a non-NETGSM provider" path will be added
- * back alongside SNS in that follow-up PR.
+ * These tests focus on the routing decision, the parse-vs-legacy
+ * fallback, and the counter's provider/country labels. Providers are
+ * mocked so we can assert `sendSms` was called on the RIGHT provider
+ * with the RIGHT shape without hitting HTTP or the SNS SDK.
  */
 describe('SmsService (router)', () => {
   let service: SmsService;
   let netgsm: { sendSms: jest.Mock; name: string };
+  let sns: { sendSms: jest.Mock; name: string };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
   let smsCounter: { inc: jest.Mock };
 
@@ -38,6 +35,7 @@ describe('SmsService (router)', () => {
       delete process.env.SMS_PROVIDER_STRATEGY;
     }
     netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
+    sns = { name: 'sns', sendSms: jest.fn().mockResolvedValue(undefined) };
     logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
     smsCounter = { inc: jest.fn() };
 
@@ -45,6 +43,7 @@ describe('SmsService (router)', () => {
       providers: [
         SmsService,
         { provide: NetgsmSmsProvider, useValue: netgsm },
+        { provide: SnsSmsProvider, useValue: sns },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
         { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
       ],
@@ -131,6 +130,7 @@ describe('SmsService (router)', () => {
         message: 'hello',
         context: 'otp',
       });
+      expect(sns.sendSms).not.toHaveBeenCalled();
     });
 
     it('ALSO routes US phones to NETGSM (strategy blocks routing)', async () => {
@@ -141,6 +141,7 @@ describe('SmsService (router)', () => {
       expect(netgsm.sendSms).toHaveBeenCalledWith(
         expect.objectContaining({ country: 'US' }),
       );
+      expect(sns.sendSms).not.toHaveBeenCalled();
     });
 
     it('legacy passthrough: unparsable phone falls back to NETGSM', async () => {
@@ -180,8 +181,7 @@ describe('SmsService (router)', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Router — route_by_country (Slice 2 dev; NETGSM-only until the
-  // international provider lands in the SNS follow-up PR)
+  // Router — route_by_country (Slice 2 dev)
   // ---------------------------------------------------------------------
 
   describe('strategy=route_by_country', () => {
@@ -192,17 +192,56 @@ describe('SmsService (router)', () => {
       expect(netgsm.sendSms).toHaveBeenCalledWith(
         expect.objectContaining({ country: 'TR' }),
       );
+      expect(sns.sendSms).not.toHaveBeenCalled();
     });
 
-    it('routes US phones to NETGSM until the international provider ships', async () => {
-      // With no international provider registered, non-TR phones still
-      // land on NETGSM (which will reject them at transport). The SNS
-      // follow-up PR flips this expectation to expect the international
-      // provider mock instead.
+    it('routes US phones to SNS', async () => {
       await service.sendSms('+14155551234', 'hi', 'otp');
-      expect(netgsm.sendSms).toHaveBeenCalledWith(
+      expect(sns.sendSms).toHaveBeenCalledWith(
         expect.objectContaining({ country: 'US', e164: '+14155551234' }),
       );
+      expect(netgsm.sendSms).not.toHaveBeenCalled();
+    });
+
+    it('routes UK phones to SNS', async () => {
+      await service.sendSms('+447400900123', 'hi', 'otp');
+      expect(sns.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({ country: 'GB' }),
+      );
+      expect(netgsm.sendSms).not.toHaveBeenCalled();
+    });
+
+    it('counter labels reflect provider=sns for US', async () => {
+      await service.sendSms('+14155551234', 'hi', 'otp');
+      expect(smsCounter.inc).toHaveBeenCalledWith({
+        provider: 'sns',
+        context: 'otp',
+        country: 'US',
+        outcome: 'success',
+      });
+    });
+
+    it('counter labels reflect provider=netgsm for TR under route_by_country', async () => {
+      await service.sendSms('+905321112233', 'hi', 'otp');
+      expect(smsCounter.inc).toHaveBeenCalledWith({
+        provider: 'netgsm',
+        context: 'otp',
+        country: 'TR',
+        outcome: 'success',
+      });
+    });
+
+    it('increments outcome=failure with provider=sns when SNS throws', async () => {
+      sns.sendSms.mockRejectedValueOnce(new Error('sns boom'));
+      await expect(
+        service.sendSms('+14155551234', 'hi', 'otp'),
+      ).rejects.toThrow('sns boom');
+      expect(smsCounter.inc).toHaveBeenCalledWith({
+        provider: 'sns',
+        context: 'otp',
+        country: 'US',
+        outcome: 'failure',
+      });
     });
 
     it('rejects unparsable phone with INVALID_PHONE_E164', async () => {
@@ -213,6 +252,7 @@ describe('SmsService (router)', () => {
         service.sendSms('hello world', 'hi'),
       ).rejects.toThrow(BadRequestException);
       expect(netgsm.sendSms).not.toHaveBeenCalled();
+      expect(sns.sendSms).not.toHaveBeenCalled();
     });
   });
 
@@ -221,6 +261,7 @@ describe('SmsService (router)', () => {
       await buildService(undefined);
       await service.sendSms('+14155551234', 'x', 'otp');
       expect(netgsm.sendSms).toHaveBeenCalled();
+      expect(sns.sendSms).not.toHaveBeenCalled();
     });
 
     it('falls back to netgsm_only when SMS_PROVIDER_STRATEGY is garbage', async () => {
@@ -229,14 +270,17 @@ describe('SmsService (router)', () => {
         providers: [
           SmsService,
           { provide: NetgsmSmsProvider, useValue: { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) } },
+          { provide: SnsSmsProvider, useValue: { name: 'sns', sendSms: jest.fn().mockResolvedValue(undefined) } },
           { provide: WINSTON_MODULE_PROVIDER, useValue: { info: jest.fn(), error: jest.fn(), warn: jest.fn() } },
           { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: { inc: jest.fn() } },
         ],
       }).compile();
       const svc = module.get(SmsService);
       const netgsmProv = module.get(NetgsmSmsProvider) as any;
+      const snsProv = module.get(SnsSmsProvider) as any;
       await svc.sendSms('+14155551234', 'x', 'otp');
       expect(netgsmProv.sendSms).toHaveBeenCalled();
+      expect(snsProv.sendSms).not.toHaveBeenCalled();
     });
   });
 

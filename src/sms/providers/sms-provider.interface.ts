@@ -38,7 +38,7 @@ export interface SmsProvider {
    * Short identifier for logs, metrics label, and per-request routing
    * decisions. MUST match the string used in `SmsService.pickProvider`.
    */
-  readonly name: 'netgsm' | 'mock';
+  readonly name: 'netgsm' | 'sns' | 'mock';
 
   /**
    * Send one SMS message. Returns void on success, throws on failure.
