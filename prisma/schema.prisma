@@ -567,6 +567,15 @@ model LeadSmsVerification {
   id        String    @id @default(cuid())
   botId     String
   phone     String
+  // ISO alpha-2 country of the destination phone (e.g. "TR", "US", "DE"),
+  // parsed by `libphonenumber-js` in `SmsService.parsePhoneToE164`.
+  // Nullable so rows written before Slice 2 (2026-08-13) keep working
+  // without a backfill; new writes always populate. Used for cost
+  // slicing (`chatbu_sms_send_total{country}` metric) + future per-
+  // country daily-cap circuit breaker (Slice 6). Also used by
+  // `LeadService.requestSmsVerification` to pick the OTP message
+  // language (TR bots → Turkish body, everything else → English).
+  country   String?
   codeHash  String
   attempts  Int       @default(0)
   createdAt DateTime  @default(now())

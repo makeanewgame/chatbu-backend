@@ -40,6 +40,7 @@ import {
   chatbuHttpRequestDurationSeconds,
   chatbuHttpRequestsTotal,
   chatbuNetgsmSendTotal,
+  chatbuSmsSendTotal,
 } from './prometheus/metrics.providers';
 import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.interceptor';
 
@@ -103,6 +104,10 @@ import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.intercep
     chatbuHttpRequestsTotal,
     chatbuHttpRequestDurationSeconds,
     chatbuNetgsmSendTotal,
+    // New provider-agnostic SMS counter shipped with the provider
+    // abstraction (2026-08-13). Kept in parallel with the legacy
+    // NETGSM-scoped counter above until Grafana + alerts migrate.
+    chatbuSmsSendTotal,
     {
       provide: APP_INTERCEPTOR,
       useClass: PrometheusHttpInterceptor,

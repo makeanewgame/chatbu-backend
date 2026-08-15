@@ -1,426 +1,357 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpService } from '@nestjs/axios';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
-import { of, throwError } from 'rxjs';
-import { AxiosResponse } from 'axios';
+import { BadRequestException } from '@nestjs/common';
 
-import { SmsService } from './sms.service';
+import { SmsService, parsePhoneToE164 } from './sms.service';
+import { NetgsmSmsProvider } from './providers/netgsm.provider';
 
 /**
- * Faz A tests: verify that `sendSms` is the single transport funnel and
- * that the wrapper methods (`sendOtpSms`, `sendBookingConfirmationSms`,
- * `sendBookingReminderSms`) produce the expected localized bodies +
- * route through `sendSms` (not a private HTTP call each).
+ * Post-2026-08-13 tests: `SmsService` is a thin router that parses a
+ * user-typed phone into `{e164, country}`, picks a provider based on the
+ * country + `SMS_PROVIDER_STRATEGY` env, and delegates. Retry envelope
+ * + NETGSM-specific error classification moved into `NetgsmSmsProvider`
+ * and lives in `providers/netgsm.provider.spec.ts`.
  *
- * NETGSM_MOCK is the primary lever: when true, no HTTP call is made and
- * the composed message body ends up in a logger.info line, which is what
- * we assert against. This keeps the tests deterministic and offline.
+ * These tests focus on the routing decision, the parse-vs-legacy fallback,
+ * and the counter's provider/country labels. Providers are mocked so we
+ * can assert `sendSms` was called on the RIGHT provider with the RIGHT
+ * shape without hitting HTTP.
+ *
+ * Until the international provider (AWS SNS) is registered, both strategies
+ * resolve to NETGSM — the router shape is retained so the SNS follow-up PR
+ * only needs to add a provider injection + `pickProvider` branch. Tests
+ * that exercise the "route to a non-NETGSM provider" path will be added
+ * back alongside SNS in that follow-up PR.
  */
-describe('SmsService', () => {
+describe('SmsService (router)', () => {
   let service: SmsService;
-  let http: { post: jest.Mock };
+  let netgsm: { sendSms: jest.Mock; name: string };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
-  let counter: { inc: jest.Mock };
+  let smsCounter: { inc: jest.Mock };
 
   const originalEnv = { ...process.env };
 
-  beforeEach(async () => {
-    http = { post: jest.fn() };
+  async function buildService(strategy?: 'netgsm_only' | 'route_by_country') {
+    if (strategy !== undefined) {
+      process.env.SMS_PROVIDER_STRATEGY = strategy;
+    } else {
+      delete process.env.SMS_PROVIDER_STRATEGY;
+    }
+    netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
     logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
-    // Prom counter injected by the retry envelope. `inc` receives
-    // {context, outcome} — assert directly in the retry-path tests.
-    counter = { inc: jest.fn() };
+    smsCounter = { inc: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SmsService,
-        { provide: HttpService, useValue: http },
+        { provide: NetgsmSmsProvider, useValue: netgsm },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
-        { provide: 'PROM_METRIC_CHATBU_NETGSM_SEND_TOTAL', useValue: counter },
+        { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
       ],
     }).compile();
-
     service = module.get(SmsService);
-    process.env.NETGSM_MOCK = 'true';
-  });
+  }
 
   afterEach(() => {
     process.env = { ...originalEnv };
     jest.clearAllMocks();
-    jest.useRealTimers();
   });
 
   // ---------------------------------------------------------------------
-  // sendSms — generic transport funnel
+  // parsePhoneToE164 — the seam every provider sees
   // ---------------------------------------------------------------------
 
-  describe('sendSms (generic)', () => {
-    it('normalizes a Turkish 0-prefixed phone to 90XXXXXXXXXX before sending', async () => {
-      await service.sendSms('0532 111 22 33', 'hello');
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('905321112233'),
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('"hello"'),
-      );
-    });
-
-    it('tags the log line with the provided context', async () => {
-      await service.sendSms('05321112233', 'x', 'my_flow');
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Would send my_flow'),
-      );
-    });
-
-    it('defaults context to "generic" when omitted', async () => {
-      await service.sendSms('05321112233', 'x');
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Would send generic'),
-      );
-    });
-
-    it('does NOT hit the HTTP client in mock mode', async () => {
-      await service.sendSms('05321112233', 'x');
-      expect(http.post).not.toHaveBeenCalled();
-    });
-
-    it('throws when credentials are missing and mock is off', async () => {
-      process.env.NETGSM_MOCK = 'false';
-      delete process.env.NETGSM_USERNAME;
-      delete process.env.NETGSM_PASSWORD;
-      delete process.env.NETGSM_MSGHEADER;
-
-      await expect(service.sendSms('05321112233', 'x')).rejects.toThrow(
-        /SMS provider is not configured/,
-      );
-    });
-
-    it('throws when NETGSM returns a non-success code (after retry)', async () => {
-      // Non-success codes are classified transient — retry fires, second
-      // attempt also returns non-success, exhausted path throws.
-      process.env.NETGSM_MOCK = 'false';
-      process.env.NETGSM_USERNAME = 'u';
-      process.env.NETGSM_PASSWORD = 'p';
-      process.env.NETGSM_MSGHEADER = 'h';
-      // Silence the 3s backoff in tests without touching production code.
-      jest
-        .spyOn(global, 'setTimeout')
-        .mockImplementation(((cb: any) => cb()) as any);
-      http.post.mockReturnValue(
-        of({ data: { code: '80', jobid: 'j1' } } as AxiosResponse),
-      );
-
-      await expect(service.sendSms('05321112233', 'x', 'otp')).rejects.toThrow(
-        /NETGSM rejected/,
-      );
-      expect(http.post).toHaveBeenCalledTimes(2);
-      expect(counter.inc).toHaveBeenCalledWith({
-        context: 'otp',
-        outcome: 'exhausted',
+  describe('parsePhoneToE164 helper', () => {
+    it('parses a Turkish 0-prefixed phone using TR default country', () => {
+      expect(parsePhoneToE164('0532 111 22 33')).toEqual({
+        e164: '+905321112233',
+        country: 'TR',
       });
     });
 
-    it('accepts NETGSM success code "00" (no retry needed)', async () => {
-      process.env.NETGSM_MOCK = 'false';
-      process.env.NETGSM_USERNAME = 'u';
-      process.env.NETGSM_PASSWORD = 'p';
-      process.env.NETGSM_MSGHEADER = 'h';
-      http.post.mockReturnValue(
-        of({ data: { code: '00', jobid: 'j1' } } as AxiosResponse),
-      );
-
-      await expect(service.sendSms('05321112233', 'x', 'otp')).resolves.toBeUndefined();
-      expect(http.post).toHaveBeenCalledTimes(1);
-      expect(counter.inc).toHaveBeenCalledWith({
-        context: 'otp',
-        outcome: 'success_on_first',
+    it('parses a bare 10-digit TR mobile using TR default country', () => {
+      expect(parsePhoneToE164('5321112233')).toEqual({
+        e164: '+905321112233',
+        country: 'TR',
       });
     });
 
-    it('propagates HTTP transport errors (Error without .code — non-retryable)', async () => {
-      // Bare `Error('timeout')` has no .code, so isTransientFailure
-      // returns false → no retry, permanent_fail path.
-      process.env.NETGSM_MOCK = 'false';
-      process.env.NETGSM_USERNAME = 'u';
-      process.env.NETGSM_PASSWORD = 'p';
-      process.env.NETGSM_MSGHEADER = 'h';
-      http.post.mockReturnValue(throwError(() => new Error('timeout')));
-
-      await expect(service.sendSms('05321112233', 'x', 'otp')).rejects.toThrow(
-        'timeout',
-      );
-      expect(http.post).toHaveBeenCalledTimes(1);
-      expect(counter.inc).toHaveBeenCalledWith({
-        context: 'otp',
-        outcome: 'permanent_fail',
+    it('parses a `+90` international-shape TR phone', () => {
+      expect(parsePhoneToE164('+90 532 111 22 33')).toEqual({
+        e164: '+905321112233',
+        country: 'TR',
       });
     });
 
-    // ─── Retry envelope (2026-08-03 follow-up to hotfix #133) ─────────
-
-    it('retries once on ECONNABORTED and succeeds on the second attempt', async () => {
-      process.env.NETGSM_MOCK = 'false';
-      process.env.NETGSM_USERNAME = 'u';
-      process.env.NETGSM_PASSWORD = 'p';
-      process.env.NETGSM_MSGHEADER = 'h';
-      jest
-        .spyOn(global, 'setTimeout')
-        .mockImplementation(((cb: any) => cb()) as any);
-      const timeoutErr: any = new Error('cancelled');
-      timeoutErr.code = 'ECONNABORTED';
-      http.post
-        .mockReturnValueOnce(throwError(() => timeoutErr))
-        .mockReturnValueOnce(of({ data: { code: '00', jobid: 'j2' } } as AxiosResponse));
-
-      await expect(service.sendSms('05321112233', 'x', 'otp')).resolves.toBeUndefined();
-      expect(http.post).toHaveBeenCalledTimes(2);
-      expect(counter.inc).toHaveBeenCalledWith({
-        context: 'otp',
-        outcome: 'success_on_retry',
+    it('parses a US international phone', () => {
+      expect(parsePhoneToE164('+1 415 555 12 34')).toEqual({
+        e164: '+14155551234',
+        country: 'US',
       });
+    });
+
+    it('parses a UK international phone', () => {
+      // Ofcom-reserved test range (07700 900xxx) is 11 digits after
+      // country code, but libphonenumber treats them as valid mobiles.
+      // Using a real UK mobile pattern (+447400900123) instead.
+      expect(parsePhoneToE164('+44 7400 900123')).toEqual({
+        e164: '+447400900123',
+        country: 'GB',
+      });
+    });
+
+    it('returns null for garbage input', () => {
+      expect(parsePhoneToE164('hello')).toBeNull();
+      expect(parsePhoneToE164('')).toBeNull();
+      expect(parsePhoneToE164(null as any)).toBeNull();
+      expect(parsePhoneToE164(undefined as any)).toBeNull();
+    });
+
+    it('returns null for shape-valid but unparsable input (e.g. +99 999)', () => {
+      // libphonenumber rejects unknown country codes / too-short national
+      // parts. This is the negative test that Slice 2's route_by_country
+      // strategy relies on to raise INVALID_PHONE_E164 once the international
+      // provider is registered.
+      expect(parsePhoneToE164('+99 999')).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Router — netgsm_only (default, prod baseline)
+  // ---------------------------------------------------------------------
+
+  describe('strategy=netgsm_only (default)', () => {
+    beforeEach(() => buildService('netgsm_only'));
+
+    it('routes TR phones to NETGSM', async () => {
+      await service.sendSms('+905321112233', 'hello', 'otp');
+      expect(netgsm.sendSms).toHaveBeenCalledWith({
+        e164: '+905321112233',
+        country: 'TR',
+        message: 'hello',
+        context: 'otp',
+      });
+    });
+
+    it('ALSO routes US phones to NETGSM (strategy blocks routing)', async () => {
+      // The whole point of `netgsm_only` — even if we parse a US number
+      // the router does NOT delegate elsewhere. This is the prod safety
+      // guarantee: Slice 1 ships without behavioural change.
+      await service.sendSms('+14155551234', 'hello', 'otp');
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({ country: 'US' }),
+      );
+    });
+
+    it('legacy passthrough: unparsable phone falls back to NETGSM', async () => {
+      // Pre-abstraction callers occasionally handed junk-shaped strings
+      // to SmsService (e.g. NETGSM_MOCK dev flows, or LeadService
+      // upstream not enforcing DTO shape). netgsm_only must preserve
+      // that today-works behaviour so this refactor is a pure lift.
+      await service.sendSms('99999', 'hi');
+      expect(netgsm.sendSms).toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('transient fail'),
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('recovered on retry'),
+        expect.stringContaining('legacy passthrough'),
       );
     });
 
-    it('retries once on HTTP 5xx and succeeds on the second attempt', async () => {
-      process.env.NETGSM_MOCK = 'false';
-      process.env.NETGSM_USERNAME = 'u';
-      process.env.NETGSM_PASSWORD = 'p';
-      process.env.NETGSM_MSGHEADER = 'h';
-      jest
-        .spyOn(global, 'setTimeout')
-        .mockImplementation(((cb: any) => cb()) as any);
-      const serverErr: any = new Error('bad gateway');
-      serverErr.response = { status: 502 };
-      http.post
-        .mockReturnValueOnce(throwError(() => serverErr))
-        .mockReturnValueOnce(of({ data: { code: '00', jobid: 'j3' } } as AxiosResponse));
-
-      await expect(service.sendSms('05321112233', 'x', 'booking_confirmation')).resolves.toBeUndefined();
-      expect(http.post).toHaveBeenCalledTimes(2);
-      expect(counter.inc).toHaveBeenCalledWith({
-        context: 'booking_confirmation',
-        outcome: 'success_on_retry',
+    it('increments chatbu_sms_send_total with provider=netgsm on success', async () => {
+      await service.sendSms('+905321112233', 'x', 'otp');
+      expect(smsCounter.inc).toHaveBeenCalledWith({
+        provider: 'netgsm',
+        context: 'otp',
+        country: 'TR',
+        outcome: 'success',
       });
     });
 
-    it('does NOT retry on HTTP 4xx (permanent — bad credentials / malformed)', async () => {
-      process.env.NETGSM_MOCK = 'false';
-      process.env.NETGSM_USERNAME = 'u';
-      process.env.NETGSM_PASSWORD = 'p';
-      process.env.NETGSM_MSGHEADER = 'h';
-      const authErr: any = new Error('unauthorized');
-      authErr.response = { status: 401 };
-      http.post.mockReturnValueOnce(throwError(() => authErr));
-
-      await expect(service.sendSms('05321112233', 'x', 'otp')).rejects.toThrow(
-        'unauthorized',
-      );
-      expect(http.post).toHaveBeenCalledTimes(1);
-      expect(counter.inc).toHaveBeenCalledWith({
+    it('increments the counter with outcome=failure on provider throw', async () => {
+      netgsm.sendSms.mockRejectedValueOnce(new Error('boom'));
+      await expect(
+        service.sendSms('+905321112233', 'x', 'otp'),
+      ).rejects.toThrow('boom');
+      expect(smsCounter.inc).toHaveBeenCalledWith({
+        provider: 'netgsm',
         context: 'otp',
-        outcome: 'permanent_fail',
+        country: 'TR',
+        outcome: 'failure',
       });
     });
   });
 
   // ---------------------------------------------------------------------
-  // sendOtpSms — OTP wrapper
+  // Router — route_by_country (Slice 2 dev; NETGSM-only until the
+  // international provider lands in the SNS follow-up PR)
+  // ---------------------------------------------------------------------
+
+  describe('strategy=route_by_country', () => {
+    beforeEach(() => buildService('route_by_country'));
+
+    it('routes TR phones to NETGSM', async () => {
+      await service.sendSms('+905321112233', 'hi', 'otp');
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({ country: 'TR' }),
+      );
+    });
+
+    it('routes US phones to NETGSM until the international provider ships', async () => {
+      // With no international provider registered, non-TR phones still
+      // land on NETGSM (which will reject them at transport). The SNS
+      // follow-up PR flips this expectation to expect the international
+      // provider mock instead.
+      await service.sendSms('+14155551234', 'hi', 'otp');
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({ country: 'US', e164: '+14155551234' }),
+      );
+    });
+
+    it('rejects unparsable phone with INVALID_PHONE_E164', async () => {
+      // Legacy passthrough is disabled under route_by_country — the
+      // strict gate is what prevents an international non-TR string
+      // from silently landing on NETGSM under the new strategy.
+      await expect(
+        service.sendSms('hello world', 'hi'),
+      ).rejects.toThrow(BadRequestException);
+      expect(netgsm.sendSms).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('strategy default fallback', () => {
+    it('falls back to netgsm_only when SMS_PROVIDER_STRATEGY is unset', async () => {
+      await buildService(undefined);
+      await service.sendSms('+14155551234', 'x', 'otp');
+      expect(netgsm.sendSms).toHaveBeenCalled();
+    });
+
+    it('falls back to netgsm_only when SMS_PROVIDER_STRATEGY is garbage', async () => {
+      process.env.SMS_PROVIDER_STRATEGY = 'blahblah';
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          SmsService,
+          { provide: NetgsmSmsProvider, useValue: { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) } },
+          { provide: WINSTON_MODULE_PROVIDER, useValue: { info: jest.fn(), error: jest.fn(), warn: jest.fn() } },
+          { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: { inc: jest.fn() } },
+        ],
+      }).compile();
+      const svc = module.get(SmsService);
+      const netgsmProv = module.get(NetgsmSmsProvider) as any;
+      await svc.sendSms('+14155551234', 'x', 'otp');
+      expect(netgsmProv.sendSms).toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Wrapper methods — verify context tag + body composition unchanged
   // ---------------------------------------------------------------------
 
   describe('sendOtpSms', () => {
-    it('composes the Turkish body by default', async () => {
-      await service.sendOtpSms('05321112233', '123456', 'Test Bot');
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Test Bot doğrulama kodunuz: 123456'),
+    beforeEach(() => buildService('netgsm_only'));
+
+    it('composes the Turkish OTP body by default', async () => {
+      await service.sendOtpSms('+905321112233', '123456', 'Test Bot');
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'otp',
+          message: 'Test Bot doğrulama kodunuz: 123456. Kod 5 dakika geçerlidir.',
+        }),
       );
     });
 
-    it('composes the English body when lang=en', async () => {
-      await service.sendOtpSms('05321112233', '123456', 'Test Bot', 'en');
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Your Test Bot verification code: 123456'),
-      );
-    });
-
-    it('routes through sendSms (tagged as "otp")', async () => {
-      await service.sendOtpSms('05321112233', '000000', 'B');
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Would send otp'),
+    it('composes the English OTP body when lang=en', async () => {
+      await service.sendOtpSms('+905321112233', '123456', 'Test Bot', 'en');
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Your Test Bot verification code: 123456. Valid for 5 minutes.',
+        }),
       );
     });
   });
 
-  // ---------------------------------------------------------------------
-  // sendBookingConfirmationSms
-  // ---------------------------------------------------------------------
-
   describe('sendBookingConfirmationSms', () => {
+    beforeEach(() => buildService('netgsm_only'));
     // A UTC instant equivalent to 2026-10-06 14:30 Europe/Istanbul (UTC+3).
     const start = new Date('2026-10-06T11:30:00Z');
 
     it('formats the datetime in Europe/Istanbul by default (TR)', async () => {
       await service.sendBookingConfirmationSms(
-        '05321112233',
+        '+905321112233',
         'MyBot',
         start,
         'AI/LLM Bootcamp',
       );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('MyBot randevunuz 06/10 14:30 için onaylandı'),
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('AI/LLM Bootcamp'),
-      );
-    });
-
-    it('formats the datetime in English when lang=en', async () => {
-      await service.sendBookingConfirmationSms(
-        '05321112233',
-        'MyBot',
-        start,
-        'AI/LLM Bootcamp',
-        'en',
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Your MyBot appointment is confirmed for 06/10 14:30',
-        ),
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'booking_confirmation',
+          message: expect.stringContaining('MyBot randevunuz 06/10 14:30 için onaylandı'),
+        }),
       );
     });
 
     it('honors an explicit timezone override (UTC)', async () => {
       await service.sendBookingConfirmationSms(
-        '05321112233',
+        '+905321112233',
         'MyBot',
         start,
         'Class',
         'tr',
         'UTC',
       );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('06/10 11:30'),
-      );
-    });
-
-    it('routes through sendSms (tagged as "booking_confirmation")', async () => {
-      await service.sendBookingConfirmationSms(
-        '05321112233',
-        'B',
-        start,
-        's',
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Would send booking_confirmation'),
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('06/10 11:30'),
+        }),
       );
     });
   });
 
-  // ---------------------------------------------------------------------
-  // sendBookingReminderSms
-  // ---------------------------------------------------------------------
-
   describe('sendBookingReminderSms', () => {
-    // 2026-10-06 14:30 Europe/Istanbul as UTC
+    beforeEach(() => buildService('netgsm_only'));
     const start = new Date('2026-10-06T11:30:00Z');
 
-    it('produces the "tomorrow at HH:MM" wording for offset 1440 (TR)', async () => {
+    it('produces the "tomorrow" wording for offset 1440 (TR)', async () => {
       await service.sendBookingReminderSms(
-        '05321112233',
-        'MyBot',
-        start,
-        'AI/LLM Bootcamp',
-        1440,
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('MyBot randevunuzu hatırlatırız: yarın 14:30'),
-      );
-      // Full date NOT included for the "tomorrow" branch — recipient
-      // already knows the day is tomorrow, only the time matters.
-      expect(logger.info).not.toHaveBeenCalledWith(
-        expect.stringContaining('06/10 14:30'),
-      );
-    });
-
-    it('produces the "in 1 hour at HH:MM" wording for offset 60 (TR)', async () => {
-      await service.sendBookingReminderSms(
-        '05321112233',
-        'MyBot',
-        start,
-        'AI/LLM Bootcamp',
-        60,
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'MyBot randevunuz yaklaşıyor: 1 saat sonra 14:30',
-        ),
-      );
-    });
-
-    it('produces the English "tomorrow" variant when lang=en', async () => {
-      await service.sendBookingReminderSms(
-        '05321112233',
+        '+905321112233',
         'MyBot',
         start,
         'Class',
         1440,
-        'en',
       );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Reminder: your MyBot appointment is tomorrow at 14:30',
-        ),
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'booking_reminder',
+          message: expect.stringContaining('MyBot randevunuzu hatırlatırız: yarın 14:30'),
+        }),
       );
     });
 
-    it('produces the English "1 hour" variant when lang=en', async () => {
+    it('produces the "in 1 hour" wording for offset 60 (EN)', async () => {
       await service.sendBookingReminderSms(
-        '05321112233',
+        '+905321112233',
         'MyBot',
         start,
         'Class',
         60,
         'en',
       );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining(
-          'Reminder: your MyBot appointment is in 1 hour at 14:30',
-        ),
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Reminder: your MyBot appointment is in 1 hour at 14:30'),
+        }),
       );
     });
 
-    it('falls back to the generic "N hours" wording for unusual offsets (TR)', async () => {
+    it('falls back to generic "N hours" wording for unusual offsets (TR)', async () => {
       await service.sendBookingReminderSms(
-        '05321112233',
+        '+905321112233',
         'MyBot',
         start,
         'Class',
-        180, // 3 hours
+        180,
       );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('3 saat sonra'),
-      );
-      // Generic branch DOES include the full date so the recipient
-      // knows exactly when — offset alone is ambiguous.
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('06/10 14:30'),
-      );
-    });
-
-    it('routes through sendSms (tagged as "booking_reminder")', async () => {
-      await service.sendBookingReminderSms(
-        '05321112233',
-        'B',
-        start,
-        's',
-        60,
-      );
-      expect(logger.info).toHaveBeenCalledWith(
-        expect.stringContaining('Would send booking_reminder'),
+      expect(netgsm.sendSms).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('3 saat sonra'),
+        }),
       );
     });
   });

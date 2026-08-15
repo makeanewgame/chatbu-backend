@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
-import { SmsService } from 'src/sms/sms.service';
+import { SmsService, parsePhoneToE164 } from 'src/sms/sms.service';
 import { SubmitLeadDto } from './dto/submit-lead.dto';
 import { ListLeadsDto } from './dto/list-leads.dto';
 import { MarkLeadStatusDto } from './dto/mark-lead-status.dto';
@@ -694,11 +694,34 @@ export class LeadService {
     const codeHash = crypto.createHash('sha256').update(code).digest('hex');
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000);
 
+    // Parse country to persist alongside the verification row (Slice 2,
+    // 2026-08-13). SmsService will parse again inside sendOtpSms — the
+    // parse is idempotent and cheap (~microseconds), and doing it here
+    // lets us store the country BEFORE the SMS attempt so a partial
+    // failure (SMS send throws) still leaves a queryable audit row.
+    // parsePhoneToE164 returns null for unparseable input; we tolerate
+    // that by writing `country: null` (schema is nullable) — the sms
+    // send below still runs, and under `netgsm_only` strategy the
+    // SmsService's legacy fallback preserves today's behaviour. Under
+    // `route_by_country` the send will throw INVALID_PHONE_E164 and
+    // the visitor will see a friendly retry sentinel.
+    const parsed = parsePhoneToE164(dto.phone);
+    const country = parsed?.country ?? null;
+
     await this.prisma.leadSmsVerification.create({
-      data: { botId: dto.botId, phone: dto.phone, codeHash, expiresAt },
+      data: { botId: dto.botId, phone: dto.phone, codeHash, expiresAt, country },
     });
 
-    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, 'tr');
+    // Country → OTP body language. TR bots get the Turkish body; every
+    // other country gets the English fallback. This is the minimal
+    // Slice 2 shape — full i18n (per-visitor language, more locales)
+    // ships in Slice 3 alongside the KVKK card i18n. Deliberately no
+    // per-bot language override yet: bot owners today can't set a
+    // "preferred SMS language" and every existing TR bot with an
+    // international visitor is better served by an English body than
+    // by Turkish they can't read.
+    const smsLang: 'tr' | 'en' = country === 'TR' ? 'tr' : 'en';
+    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang);
 
     // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK
     // — if the state isn't there yet (backfill hasn't seen this
