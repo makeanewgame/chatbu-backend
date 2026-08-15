@@ -3,10 +3,19 @@
 # resource; this is a small dev-local copy (namespace is injected by the
 # overlay's namespace transformer → chatbu-dev). backend pods run as
 # serviceAccountName: backend-sa and would fail to start without it.
+#
+# IRSA annotation is stable — role_name is fixed in
+# `fovi-longa-chat-be/terraform/chatbu-backend-iam.tf`; the trust policy
+# there lists both `chatbu:backend-sa` (prod) and `chatbu-dev:backend-sa`
+# (this file), so the same role ARN works for both namespaces. Grants
+# `sns:Publish` for `SmsService.SnsSmsProvider` (international SMS
+# routing under `SMS_PROVIDER_STRATEGY=route_by_country`).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: backend-sa
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::152100380489:role/chatbu-backend-sns-role
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
