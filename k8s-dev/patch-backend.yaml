@@ -42,29 +42,17 @@ spec:
               value: "https://dev.chatbu.io/api/integration/google-calendar/callback"
             # SMS provider routing (Slice 2, 2026-08-13). When set to
             # `route_by_country`, `SmsService.pickProvider` sends TR
-            # phones to NETGSM and everything else to `SnsSmsProvider`
-            # (AWS SNS). The SNS client picks up IRSA credentials
-            # automatically from the backend-sa service account (IAM
-            # role `chatbu-backend-sns-role`, granted `sns:Publish` by
-            # fovi-longa-chat-be/terraform/chatbu-backend-iam.tf).
-            # Prod stays on the default `netgsm_only` (unset here →
-            # SmsService constructor default) until the Slice 4
-            # prod-flip PR.
+            # phones to NETGSM and everything else to Twilio. The
+            # `TwilioSmsProvider` picks up its credentials from
+            # `backend-secrets` (populated by the Twilio ExternalSecret
+            # in fovi-longa-chat-be/k8s/secret-mirror-dev/external-
+            # secrets.yaml). Prod stays on the default `netgsm_only`
+            # (unset here → SmsService constructor default) until the
+            # Slice 4 prod-flip PR.
             - name: SMS_PROVIDER_STRATEGY
               value: "route_by_country"
-            # SNS dev escape hatch (mirror of NETGSM_MOCK). Default
-            # "true" while the SNS sandbox → prod-access ticket is
-            # pending — sandbox mode only delivers to whitelisted
-            # phone numbers, so a smoke test to an arbitrary US/UK
-            # number would silently fail. Log-only mock keeps dev
-            # exercising the router + provider code path end-to-end
-            # without the whitelist dance. Flip to "false" once the
-            # SNS prod-access ticket clears and you want real
-            # deliveries on dev.
-            - name: SNS_MOCK
-              value: "true"
-            # Alphanumeric sender ID for countries that support it
-            # (most of EU/APAC). US ignores this and falls back to
-            # SNS-picked long code automatically. Kept short + branded.
-            - name: SNS_SENDER_ID
-              value: "Chatbu"
+            # Twilio dev escape hatch (mirror of NETGSM_MOCK). Leave
+            # UNSET to hit the real Twilio API — user provisioned real
+            # dev credentials in `chatbu/dev/twilio` (2026-08-13). Set
+            # to "true" temporarily when iterating on routing changes
+            # to avoid burning real Twilio credit on smoke tests.
