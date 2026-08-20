@@ -3,7 +3,7 @@ import { SmsProvider } from './sms-provider.interface';
 /**
  * In-process test-only provider. Records every send call in `.sends`
  * so unit tests can assert on the router's provider-picking decision
- * without pulling in a real transport SDK or `HttpService` mocks. Also
+ * without pulling in `require('twilio')` or `HttpService` mocks. Also
  * useful for a smoke-test deployment that wants to exercise the
  * router without any real transport wired up.
  *
