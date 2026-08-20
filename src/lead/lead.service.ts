@@ -12,6 +12,16 @@ import { VerifyLeadDto } from './dto/verify-lead.dto';
 import { RequestSmsVerificationDto } from './dto/request-sms-verification.dto';
 import { VerifySmsDto } from './dto/verify-sms.dto';
 import { RecordPrivacyConsentDto } from './dto/record-privacy-consent.dto';
+import {
+  Jurisdiction,
+  resolveConsentLocale,
+  resolveJurisdiction,
+} from './jurisdiction.util';
+import {
+  ConsentTextPack,
+  getConsentPack,
+  renderControllerNotice,
+} from './consent-text.constants';
 import { LeadDestination } from 'src/bot/lead-destination.constants';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
 import { ChatFlowService, TransitionArgs, normalizePhoneForDedup } from 'src/chat-flow/chat-flow.service';
@@ -39,6 +49,20 @@ const LEGACY_KVKK_VERSION_FALLBACK = process.env.KVKK_TEXT_VERSION || 'v1.0';
 const CONSENT_FRESHNESS_MINUTES = 60;
 
 type VerifyFailureReason = 'not_found' | 'expired' | 'too_many_attempts' | 'wrong_code';
+
+// Read the bot owner's configured default jurisdiction out of the free-form
+// settings JSON. Silent-null on missing/invalid so the resolver can fall
+// through to the browser locale + generic default; we deliberately do not
+// throw here — a mis-set field must not break consent flow.
+function readBotDefaultJurisdiction(settings: unknown): Jurisdiction | null {
+  if (!settings || typeof settings !== 'object') return null;
+  const raw = (settings as { defaultJurisdiction?: unknown }).defaultJurisdiction;
+  if (typeof raw !== 'string') return null;
+  const lower = raw.toLowerCase() as Jurisdiction;
+  return (['gdpr', 'kvkk', 'ccpa', 'pdpl', 'generic'] as const).includes(lower)
+    ? lower
+    : null;
+}
 
 @Injectable()
 export class LeadService {
@@ -501,13 +525,25 @@ export class LeadService {
   }
 
   /**
-   * Record that a visitor accepted the KVKK Aydınlatma Metni + Kullanım
-   * Şartları, *before* their phone number is known. `requestSmsVerification`
+   * Record that a visitor accepted the Privacy Notice + Terms of Use,
+   * *before* their phone number is known. `requestSmsVerification`
    * requires a fresh row here for the same (botId, chatId) before it will
    * ever send an OTP - this is the deterministic, server-verified gate; it
    * is never inferred from anything the model or the visitor typed in chat.
+   *
+   * Slice 3 (2026-08-20): jurisdiction-aware. When the widget sends
+   * `locale` / `jurisdiction`, we persist exactly what was shown. When
+   * not (legacy widget, or when Accept-Language is the only signal), we
+   * resolve server-side via bot default + browser locale. The persisted
+   * `country` stays NULL here — it is joined in later via
+   * `bindProvisionalConsent` once the OTP phone parse gives us one.
    */
-  async recordPrivacyConsent(dto: RecordPrivacyConsentDto, ipAddress: string | null, userAgent: string | null) {
+  async recordPrivacyConsent(
+    dto: RecordPrivacyConsentDto,
+    ipAddress: string | null,
+    userAgent: string | null,
+    acceptLanguage: string | null = null,
+  ) {
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: dto.botId, isDeleted: false },
     });
@@ -516,16 +552,36 @@ export class LeadService {
       throw new NotFoundException('Bot not found');
     }
 
-    const locale = 'tr';
+    // Resolve jurisdiction: DTO wins if the widget sent one; else server
+    // derives from bot's configured default and the browser's locale.
+    const botDefault = readBotDefaultJurisdiction(bot.settings);
+    const jurisdiction: Jurisdiction =
+      dto.jurisdiction ??
+      resolveJurisdiction({
+        botDefault,
+        browserLocale: acceptLanguage,
+      });
+    const locale = resolveConsentLocale({
+      jurisdiction,
+      explicit: dto.locale ?? null,
+      browserLocale: acceptLanguage,
+    });
+
+    // Try the LegalDocument admin table first (source of truth once
+    // seeded), fall back to the hardcoded pack version so a bot without
+    // legal-doc rows still gets an audit-quality version string.
     let legalDocumentVersionId: string | null = null;
-    let privacyVersion = LEGACY_KVKK_VERSION_FALLBACK;
+    let privacyVersion = getConsentPack(jurisdiction, locale).version;
     try {
-      const published = await this.legalDocumentService.getPublished('kvkk', locale);
+      // Composite slug encodes jurisdiction so KVKK/GDPR/CCPA/PDPL live
+      // as sibling LegalDocuments; the pre-Slice-3 slug 'kvkk' is still
+      // consulted for backward compat when the jurisdiction is 'kvkk'.
+      const slug = jurisdiction === 'kvkk' ? 'kvkk' : `privacy-${jurisdiction}`;
+      const published = await this.legalDocumentService.getPublished(slug, locale);
       legalDocumentVersionId = published.versionId;
       privacyVersion = `v${published.versionNumber}`;
     } catch {
-      // No published "kvkk" LegalDocumentVersion yet — fall back to the
-      // legacy hardcoded label until the admin publishes one.
+      // No published version yet — hardcoded pack version is authoritative.
     }
 
     const consent = await this.prisma.leadPrivacyConsent.create({
@@ -537,6 +593,8 @@ export class LeadService {
         privacyVersion,
         legalDocumentVersionId,
         locale,
+        jurisdiction,
+        country: null, // filled by bindProvisionalConsent when OTP parses
         privacyAcceptedAt: new Date(),
         ipAddress: ipAddress || null,
         userAgent: userAgent || null,
@@ -554,7 +612,81 @@ export class LeadService {
       payload: { source: 'widget_kvkk_accept', consent_id: consent.id },
     });
 
-    return { accepted: true, consentId: consent.id, privacyVersion: consent.privacyVersion };
+    return {
+      accepted: true,
+      consentId: consent.id,
+      privacyVersion: consent.privacyVersion,
+      jurisdiction: consent.jurisdiction,
+      locale: consent.locale,
+    };
+  }
+
+  /**
+   * Serve the consent-card text pack the widget needs to render before
+   * the user has accepted anything. Server-side jurisdiction/locale
+   * resolution mirrors `recordPrivacyConsent` so the visitor sees the
+   * same pack we will later persist.
+   *
+   * Cache-safe: response is fully derivable from (botId, resolved
+   * jurisdiction, resolved locale) — the controller sets a short
+   * `Cache-Control: public, max-age=300` on top.
+   */
+  async getConsentText(
+    botId: string,
+    input: {
+      explicitLocale?: string | null;
+      explicitJurisdiction?: Jurisdiction | null;
+      acceptLanguage?: string | null;
+    },
+  ) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: botId, isDeleted: false },
+      select: { id: true, teamId: true, settings: true },
+    });
+    if (!bot) throw new NotFoundException('Bot not found');
+
+    const team = await this.prisma.team.findUnique({
+      where: { id: bot.teamId },
+      select: { businessName: true, name: true },
+    });
+
+    const botDefault = readBotDefaultJurisdiction(bot.settings);
+    const jurisdiction: Jurisdiction =
+      input.explicitJurisdiction ??
+      resolveJurisdiction({
+        botDefault,
+        browserLocale: input.acceptLanguage ?? null,
+      });
+    const locale = resolveConsentLocale({
+      jurisdiction,
+      explicit: input.explicitLocale ?? null,
+      browserLocale: input.acceptLanguage ?? null,
+    });
+
+    const pack = getConsentPack(jurisdiction, locale);
+    // Prefer businessName (customer-set brand) → team.name (fallback) →
+    // empty (renderControllerNotice substitutes a neutral phrase).
+    const controllerName = team?.businessName?.trim() || team?.name?.trim() || '';
+    const controllerNotice = renderControllerNotice(pack, controllerName);
+
+    // Return the resolved pack — jurisdiction/locale echoed so the widget
+    // can persist exactly what it rendered on the follow-up POST.
+    return {
+      botId,
+      jurisdiction: pack.jurisdiction,
+      locale: pack.locale,
+      version: pack.version,
+      title: pack.title,
+      intro: pack.intro,
+      controllerNotice,
+      checkboxLabel: pack.checkboxLabel,
+      continueButton: pack.continueButton,
+      submitting: pack.submitting,
+      acceptedLabel: pack.acceptedLabel,
+      errorMessage: pack.errorMessage,
+      privacyPolicyUrl: pack.privacyPolicyUrl,
+      termsOfUseUrl: pack.termsOfUseUrl,
+    };
   }
 
   /**
@@ -788,9 +920,18 @@ export class LeadService {
       orderBy: { createdAt: 'desc' },
     });
     if (consent) {
+      // Slice 3: fill in `country` on the consent row from the
+      // just-verified SMS record. Only set if consent.country is still
+      // null — never overwrite a value that was persisted earlier.
       await this.prisma.leadPrivacyConsent.update({
         where: { id: consent.id },
-        data: { otpVerified: true, otpVerifiedAt: new Date() },
+        data: {
+          otpVerified: true,
+          otpVerifiedAt: new Date(),
+          ...(consent.country == null && record.country
+            ? { country: record.country }
+            : {}),
+        },
       });
       // Advance LEAD flow to OTP_VERIFIED. Consent row carries the
       // chatId; verifySmsCode's own DTO doesn't (it's keyed on
