@@ -28,8 +28,9 @@ describe('getConsentPack', () => {
     expect(pack.locale).toBe('en');
   });
 
-  it('falls (gdpr, fr) → (gdpr, en) — locale unsupported for jurisdiction', () => {
-    const pack = getConsentPack('gdpr', 'fr');
+  it('(gdpr, pt) falls to (gdpr, en) — locale unsupported for jurisdiction', () => {
+    // Portuguese GDPR would need legal review; not yet shipped.
+    const pack = getConsentPack('gdpr', 'pt');
     expect(pack.jurisdiction).toBe('gdpr');
     expect(pack.locale).toBe('en');
   });
@@ -45,6 +46,48 @@ describe('getConsentPack', () => {
     const pack = getConsentPack('kvkk', 'en');
     expect(pack.jurisdiction).toBe('kvkk');
     expect(pack.locale).toBe('tr');
+  });
+
+  it('returns GDPR-FR / GDPR-IT / GDPR-ES for matching locales', () => {
+    expect(getConsentPack('gdpr', 'fr').locale).toBe('fr');
+    expect(getConsentPack('gdpr', 'fr').title).toMatch(/confidentialité/i);
+    expect(getConsentPack('gdpr', 'it').locale).toBe('it');
+    expect(getConsentPack('gdpr', 'it').title).toMatch(/privacy/i);
+    expect(getConsentPack('gdpr', 'es').locale).toBe('es');
+    expect(getConsentPack('gdpr', 'es').title).toMatch(/privacidad/i);
+  });
+
+  it('returns CCPA-EN for (ccpa, en) with CCPA-specific wording', () => {
+    const pack = getConsentPack('ccpa', 'en');
+    expect(pack.jurisdiction).toBe('ccpa');
+    expect(pack.locale).toBe('en');
+    expect(pack.intro).toMatch(/CCPA|California/);
+  });
+
+  it('returns PDPL-EN for (pdpl, en) with Gulf-PDPL wording', () => {
+    const pack = getConsentPack('pdpl', 'en');
+    expect(pack.jurisdiction).toBe('pdpl');
+    expect(pack.locale).toBe('en');
+    expect(pack.intro).toMatch(/PDPL/);
+  });
+
+  it('(ccpa, es) falls to (ccpa, en) — locale unsupported for jurisdiction', () => {
+    // Spanish CCPA would need California legal review; not shipped.
+    const pack = getConsentPack('ccpa', 'es');
+    expect(pack.jurisdiction).toBe('ccpa');
+    expect(pack.locale).toBe('en');
+  });
+
+  it('(pdpl, ar) falls to (pdpl, en) — Arabic PDPL needs native review', () => {
+    const pack = getConsentPack('pdpl', 'ar');
+    expect(pack.jurisdiction).toBe('pdpl');
+    expect(pack.locale).toBe('en');
+  });
+
+  it('(gdpr, ru) falls to (gdpr, en) — Russian GDPR not shipped yet', () => {
+    const pack = getConsentPack('gdpr', 'ru');
+    expect(pack.jurisdiction).toBe('gdpr');
+    expect(pack.locale).toBe('en');
   });
 });
 

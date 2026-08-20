@@ -138,7 +138,22 @@ export function resolveJurisdiction(input: ResolveJurisdictionInput): Jurisdicti
 // language tag ('de-DE' → 'de'); we snap to the supported set and fall
 // through to 'en'. Never returns 'tr' unless the jurisdiction is KVKK
 // — Turkish copy is only shipped for the KVKK pack.
-const SUPPORTED_CONSENT_LOCALES: readonly string[] = ['en', 'tr', 'de'] as const;
+//
+// Matches the backend's `SUPPORTED_LOCALES` in legal-document.dto and the
+// frontend widget bundle's supportedLngs. Adding a new locale here is
+// only useful when a matching consent pack exists in
+// consent-text.constants — otherwise getConsentPack will fall through to
+// generic-en for that locale.
+const SUPPORTED_CONSENT_LOCALES: readonly string[] = [
+  'en',
+  'tr',
+  'de',
+  'fr',
+  'it',
+  'es',
+  'ru',
+  'ar',
+] as const;
 
 export function resolveConsentLocale(input: {
   jurisdiction: Jurisdiction;
