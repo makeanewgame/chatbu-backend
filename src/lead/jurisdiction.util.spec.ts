@@ -139,4 +139,22 @@ describe('resolveConsentLocale', () => {
     expect(resolveConsentLocale({ jurisdiction: 'generic' })).toBe('en');
     expect(resolveConsentLocale({ jurisdiction: 'ccpa' })).toBe('en');
   });
+
+  it('honors all newly-supported EU locales (fr, it, es)', () => {
+    expect(resolveConsentLocale({ jurisdiction: 'gdpr', explicit: 'fr' })).toBe('fr');
+    expect(resolveConsentLocale({ jurisdiction: 'gdpr', explicit: 'it' })).toBe('it');
+    expect(resolveConsentLocale({ jurisdiction: 'gdpr', explicit: 'es' })).toBe('es');
+  });
+
+  it('accepts ru + ar as supported locales even without a jurisdiction pack', () => {
+    // resolveConsentLocale returns the locale — pack lookup happens
+    // separately via getConsentPack, which falls to (jurisdiction, en).
+    expect(resolveConsentLocale({ jurisdiction: 'gdpr', explicit: 'ru' })).toBe('ru');
+    expect(resolveConsentLocale({ jurisdiction: 'pdpl', explicit: 'ar' })).toBe('ar');
+  });
+
+  it('unsupported locale (zh, pt, hi) falls to EN', () => {
+    expect(resolveConsentLocale({ jurisdiction: 'gdpr', explicit: 'zh' })).toBe('en');
+    expect(resolveConsentLocale({ jurisdiction: 'gdpr', explicit: 'pt' })).toBe('en');
+  });
 });
