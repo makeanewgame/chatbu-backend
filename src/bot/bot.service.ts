@@ -1479,6 +1479,7 @@ export class BotService {
     res: Response,
     attachments?: any[],
     provisionalConsentId?: string,
+    visitorLocale?: string,
   ): Promise<{
     tokenCount: number;
     humanHandover: boolean;
@@ -1494,6 +1495,7 @@ export class BotService {
         date: new Date().toISOString(),
         attachments,
         provisionalConsentId,
+        visitorLocale,
       } as any,
       ip,
       res,
@@ -1631,6 +1633,7 @@ export class BotService {
     ip: string,
     attachments?: any[],
     provisionalConsentId?: string,
+    visitorLocale?: string,
   ) {
     return this.chat(
       {
@@ -1642,6 +1645,7 @@ export class BotService {
         date: new Date().toISOString(),
         attachments,
         provisionalConsentId,
+        visitorLocale,
       } as any,
       ip,
     );

@@ -83,6 +83,7 @@ export class WidgetController {
                 res,
                 body.attachments,
                 body.provisionalConsentId,
+                body.visitorLocale,
             );
             return;
         }
@@ -94,6 +95,7 @@ export class WidgetController {
             ip,
             body.attachments,
             body.provisionalConsentId,
+            body.visitorLocale,
         );
         res.status(200).json(result);
     }

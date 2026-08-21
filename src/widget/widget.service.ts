@@ -254,6 +254,7 @@ export class WidgetService {
         ip: string,
         attachments?: any[],
         provisionalConsentId?: string,
+        visitorLocale?: string,
     ) {
         // 1. Verify session token
         let payload: any;
@@ -312,6 +313,7 @@ export class WidgetService {
             normalizedIp,
             attachments,
             provisionalConsentId,
+            visitorLocale,
         );
 
         // 6. Update visitor counters and risk score
@@ -370,6 +372,7 @@ export class WidgetService {
         res: Response,
         attachments?: any[],
         provisionalConsentId?: string,
+        visitorLocale?: string,
     ): Promise<void> {
         // 1. Verify session token (mirror of chat())
         let payload: any;
@@ -446,6 +449,7 @@ export class WidgetService {
             res,
             attachments,
             provisionalConsentId,
+            visitorLocale,
         );
 
         // 8. Visitor counter + risk score (mirror of batch chat L275-302).
