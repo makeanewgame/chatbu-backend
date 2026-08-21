@@ -619,6 +619,11 @@ export class BotService {
             // and no short-circuit occurs). Older gateway pods that don't
             // know about this field ignore it (Pydantic Optional).
             provisional_consent_id: (body as any).provisionalConsentId,
+            // Widget's active i18next locale. Gateway's language_resolver
+            // uses this as a tie-breaker when the visitor's own message is
+            // too short/ambiguous for lingua to classify (single digits,
+            // "??"). Older gateway pods ignore this (Pydantic Optional).
+            visitor_locale: body.visitorLocale,
           })
         );
         data = response.data;
@@ -1126,6 +1131,8 @@ export class BotService {
             model_tier: botUser.modelTier,
             session_id: body.chatId,
             provisional_consent_id: (body as any).provisionalConsentId,
+            // See non-stream /chat path above for rationale.
+            visitor_locale: body.visitorLocale,
           },
           {
             responseType: 'stream',
