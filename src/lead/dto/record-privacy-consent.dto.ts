@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { JURISDICTIONS, Jurisdiction } from '../jurisdiction.util';
 
 export class RecordPrivacyConsentDto {
   @IsString()
@@ -12,4 +13,18 @@ export class RecordPrivacyConsentDto {
   @IsString()
   @IsOptional()
   chatId?: string;
+
+  // Slice 3 (2026-08-20): optional locale + jurisdiction the widget
+  // rendered the consent card in. When present these override the
+  // backend's server-side resolution (which uses Accept-Language +
+  // bot default). The widget SHOULD send them so the persisted row
+  // reflects exactly what the visitor saw, not what the backend
+  // would have resolved from headers alone.
+  @IsString()
+  @IsOptional()
+  locale?: string;
+
+  @IsOptional()
+  @IsIn(JURISDICTIONS as readonly string[])
+  jurisdiction?: Jurisdiction;
 }
