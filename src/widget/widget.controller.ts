@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -113,13 +113,80 @@ export class WidgetController {
     }
 
     /**
-     * Records KVKK consent (Aydınlatma Metni + Kullanım Şartları acceptance)
-     * for a widget visitor, before their phone number is collected for SMS
-     * lead verification. Public like the rest of this controller - bot-scoped
-     * only, no session token needed since consent can happen before a chat
-     * message (and therefore a session) even exists.
+     * Records that a widget visitor accepted the Privacy Notice + Terms
+     * of Use, before their phone number is collected for SMS lead
+     * verification. Public — bot-scoped only, no session token needed
+     * since consent can happen before a chat message (and therefore a
+     * session) even exists.
+     *
+     * Slice 3 (2026-08-20): canonical route is `/lead/privacy-consent`,
+     * and the widget sends jurisdiction + locale in the body so the
+     * persisted row reflects exactly what was shown. The legacy
+     * `/lead/kvkk-consent` route below is a 30-day back-compat wrapper
+     * that resolves jurisdiction server-side from Accept-Language + bot
+     * default.
      */
-    @ApiOperation({ summary: 'Record KVKK consent acceptance for SMS lead verification' })
+    /**
+     * Serve the consent-card text pack (title, intro, controller notice,
+     * button labels, legal URLs) the widget should render.
+     *
+     * Jurisdiction + locale are resolved server-side from an optional
+     * `locale` / `jurisdiction` query hint (widget's i18n.language), the
+     * bot's `settings.defaultJurisdiction`, and the browser's
+     * Accept-Language header. Response includes `jurisdiction` + `locale`
+     * echoes so the widget can send them back on the follow-up POST for
+     * exact-match audit persistence.
+     *
+     * Cache-Control: 5 min public. Text pack is fully derivable from
+     * (botId, jurisdiction, locale), so per-visitor caches are safe.
+     */
+    @ApiOperation({ summary: 'Get Privacy Notice / Terms of Use text pack for widget render' })
+    @Get('lead/privacy-consent-text')
+    @Throttle({ default: { ttl: 60000, limit: 30 } })
+    async getPrivacyConsentText(
+        @Query('botId') botId: string,
+        @Query('locale') locale: string | undefined,
+        @Query('jurisdiction') jurisdiction: string | undefined,
+        @Req() req: Request,
+        @Res({ passthrough: true }) res: Response,
+    ) {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        return this.widgetService.getPrivacyConsentText(botId, {
+            explicitLocale: locale ?? null,
+            explicitJurisdiction: (jurisdiction as any) ?? null,
+            acceptLanguage: (req.headers['accept-language'] as string) ?? null,
+        });
+    }
+
+    @ApiOperation({ summary: 'Record Privacy Notice acceptance for SMS lead verification' })
+    @Post('lead/privacy-consent')
+    @Throttle({ default: { ttl: 60000, limit: 10 } })
+    async recordPrivacyConsent(@Body() body: any, @Req() req: Request) {
+        const ip =
+            ((req.headers['x-forwarded-for'] as string) ?? '')
+                .split(',')[0]
+                .trim() || req.socket?.remoteAddress || '127.0.0.1';
+
+        return this.widgetService.recordKvkkConsent(
+            body.botId,
+            body.chatId,
+            ip,
+            (req.headers['user-agent'] as string) ?? '',
+            body.locale,
+            body.jurisdiction,
+            (req.headers['accept-language'] as string) ?? undefined,
+        );
+    }
+
+    /**
+     * Deprecated 2026-08-20 (Slice 3) — kept for widget bundles shipped
+     * before the rename. Delete after all live widgets have picked up
+     * the `/lead/privacy-consent` canonical URL (~30 days). Same
+     * behaviour as the canonical route; server-side jurisdiction
+     * resolution kicks in because the legacy widget does not send
+     * `locale` / `jurisdiction`.
+     */
+    @ApiOperation({ summary: '[DEPRECATED] Legacy KVKK consent route — use /lead/privacy-consent' })
     @Post('lead/kvkk-consent')
     @Throttle({ default: { ttl: 60000, limit: 10 } })
     async recordKvkkConsent(@Body() body: any, @Req() req: Request) {
@@ -133,6 +200,9 @@ export class WidgetController {
             body.chatId,
             ip,
             (req.headers['user-agent'] as string) ?? '',
+            body.locale,
+            body.jurisdiction,
+            (req.headers['accept-language'] as string) ?? undefined,
         );
     }
 

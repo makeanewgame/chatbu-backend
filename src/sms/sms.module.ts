@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { SmsService } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
-import { SnsSmsProvider } from './providers/sns.provider';
+import { TwilioSmsProvider } from './providers/twilio.provider';
 import {
   chatbuNetgsmSendTotal,
   chatbuSmsSendTotal,
@@ -15,20 +15,17 @@ import {
 // second register()) so we reuse the same provider object here — it's
 // idempotent when referenced from multiple modules.
 //
-// 2026-08-13 provider abstraction: `NetgsmSmsProvider` handles TR sends,
-// `SnsSmsProvider` handles everything else. `SmsService` (the router)
-// injects both and picks per-send based on the parsed phone's country +
-// `SMS_PROVIDER_STRATEGY` env. SNS uses IRSA — the backend pod's service
-// account carries an `sns:Publish` policy (Terraform patch in the
-// `fovi-longa-chat-be` sibling PR) so no credentials appear in code or
-// ExternalSecrets. The SNS client is lazily instantiated inside the
-// provider so a pod that never routes internationally stays healthy
-// even before the SNS sandbox → prod access ticket clears.
+// 2026-08-13 provider abstraction: both `NetgsmSmsProvider` and
+// `TwilioSmsProvider` are registered here so `SmsService` (the router)
+// can inject both. The router picks at request time based on phone
+// country + `SMS_PROVIDER_STRATEGY` env. Twilio's SDK is `require`d
+// lazily inside the provider so a pod without Twilio credentials
+// stays healthy until the first international send.
 @Module({
   imports: [HttpModule],
   providers: [
     NetgsmSmsProvider,
-    SnsSmsProvider,
+    TwilioSmsProvider,
     SmsService,
     chatbuNetgsmSendTotal,
     chatbuSmsSendTotal,

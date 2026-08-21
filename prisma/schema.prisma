@@ -607,6 +607,15 @@ model LeadPrivacyConsent {
   // Nullable because rows created before this system existed have no version.
   legalDocumentVersionId String?
   locale                 String    @default("tr")
+  // Slice 3 (2026-08-20): jurisdiction shorthand shown to the visitor.
+  // 'gdpr' | 'kvkk' | 'ccpa' | 'pdpl' | 'generic'. Nullable; pre-Slice-3
+  // rows are implicitly 'kvkk' since locale='tr' was the only shape.
+  jurisdiction           String?
+  // ISO alpha-2 country, populated by bindProvisionalConsent from
+  // LeadSmsVerification.country once the OTP phone has been parsed.
+  // Consent is written BEFORE the phone is known, so this stays NULL
+  // between consent-accept and OTP-verify.
+  country                String?
   privacyAcceptedAt      DateTime
   ipAddress              String?
   userAgent              String?

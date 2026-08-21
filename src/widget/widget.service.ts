@@ -64,14 +64,53 @@ export class WidgetService {
     }
 
     /**
-     * Records that a widget visitor accepted the KVKK Aydınlatma Metni /
-     * Kullanım Şartları before an SMS OTP will be sent for lead capture.
-     * IP/user-agent are captured server-side from the request, never
+     * Records that a widget visitor accepted the Privacy Notice / Terms
+     * of Use before an SMS OTP will be sent for lead capture. IP /
+     * user-agent are captured server-side from the request, never
      * trusted from the client body, so the resulting audit row holds up
      * even if the browser payload were tampered with.
+     *
+     * Slice 3 (2026-08-20): accepts optional `locale` and `jurisdiction`
+     * from the widget so the row reflects exactly what the visitor saw.
+     * Also threads `acceptLanguage` through so a legacy widget that
+     * omits both still gets a jurisdiction-aware audit row via
+     * server-side resolution.
      */
-    async recordKvkkConsent(botId: string, chatId: string, ip: string, userAgent: string) {
-        return this.leadService.recordPrivacyConsent({ botId, chatId }, ip, userAgent);
+    async recordKvkkConsent(
+        botId: string,
+        chatId: string | undefined,
+        ip: string,
+        userAgent: string,
+        locale?: string,
+        jurisdiction?: string,
+        acceptLanguage?: string,
+    ) {
+        return this.leadService.recordPrivacyConsent(
+            { botId, chatId, locale, jurisdiction: jurisdiction as any },
+            ip,
+            userAgent,
+            acceptLanguage ?? null,
+        );
+    }
+
+    /**
+     * Slice 3 (2026-08-20): widget's pre-render consent-text fetch.
+     * Thin passthrough to LeadService.getConsentText — kept in the widget
+     * service so all widget-scoped endpoints route through one place.
+     */
+    async getPrivacyConsentText(
+        botId: string,
+        input: {
+            explicitLocale?: string | null;
+            explicitJurisdiction?: string | null;
+            acceptLanguage?: string | null;
+        },
+    ) {
+        return this.leadService.getConsentText(botId, {
+            explicitLocale: input.explicitLocale ?? null,
+            explicitJurisdiction: (input.explicitJurisdiction as any) ?? null,
+            acceptLanguage: input.acceptLanguage ?? null,
+        });
     }
 
     // ---------------------------------------------------------------------------
