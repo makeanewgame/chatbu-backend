@@ -624,6 +624,11 @@ export class BotService {
             // too short/ambiguous for lingua to classify (single digits,
             // "??"). Older gateway pods ignore this (Pydantic Optional).
             visitor_locale: body.visitorLocale,
+            // Browser Accept-Language HTTP header — third-tier signal
+            // for the gateway's v2 hybrid language resolver, used when
+            // there's no session sticky AND lingua abstains AND no
+            // visitor_locale. Older gateway pods (pre-v2) ignore this.
+            accept_language: body.acceptLanguage,
           })
         );
         data = response.data;
@@ -1133,6 +1138,7 @@ export class BotService {
             provisional_consent_id: (body as any).provisionalConsentId,
             // See non-stream /chat path above for rationale.
             visitor_locale: body.visitorLocale,
+            accept_language: body.acceptLanguage,
           },
           {
             responseType: 'stream',
@@ -1480,6 +1486,7 @@ export class BotService {
     attachments?: any[],
     provisionalConsentId?: string,
     visitorLocale?: string,
+    acceptLanguage?: string,
   ): Promise<{
     tokenCount: number;
     humanHandover: boolean;
@@ -1496,6 +1503,7 @@ export class BotService {
         attachments,
         provisionalConsentId,
         visitorLocale,
+        acceptLanguage,
       } as any,
       ip,
       res,
@@ -1634,6 +1642,7 @@ export class BotService {
     attachments?: any[],
     provisionalConsentId?: string,
     visitorLocale?: string,
+    acceptLanguage?: string,
   ) {
     return this.chat(
       {
@@ -1646,6 +1655,7 @@ export class BotService {
         attachments,
         provisionalConsentId,
         visitorLocale,
+        acceptLanguage,
       } as any,
       ip,
     );

@@ -50,4 +50,14 @@ export class ChatRequest {
   @IsOptional()
   @IsString()
   visitorLocale?: string;
+
+  // Browser Accept-Language HTTP header, captured at the widget/chat
+  // controller from `req.headers['accept-language']` and forwarded to
+  // the gateway. Third-tier signal for the gateway's v2 hybrid
+  // language resolver — used when session sticky is empty AND lingua
+  // is unreliable AND visitor_locale is absent. Optional; the widget
+  // controller populates it, the direct /bot/chat path may not.
+  @IsOptional()
+  @IsString()
+  acceptLanguage?: string;
 }
