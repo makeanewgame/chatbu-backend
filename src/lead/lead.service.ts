@@ -251,11 +251,16 @@ export class LeadService {
         channelsAttempted.push(destination.channel);
         try {
           if (destination.channel === 'email') {
+            // Bot's primary language (wizard v2 CustomerBots.primaryLanguage,
+            // docs/WIZARD_V2.md) selects the notification locale. v1 bots
+            // never set this field — null falls through to MailService's
+            // 'en' fallback. Unknown locale strings also fall back to 'en'
+            // inside MailService.
             await this.mailService.sendLeadNotification(
               destination.target,
               bot.botName,
               cleanLeadData,
-              'en',
+              bot.primaryLanguage ?? 'en',
             );
           }
           channelsSucceeded.push(destination.channel);

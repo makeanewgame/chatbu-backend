@@ -1,0 +1,58 @@
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nuovo lead ricevuto</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #333333; margin: 0; padding: 0; background-color: #f7f7f7; }
+      p { font-size: 16px; }
+      .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; }
+      .header { text-align: center; padding: 20px 0; border-bottom: 1px solid #eeeeee; }
+      .logo { max-height: 60px; margin-bottom: 10px; }
+      .content { padding: 30px 20px; }
+      .lead-box { background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2b72e4; }
+      .lead-box p { margin: 8px 0; }
+      .lead-box strong { color: #2b72e4; }
+      .notes-content { background-color: #ffffff; padding: 15px; border-radius: 4px; margin-top: 10px; border: 1px solid #e0e0e0; white-space: pre-wrap; word-wrap: break-word; }
+      .button { display: inline-block; padding: 12px 25px; background-color: #2b72e4; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: bold; margin-top: 20px; }
+      .footer { text-align: center; padding: 20px; color: #999999; font-size: 12px; border-top: 1px solid #eeeeee; margin-top: 20px; }
+      @media only screen and (max-width: 600px) { .container { width: 100%; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <img src="https://app.chatbu.io/images/chatbu-logo.png" alt="Chatbu Logo" class="logo" />
+        <h2>Nuovo lead ricevuto</h2>
+      </div>
+
+      <div class="content">
+        <p>Un visitatore ha chiesto di essere contattato tramite il tuo bot {{botName}}.</p>
+
+        <div class="lead-box">
+          {{#if name}}<p><strong>Nome:</strong> {{name}}</p>{{/if}}
+          {{#if email}}<p><strong>E-mail:</strong> {{email}}</p>{{/if}}
+          {{#if phone}}<p><strong>Telefono:</strong> {{phone}}</p>{{/if}}
+          <p><strong>Ricevuto:</strong> {{createdAt}}</p>
+          {{#if notes}}
+          <p><strong>Note:</strong></p>
+          <div class="notes-content">{{notes}}</div>
+          {{/if}}
+        </div>
+
+        <p>Puoi rivedere questo lead e il suo stato di consegna nella tua casella dei lead:</p>
+
+        <a href="{{leadsInboxUrl}}" class="button">Visualizza nella casella dei lead</a>
+      </div>
+
+      <div class="footer">
+        <p>&copy; 2026 {{company}}. Tutti i diritti riservati.</p>
+        <p>
+          <a href="{{privacyPolicyUrl}}" style="color: #2b72e4; text-decoration: none;">Informativa sulla privacy</a> |
+          <a href="{{supportUrl}}" style="color: #2b72e4; text-decoration: none;">Supporto</a>
+        </p>
+        <p>Ricevi questa e-mail perché questo indirizzo è configurato come destinazione lead per {{botName}}. Gestisci le destinazioni dalle impostazioni del tuo bot.</p>
+      </div>
+    </div>
+  </body>
+</html>
