@@ -442,6 +442,14 @@ export class BotService {
       data: {
         botName: body.name,
         systemPrompt: body.systemPrompt,
+        // Wizard v2 structured intents (docs/WIZARD_V2.md). Conditional
+        // spreads so v1 callers (no fields sent) don't clobber existing
+        // values with NULL.
+        ...(body.capabilities !== undefined ? { capabilities: body.capabilities as any } : {}),
+        ...(body.persona !== undefined ? { persona: body.persona as any } : {}),
+        ...(body.negatives !== undefined ? { negatives: body.negatives } : {}),
+        ...(body.primaryLanguage !== undefined ? { primaryLanguage: body.primaryLanguage } : {}),
+        ...(body.wizardVersion !== undefined ? { wizardVersion: body.wizardVersion } : {}),
       },
     });
 
