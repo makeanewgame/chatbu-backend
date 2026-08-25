@@ -95,6 +95,13 @@ export class BotService {
             purpose: body.purpose,
             active: true,
             appointmentWorkingHours: DEFAULT_WORKING_HOURS as any,
+            // Wizard v2 structured intents (docs/WIZARD_V2.md). Absent
+            // when v1 wizard is used — schema defaults / nullables cover it.
+            ...(body.capabilities !== undefined ? { capabilities: body.capabilities as any } : {}),
+            ...(body.persona !== undefined ? { persona: body.persona as any } : {}),
+            ...(body.negatives !== undefined ? { negatives: body.negatives } : {}),
+            ...(body.primaryLanguage !== undefined ? { primaryLanguage: body.primaryLanguage } : {}),
+            ...(body.wizardVersion !== undefined ? { wizardVersion: body.wizardVersion } : {}),
             team: {
               connect: {
                 id: body.user,
@@ -165,6 +172,16 @@ export class BotService {
           purpose: body.purpose,
           language: body.language,
           page_summaries: body.pageSummaries,
+          // Wizard v2 structured intent inputs (docs/WIZARD_V2.md).
+          // ml-services meta-prompt v2 (behind WIZARD_V2_ENABLED flag)
+          // uses these to render minimal templated system prompts
+          // instead of freeform-injecting business-logic directives.
+          // v1 wizard omits these; ml-services falls back to v1 meta-prompt.
+          capabilities: body.capabilities,
+          persona: body.persona,
+          negatives: body.negatives,
+          primary_language: body.primaryLanguage,
+          wizard_version: body.wizardVersion,
         }).pipe(
           catchError((error: AxiosError) => {
             console.log('generateSystemPrompt error', error.message);

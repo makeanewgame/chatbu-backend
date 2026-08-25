@@ -187,6 +187,16 @@ model CustomerBots {
   // BotService.createBot writes it explicitly on create — NULL should not
   // occur in steady state, this is a belt-and-suspenders fallback only.
   appointmentWorkingHours    Json?
+  // Wizard v2 structured intent inputs (2026-08-24, docs/WIZARD_V2.md).
+  // All nullable / defaulted so v1 bots keep working unchanged;
+  // wizardVersion distinguishes v1 (unstructured owner prompt) from
+  // v2 (structured intents → meta-prompt v2 renders minimal templated
+  // system prompt without freeform business-logic injection).
+  capabilities               Json?
+  persona                    Json?
+  negatives                  String[]       @default([])
+  primaryLanguage            String?
+  wizardVersion              Int            @default(1)
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
   isDeleted                  Boolean        @default(false)
