@@ -460,20 +460,42 @@ export class MailService {
     }
   }
 
+  // Locales for which a translated `lead_notification_{code}.html` template
+  // exists. `en` uses the un-suffixed filename (`lead_notification.html`).
+  // Adding a new locale = add its template file + register the code here +
+  // add its `toLocaleString` tag + subject line. Unknown / unlisted locales
+  // fall back to English.
+  private static readonly LEAD_NOTIFICATION_LOCALES = new Set([
+    'en', 'tr', 'de', 'es', 'fr', 'it', 'ru', 'ar',
+  ]);
+  private static readonly LEAD_NOTIFICATION_INTL_TAGS: Record<string, string> = {
+    en: 'en-US', tr: 'tr-TR', de: 'de-DE', es: 'es-ES', fr: 'fr-FR',
+    it: 'it-IT', ru: 'ru-RU', ar: 'ar-SA',
+  };
+  private static readonly LEAD_NOTIFICATION_SUBJECTS: Record<string, (botName: string) => string> = {
+    en: (n) => `New lead from your Chatbu bot: ${n}`,
+    tr: (n) => `Chatbu botunuzdan yeni bir kayıt: ${n}`,
+    de: (n) => `Neuer Lead von Ihrem Chatbu-Bot: ${n}`,
+    es: (n) => `Nuevo lead de tu bot Chatbu: ${n}`,
+    fr: (n) => `Nouveau lead depuis votre bot Chatbu : ${n}`,
+    it: (n) => `Nuovo lead dal tuo bot Chatbu: ${n}`,
+    ru: (n) => `Новый лид от вашего Chatbu-бота: ${n}`,
+    ar: (n) => `عميل محتمل جديد من روبوت Chatbu الخاص بك: ${n}`,
+  };
+
   async sendLeadNotification(
     to: string,
     botName: string,
     leadData: { name?: string; email?: string; phone?: string; notes?: string },
     lang: string = 'en',
   ) {
+    const locale = MailService.LEAD_NOTIFICATION_LOCALES.has(lang) ? lang : 'en';
     const rootDir = process.cwd();
 
-    const templatePath = path.join(
-      rootDir,
-      'dist',
-      'templates',
-      lang === 'en' ? 'lead_notification.html' : 'lead_notification_tr.html',
-    );
+    const filename = locale === 'en'
+      ? 'lead_notification.html'
+      : `lead_notification_${locale}.html`;
+    const templatePath = path.join(rootDir, 'dist', 'templates', filename);
     const templateSource = fs.readFileSync(templatePath, 'utf8');
     const template = handlebars.compile(templateSource);
 
@@ -483,7 +505,9 @@ export class MailService {
       email: leadData.email,
       phone: leadData.phone,
       notes: leadData.notes,
-      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      createdAt: new Date().toLocaleString(
+        MailService.LEAD_NOTIFICATION_INTL_TAGS[locale],
+      ),
       leadsInboxUrl: `${process.env.FRONTEND_URL}/leads`,
       company: process.env.COMPANY_NAME,
       privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
@@ -493,15 +517,13 @@ export class MailService {
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to,
-      subject: lang === 'en'
-        ? `New lead from your Chatbu bot: ${botName}`
-        : `Chatbu botunuzdan yeni bir kayıt: ${botName}`,
+      subject: MailService.LEAD_NOTIFICATION_SUBJECTS[locale](botName),
       html,
     };
 
     try {
       await this.mailerService.sendMail(mailOptions);
-      this.logger.info(`Lead notification sent to ${to}`);
+      this.logger.info(`Lead notification sent to ${to} (locale=${locale})`);
     } catch (error) {
       this.logger.error(`Error sending lead notification to ${to}:`, error);
       throw error;
