@@ -1612,10 +1612,29 @@ export class BotService {
         botName: true,
         smsVerificationRequired: true,
         streamingEnabled: true,
+        team: {
+          select: {
+            owner: {
+              select: {
+                Subscription: {
+                  select: { tier: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!bot) throw new NotFoundException('Bot not found');
-    return bot;
+
+    // Whitelabel gate for the "provided by chatbu" widget footer
+    // (Premium removes it). Any missing hop in the team/owner/
+    // subscription chain resolves to `false` here, which keeps the
+    // footer VISIBLE — a data anomaly must never accidentally hide
+    // the branding for a non-paying customer.
+    const whitelabelEnabled = bot.team?.owner?.Subscription?.tier === 'PREMIUM';
+    const { team, ...publicBot } = bot;
+    return { ...publicBot, whitelabelEnabled };
   }
 
   async publicChat(
