@@ -117,6 +117,9 @@ export class ReportService {
                     where: {
                         chatId: chatId,
                     },
+                    orderBy: {
+                        createdAt: 'asc',
+                    },
                     select: {
                         message: true,
                         createdAt: true,
