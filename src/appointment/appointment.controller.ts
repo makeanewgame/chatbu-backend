@@ -11,6 +11,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IsEmail, IsIn, IsISO8601, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { InternalApiKeyGuard } from '../integration/google-calendar/internal-api-key.guard';
 import { AppointmentService } from './appointment.service';
+import { AppointmentAvailabilityService } from './appointment-availability.service';
 
 /**
  * DTO for the MCP `/appointment-created` hop. Every field except
@@ -75,11 +76,31 @@ class AppointmentCreatedDto {
     chatId?: string;
 }
 
+/**
+ * DTO for the MCP `/validate-slot` hop. Both ISO fields required so
+ * the point-in-time working-hours check has real input to work with —
+ * missing dates surface as 400 rather than a false "valid" pass.
+ */
+class ValidateSlotDto {
+    @IsString()
+    @IsNotEmpty()
+    botId!: string;
+
+    @IsISO8601()
+    startIso!: string;
+
+    @IsISO8601()
+    endIso!: string;
+}
+
 @ApiTags('Appointment (internal)')
 @Controller('integration/booking')
 @UseGuards(InternalApiKeyGuard)
 export class AppointmentController {
-    constructor(private readonly appointment: AppointmentService) { }
+    constructor(
+        private readonly appointment: AppointmentService,
+        private readonly availability: AppointmentAvailabilityService,
+    ) { }
 
     /**
      * POST /api/integration/booking/appointment-created
@@ -109,5 +130,28 @@ export class AppointmentController {
                 HttpStatus.BAD_REQUEST,
             );
         }
+    }
+
+    /**
+     * POST /api/integration/booking/validate-slot
+     *
+     * mcp-server calls this BEFORE `create_appointment`'s Google Calendar
+     * insert. Returns `{valid: true}` if the {startIso, endIso} slot falls
+     * inside the bot's configured working hours, `{valid: false, reason,
+     * workingHours}` otherwise. The bot uses `workingHours` to tell the
+     * visitor when it IS available.
+     *
+     * Complements MCP's existing `check_availability` (Google busy) —
+     * this one is working-hours only. Widget picker enforces both
+     * client-side; text-based booking on Meta channels (IG DM / Messenger
+     * / WhatsApp) has no such UI, so this backstop keeps working-hours
+     * bookings honest regardless of channel.
+     */
+    @ApiOperation({ summary: 'Validate a slot against a bot\'s working hours (internal)' })
+    @ApiResponse({ status: 200, description: 'Validation result' })
+    @Post('validate-slot')
+    @HttpCode(200)
+    async validateSlot(@Body() body: ValidateSlotDto) {
+        return this.availability.validateSlot(body.botId, body.startIso, body.endIso);
     }
 }
