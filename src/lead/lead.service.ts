@@ -126,8 +126,22 @@ export class LeadService {
       }
     }
 
+    // Calendar bookings (`create_appointment`) can never satisfy either
+    // verification gate below: `create_appointment` refuses to run at all
+    // without a phone SMS-OTP `verification_token` already validated
+    // against NETGSM, and the lead-notify bridge that lands here
+    // (`_notify_lead_capture` in calendar_tools.py) fires fire-and-forget
+    // right after the booking is already committed — there's no further
+    // chat turn to challenge the visitor with a second, differently-scoped
+    // OTP. Blocking on these gates made every booking on a bot with either
+    // verification flag enabled permanently drop the owner's "new lead"
+    // email (channelsAttempted stayed empty) and show as unverified in the
+    // inbox despite the visitor having just proven their phone. Reported
+    // by a bot owner 2026-08-26.
+    const isCalendarBookingSource = cleanLeadData.source_bot === 'create_appointment';
+
     let verified = false;
-    if (bot.leadVerificationRequired) {
+    if (bot.leadVerificationRequired && !isCalendarBookingSource) {
       if (!verificationToken) {
         await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'verification_required');
         throw new BadRequestException({ code: 'VERIFICATION_REQUIRED' });
@@ -156,7 +170,11 @@ export class LeadService {
 
     let smsVerified = false;
     let privacyConsentId: string | null = null;
-    if (bot.smsVerificationRequired && leadData.phone) {
+    if (isCalendarBookingSource && cleanLeadData.phone) {
+      // The phone was already SMS-OTP-verified as a hard prerequisite of
+      // the booking itself — see comment above `isCalendarBookingSource`.
+      smsVerified = true;
+    } else if (bot.smsVerificationRequired && leadData.phone) {
       if (!smsVerificationToken) {
         await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'sms_verification_required');
         throw new BadRequestException({ code: 'SMS_VERIFICATION_REQUIRED' });

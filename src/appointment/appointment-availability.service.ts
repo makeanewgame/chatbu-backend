@@ -113,4 +113,72 @@ export class AppointmentAvailabilityService {
 
         return { timezone: zone, slotMinutes: workingHours.slotMinutes, days, workingHours };
     }
+
+    /**
+     * Point-in-time server-side check: does {startIso, endIso} fall inside the
+     * bot's configured working hours?
+     *
+     * Called by the MCP `create_appointment` tool BEFORE it writes the Google
+     * Calendar event. The widget's inline picker already constrains slot
+     * choice to valid times, but Meta channels (Instagram DM, Messenger,
+     * WhatsApp) skip that widget entirely — the bot collects a datetime
+     * text-side and passes it straight to `create_appointment`. Without
+     * this server-side backstop the bot happily books outside working
+     * hours on those channels (observed 2026-08-26).
+     *
+     * Distinct from `getAvailableSlots` in that it only checks working-hours +
+     * past-time. Google Calendar busy-conflict is still handled by MCP's
+     * existing `check_availability` call — this method deliberately does NOT
+     * duplicate that work. The two together (working-hours here, busy there)
+     * cover the full validation.
+     *
+     * Returns `{valid: true}` on pass; on fail includes `reason` (machine
+     * code) and `workingHours` (so the MCP tool can craft a message that
+     * tells the visitor when the bot IS available).
+     */
+    async validateSlot(botId: string, startIso: string, endIso: string): Promise<
+        | { valid: true }
+        | { valid: false; reason: 'past' | 'weekday_disabled' | 'outside_hours' | 'not_found'; workingHours?: WorkingHours }
+    > {
+        const bot = await this.prisma.customerBots.findUnique({
+            where: { id: botId },
+            select: { appointmentWorkingHours: true },
+        });
+        if (!bot) {
+            return { valid: false, reason: 'not_found' };
+        }
+        const workingHours: WorkingHours =
+            (bot.appointmentWorkingHours as unknown as WorkingHours) ?? DEFAULT_WORKING_HOURS;
+
+        const zone = workingHours.timezone;
+        const start = DateTime.fromISO(startIso).setZone(zone);
+        const end = DateTime.fromISO(endIso).setZone(zone);
+        const now = DateTime.now().setZone(zone);
+
+        if (start < now) {
+            return { valid: false, reason: 'past', workingHours };
+        }
+
+        // Luxon weekday: 1=Monday..7=Sunday, matches WEEKDAY_KEYS order.
+        const weekdayKey = WEEKDAY_KEYS[start.weekday - 1];
+        const config = workingHours.days[weekdayKey];
+        if (!config?.enabled) {
+            return { valid: false, reason: 'weekday_disabled', workingHours };
+        }
+
+        const [startH, startM] = config.start.split(':').map(Number);
+        const [endH, endM] = config.end.split(':').map(Number);
+        const dayStart = start.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
+        const dayEnd = start.set({ hour: endH, minute: endM, second: 0, millisecond: 0 });
+
+        // Slot MUST fit fully inside the working window: start >= dayStart AND
+        // end <= dayEnd. A slot starting at 17:45 with a 30-min duration on a
+        // 09:00-18:00 day is REJECTED (spills past close). Widget picker
+        // already enforces this; MCP path historically didn't.
+        if (start < dayStart || end > dayEnd) {
+            return { valid: false, reason: 'outside_hours', workingHours };
+        }
+
+        return { valid: true };
+    }
 }
