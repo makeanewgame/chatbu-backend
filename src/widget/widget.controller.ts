@@ -67,6 +67,16 @@ export class WidgetController {
                 .split(',')[0]
                 .trim() || req.socket?.remoteAddress || '127.0.0.1';
 
+        // Browser Accept-Language header — forwarded to gateway as
+        // third-tier signal for the v2 hybrid language resolver
+        // (falls behind session sticky + visitor_locale). The widget
+        // fetch() sends this by default from the browser's language
+        // preferences list; here we snapshot it into the RPC payload
+        // so the gateway RequestState carries it explicitly rather
+        // than relying on the header surviving proxy hops.
+        const acceptLanguage =
+            (req.headers['accept-language'] as string | undefined) ?? undefined;
+
         const wantsSse = (req.headers.accept ?? '')
             .toLowerCase()
             .includes('text/event-stream');
@@ -84,6 +94,7 @@ export class WidgetController {
                 body.attachments,
                 body.provisionalConsentId,
                 body.visitorLocale,
+                acceptLanguage,
             );
             return;
         }
@@ -96,6 +107,7 @@ export class WidgetController {
             body.attachments,
             body.provisionalConsentId,
             body.visitorLocale,
+            acceptLanguage,
         );
         res.status(200).json(result);
     }

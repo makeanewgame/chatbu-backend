@@ -255,6 +255,7 @@ export class WidgetService {
         attachments?: any[],
         provisionalConsentId?: string,
         visitorLocale?: string,
+        acceptLanguage?: string,
     ) {
         // 1. Verify session token
         let payload: any;
@@ -314,6 +315,7 @@ export class WidgetService {
             attachments,
             provisionalConsentId,
             visitorLocale,
+            acceptLanguage,
         );
 
         // 6. Update visitor counters and risk score
@@ -373,6 +375,7 @@ export class WidgetService {
         attachments?: any[],
         provisionalConsentId?: string,
         visitorLocale?: string,
+        acceptLanguage?: string,
     ): Promise<void> {
         // 1. Verify session token (mirror of chat())
         let payload: any;
@@ -450,6 +453,7 @@ export class WidgetService {
             attachments,
             provisionalConsentId,
             visitorLocale,
+            acceptLanguage,
         );
 
         // 8. Visitor counter + risk score (mirror of batch chat L275-302).

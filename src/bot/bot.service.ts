@@ -95,6 +95,13 @@ export class BotService {
             purpose: body.purpose,
             active: true,
             appointmentWorkingHours: DEFAULT_WORKING_HOURS as any,
+            // Wizard v2 structured intents (docs/WIZARD_V2.md). Absent
+            // when v1 wizard is used — schema defaults / nullables cover it.
+            ...(body.capabilities !== undefined ? { capabilities: body.capabilities as any } : {}),
+            ...(body.persona !== undefined ? { persona: body.persona as any } : {}),
+            ...(body.negatives !== undefined ? { negatives: body.negatives } : {}),
+            ...(body.primaryLanguage !== undefined ? { primaryLanguage: body.primaryLanguage } : {}),
+            ...(body.wizardVersion !== undefined ? { wizardVersion: body.wizardVersion } : {}),
             team: {
               connect: {
                 id: body.user,
@@ -165,6 +172,16 @@ export class BotService {
           purpose: body.purpose,
           language: body.language,
           page_summaries: body.pageSummaries,
+          // Wizard v2 structured intent inputs (docs/WIZARD_V2.md).
+          // ml-services meta-prompt v2 (behind WIZARD_V2_ENABLED flag)
+          // uses these to render minimal templated system prompts
+          // instead of freeform-injecting business-logic directives.
+          // v1 wizard omits these; ml-services falls back to v1 meta-prompt.
+          capabilities: body.capabilities,
+          persona: body.persona,
+          negatives: body.negatives,
+          primary_language: body.primaryLanguage,
+          wizard_version: body.wizardVersion,
         }).pipe(
           catchError((error: AxiosError) => {
             console.log('generateSystemPrompt error', error.message);
@@ -425,6 +442,14 @@ export class BotService {
       data: {
         botName: body.name,
         systemPrompt: body.systemPrompt,
+        // Wizard v2 structured intents (docs/WIZARD_V2.md). Conditional
+        // spreads so v1 callers (no fields sent) don't clobber existing
+        // values with NULL.
+        ...(body.capabilities !== undefined ? { capabilities: body.capabilities as any } : {}),
+        ...(body.persona !== undefined ? { persona: body.persona as any } : {}),
+        ...(body.negatives !== undefined ? { negatives: body.negatives } : {}),
+        ...(body.primaryLanguage !== undefined ? { primaryLanguage: body.primaryLanguage } : {}),
+        ...(body.wizardVersion !== undefined ? { wizardVersion: body.wizardVersion } : {}),
       },
     });
 
@@ -624,6 +649,11 @@ export class BotService {
             // too short/ambiguous for lingua to classify (single digits,
             // "??"). Older gateway pods ignore this (Pydantic Optional).
             visitor_locale: body.visitorLocale,
+            // Browser Accept-Language HTTP header — third-tier signal
+            // for the gateway's v2 hybrid language resolver, used when
+            // there's no session sticky AND lingua abstains AND no
+            // visitor_locale. Older gateway pods (pre-v2) ignore this.
+            accept_language: body.acceptLanguage,
           })
         );
         data = response.data;
@@ -1133,6 +1163,7 @@ export class BotService {
             provisional_consent_id: (body as any).provisionalConsentId,
             // See non-stream /chat path above for rationale.
             visitor_locale: body.visitorLocale,
+            accept_language: body.acceptLanguage,
           },
           {
             responseType: 'stream',
@@ -1480,6 +1511,7 @@ export class BotService {
     attachments?: any[],
     provisionalConsentId?: string,
     visitorLocale?: string,
+    acceptLanguage?: string,
   ): Promise<{
     tokenCount: number;
     humanHandover: boolean;
@@ -1496,6 +1528,7 @@ export class BotService {
         attachments,
         provisionalConsentId,
         visitorLocale,
+        acceptLanguage,
       } as any,
       ip,
       res,
@@ -1579,10 +1612,29 @@ export class BotService {
         botName: true,
         smsVerificationRequired: true,
         streamingEnabled: true,
+        team: {
+          select: {
+            owner: {
+              select: {
+                Subscription: {
+                  select: { tier: true },
+                },
+              },
+            },
+          },
+        },
       },
     });
     if (!bot) throw new NotFoundException('Bot not found');
-    return bot;
+
+    // Whitelabel gate for the "provided by chatbu" widget footer
+    // (Premium removes it). Any missing hop in the team/owner/
+    // subscription chain resolves to `false` here, which keeps the
+    // footer VISIBLE — a data anomaly must never accidentally hide
+    // the branding for a non-paying customer.
+    const whitelabelEnabled = bot.team?.owner?.Subscription?.tier === 'PREMIUM';
+    const { team, ...publicBot } = bot;
+    return { ...publicBot, whitelabelEnabled };
   }
 
   async publicChat(
@@ -1634,6 +1686,7 @@ export class BotService {
     attachments?: any[],
     provisionalConsentId?: string,
     visitorLocale?: string,
+    acceptLanguage?: string,
   ) {
     return this.chat(
       {
@@ -1646,6 +1699,7 @@ export class BotService {
         attachments,
         provisionalConsentId,
         visitorLocale,
+        acceptLanguage,
       } as any,
       ip,
     );
