@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { BotService } from 'src/bot/bot.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 
 @Injectable()
 export class WhatsAppService {
@@ -88,8 +89,14 @@ export class WhatsAppService {
                             '0.0.0.0',
                         );
 
-                        const replyText = response?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
-                        await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                        const replyText = resolveMetaReplyText(response);
+                        if (replyText) {
+                            await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                        } else {
+                            this.logger.warn(
+                                `[whatsapp-legacy] empty chat response for botId=${botId} chatId=wa_${senderId} — no reply sent`,
+                            );
+                        }
                     } catch (err) {
                         this.logger.error(`Error processing WhatsApp message from ${senderId}: ${err?.toString()}`);
                     }
