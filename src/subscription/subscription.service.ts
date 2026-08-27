@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { SystemLogService } from 'src/system-log/system-log.service';
 import { PricePlanService } from './price-plan.service';
 import { StripeBootstrapService } from './stripe-bootstrap.service';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 
 @Injectable()
 export class SubscriptionService {
@@ -16,6 +17,7 @@ export class SubscriptionService {
         private systemLogService: SystemLogService,
         private pricePlanService: PricePlanService,
         private stripeBootstrap: StripeBootstrapService,
+        private mixpanel: MixpanelService,
     ) {
         const stripeKey = this.config.get('STRIPE_SECRET_KEY');
         if (stripeKey) {
@@ -367,6 +369,12 @@ export class SubscriptionService {
             await this.createCancellationFeedback(userId, user, 'SUBSCRIPTION_CANCELLATION', reasons, otherText);
         }
 
+        this.mixpanel.track('Subscription Cancellation Requested', userId, {
+            plan: 'premium',
+            billing_cycle: subscription.billingInterval ?? 'monthly',
+            cancel_reason: [...(reasons || []), otherText].filter(Boolean).join('; ') || 'not_provided',
+        });
+
         return { message: 'Subscription will be cancelled at period end' };
     }
 
@@ -426,6 +434,15 @@ export class SubscriptionService {
                 cost,
             },
         });
+
+        this.mixpanel.track('Token Pack Purchased', userId, {
+            token_amount: tokenAmount,
+            amount: cost,
+            currency: 'USD',
+        });
+        if (cost > 0) {
+            this.mixpanel.trackCharge(userId, cost, { event: 'Token Pack Purchased', currency: 'USD' });
+        }
 
         return { message: 'Tokens purchased successfully', tokens: tokenAmount };
     }
@@ -640,6 +657,43 @@ export class SubscriptionService {
                 };
             }
             throw e;
+        }
+
+        // FREE-plan token-quota ("trial") progression — feeds the trial→paid funnel.
+        // Idempotency per threshold via $insert_id (Mixpanel dedupes same-day).
+        if (subscription.tier === 'FREE' && baseAllocation > 0) {
+            try {
+                const prevUsed = subscription.tokensUsedThisMonth;
+                const newUsed = prevUsed + tokensUsed;
+                const prevPct = (prevUsed / baseAllocation) * 100;
+                const newPct = (newUsed / baseAllocation) * 100;
+                for (const threshold of [50, 75, 90]) {
+                    if (prevPct < threshold && newPct >= threshold) {
+                        this.mixpanel.track(
+                            'Free Quota Threshold Reached',
+                            userId,
+                            {
+                                percent_used: threshold,
+                                tokens_used: newUsed,
+                                token_allowance: baseAllocation,
+                                plan: 'free',
+                                team_id: teamId,
+                            },
+                            `quota_threshold:${userId}:${threshold}`,
+                        );
+                    }
+                }
+                if (prevUsed < baseAllocation && newUsed >= baseAllocation) {
+                    this.mixpanel.track(
+                        'Free Quota Exhausted',
+                        userId,
+                        { tokens_used: newUsed, token_allowance: baseAllocation, team_id: teamId },
+                        `quota_exhausted:${userId}`,
+                    );
+                }
+            } catch (err) {
+                console.error('[trackTokenUsage] quota analytics failed', err);
+            }
         }
 
         // Spending-limit check + Stripe report run after the row is committed.

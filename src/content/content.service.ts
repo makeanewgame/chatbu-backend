@@ -10,6 +10,7 @@ import * as cheerio from 'cheerio';
 import { QuotaService } from 'src/quota/quota.service';
 import { QuotaType } from 'src/util/enums';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 import { Exception } from 'handlebars';
 
 @Injectable()
@@ -21,8 +22,30 @@ export class ContentService {
         private httpService: HttpService,
         private quotaService: QuotaService,
         private systemLogService: SystemLogService,
+        private mixpanel: MixpanelService,
 
     ) { }
+
+    /**
+     * `Knowledge Source Added` — normalises the internal content `type` to the
+     * analytics source_type vocabulary (document | webpage | link | faq | content).
+     */
+    private trackKnowledgeSource(user: IUser, botId: string, rawType: string) {
+        const t = (rawType || '').toUpperCase();
+        const sourceType =
+            t === 'Q&A' || t === 'QA' || t === 'FAQ' ? 'faq'
+                : t === 'CONTENT' ? 'content'
+                    : t === 'DOCUMENT' || t === 'FILE' || t === 'PDF' ? 'document'
+                        : t === 'LINK' ? 'link'
+                            : t === 'WEBPAGE' || t === 'WEBSITE' || t === 'SITEMAP' ? 'webpage'
+                                : (rawType || 'content').toLowerCase();
+        this.mixpanel.track('Knowledge Source Added', user.sub, {
+            source_type: sourceType,
+            organization_id: user.teamId,
+            team_id: user.teamId,
+            chatbot_id: botId,
+        });
+    }
 
     async createContent(body: any, user: IUser) {
         const forceReingest = Boolean(body.forceReingest);
@@ -156,6 +179,8 @@ export class ContentService {
             entityName: body.type,
             message: `Content created: ${body.type}`,
         });
+
+        this.trackKnowledgeSource(user, body.botId, body.type);
 
         return {
             message: "Content created successfully"
@@ -672,6 +697,16 @@ export class ContentService {
             }
 
             // KB quota is updated by ML service after ingestion completes (via pg_notify trigger)
+
+            if (urlsToIngest.length > 0) {
+                this.mixpanel.track('Knowledge Source Added', user.sub, {
+                    source_type: 'webpage',
+                    organization_id: user.teamId,
+                    team_id: user.teamId,
+                    chatbot_id: body.botId,
+                    page_count: urlsToIngest.length,
+                });
+            }
 
             return {
                 success: true,

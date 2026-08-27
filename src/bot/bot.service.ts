@@ -25,6 +25,7 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { MailService } from '../mail/mail.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 import { EventsGateway } from 'src/events/events.gateway';
 import { DEFAULT_WORKING_HOURS } from 'src/appointment/appointment.constants';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
@@ -42,6 +43,7 @@ export class BotService {
     private mailService: MailService,
     private minioClientService: MinioClientService,
     private systemLogService: SystemLogService,
+    private mixpanel: MixpanelService,
     private eventsGateway: EventsGateway,
     private chatFlowService: ChatFlowService,
     private pushNotificationService: PushNotificationService,
@@ -131,6 +133,26 @@ export class BotService {
             entityName: body.botName,
             message: `Bot created: ${body.botName}`,
           });
+
+          const ownerId = userId ?? (await this.mixpanel.resolveTeamOwner(body.user)).ownerId;
+          if (ownerId) {
+            this.mixpanel.track(
+              'Chatbot Created',
+              ownerId,
+              {
+                organization_id: body.user,
+                team_id: body.user,
+                chatbot_id: bot.id,
+                wizard_version: body.wizardVersion ?? 1,
+                is_first_bot: bots.length === 0,
+              },
+              `chatbot_created:${bot.id}`,
+            );
+            this.mixpanel.setGroup('team', body.user, {
+              team_id: body.user,
+              bot_count: bots.length + 1,
+            });
+          }
 
           return { message: 'Bot created', botId: bot.id };
         }
@@ -492,9 +514,77 @@ export class BotService {
     });
 
     if (bot) {
+      const nowActive = !body.active;
+      const ownerId = (await this.mixpanel.resolveTeamOwner(body.teamId)).ownerId;
+      if (ownerId) {
+        this.mixpanel.track(
+          nowActive ? 'Chatbot Published' : 'Chatbot Unpublished',
+          ownerId,
+          {
+            organization_id: body.teamId,
+            team_id: body.teamId,
+            chatbot_id: body.botId,
+          },
+        );
+        const publishedCount = await this.prisma.customerBots.count({
+          where: { teamId: body.teamId, active: true, isDeleted: false },
+        });
+        this.mixpanel.setGroup('team', body.teamId, {
+          team_id: body.teamId,
+          published_bot_count: publishedCount,
+        });
+      }
       return { message: 'Bot status changed' };
     }
     throw new Error('Error changing bot status');
+  }
+
+  /**
+   * Emit conversation analytics for a freshly created chat session.
+   * `Conversation Started` every time; `First Conversation Received` only when
+   * this is the very first conversation the bot has ever received (idempotent
+   * via $insert_id keyed on botId). Attributed to the team owner's profile.
+   * Fire-and-forget — never awaited by the chat path.
+   */
+  private async emitConversationAnalytics(
+    teamId: string,
+    botId: string,
+    conversationId: string,
+    channelEnum: string,
+  ): Promise<void> {
+    try {
+      const channelMap: Record<string, string> = {
+        WIDGET: 'website',
+        WHATSAPP: 'whatsapp',
+        META_MESSENGER: 'meta_messenger',
+        INSTAGRAM: 'instagram',
+      };
+      const channel = channelMap[channelEnum] ?? 'website';
+      const { ownerId } = await this.mixpanel.resolveTeamOwner(teamId);
+      if (!ownerId) return;
+      const props = {
+        organization_id: teamId,
+        team_id: teamId,
+        chatbot_id: botId,
+        conversation_id: conversationId,
+        channel,
+      };
+      this.mixpanel.track('Conversation Started', ownerId, props);
+      const chatCount = await this.prisma.customerChats.count({
+        where: { botId },
+      });
+      if (chatCount === 1) {
+        this.mixpanel.track(
+          'First Conversation Received',
+          ownerId,
+          props,
+          `first_conversation:${botId}`,
+        );
+      }
+    } catch (err) {
+      // analytics must never break the chat path
+      console.error('emitConversationAnalytics failed', err);
+    }
   }
 
   async chat(body: ChatRequest, ip: string) {
@@ -745,6 +835,12 @@ export class BotService {
             }
           }
         });
+        void this.emitConversationAnalytics(
+          body.teamId,
+          body.botId,
+          activeChat.id,
+          chatChannel,
+        );
       } else {
         // Mevcut chat'e kullanıcı mesajını ve bot cevabını ekle
         await this.prisma.customerChatDetails.createMany({
@@ -1345,6 +1441,12 @@ export class BotService {
             },
           },
         });
+        void this.emitConversationAnalytics(
+          body.teamId,
+          body.botId,
+          activeChat.id,
+          'WIDGET',
+        );
       } else {
         await this.prisma.customerChatDetails.createMany({
           data: [

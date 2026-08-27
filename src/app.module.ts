@@ -43,6 +43,7 @@ import {
   chatbuSmsSendTotal,
 } from './prometheus/metrics.providers';
 import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.interceptor';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -86,7 +87,7 @@ import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.intercep
       defaultLabels: { app: 'chatbu-backend' },
       defaultMetrics: { enabled: true },
     }),
-    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule, AppointmentModule, LegalDocumentModule, ChatFlowModule, PushNotificationModule],
+    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule, AppointmentModule, LegalDocumentModule, ChatFlowModule, PushNotificationModule, AnalyticsModule],
   controllers: [AppController],
   providers: [
     AppService,

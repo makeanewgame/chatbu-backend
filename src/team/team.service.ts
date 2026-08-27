@@ -18,6 +18,7 @@ import {
     CompleteOnboardingResponse,
 } from './dto/team-responses.dto';
 import { SaveBusinessProfileDto } from './dto/save-business-profile.dto';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 
 @Injectable()
 export class TeamService {
@@ -25,6 +26,7 @@ export class TeamService {
         private prisma: PrismaService,
         private mailService: MailService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+        private mixpanel: MixpanelService,
     ) { }
 
     async getMembers(userId: string, teamId: string): Promise<TeamMemberResponse[]> {
@@ -332,6 +334,23 @@ export class TeamService {
 
         this.logger.info(`Business profile saved for team ${teamId}`);
 
+        // Team group properties + owner profile enrichment for B2B analytics.
+        this.mixpanel.setGroup('team', teamId, {
+            team_id: teamId,
+            business_name: team.businessName,
+            company_size: team.companySize,
+            industry: team.industry,
+            website: team.website,
+        });
+        this.mixpanel.resolveTeamOwner(teamId).then(({ ownerId }) => {
+            if (ownerId) {
+                this.mixpanel.setPeople(ownerId, {
+                    company_size: team.companySize,
+                    industry: team.industry,
+                });
+            }
+        });
+
         return team;
     }
 
@@ -343,6 +362,18 @@ export class TeamService {
         });
 
         this.logger.info(`Onboarding completed for team ${teamId}`);
+
+        this.mixpanel.resolveTeamOwner(teamId).then(({ ownerId }) => {
+            if (ownerId) {
+                this.mixpanel.track(
+                    'Onboarding Completed',
+                    ownerId,
+                    { organization_id: teamId, team_id: teamId },
+                    `onboarding_completed:${teamId}`,
+                );
+                this.mixpanel.setPeople(ownerId, { onboarding_completed: true });
+            }
+        });
 
         return {
             success: true,
