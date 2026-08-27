@@ -27,6 +27,7 @@ import { LegalDocumentService } from 'src/legal-document/legal-document.service'
 import { ChatFlowService, TransitionArgs, normalizePhoneForDedup } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 
 const CODE_TTL_MINUTES = 5;
 const VERIFICATION_TOKEN_TTL_SECONDS = 30 * 60;
@@ -74,7 +75,45 @@ export class LeadService {
     private legalDocumentService: LegalDocumentService,
     private chatFlowService: ChatFlowService,
     private pushNotificationService: PushNotificationService,
+    private mixpanel: MixpanelService,
   ) { }
+
+  /**
+   * `Lead Created` (+ `Lead Qualified` when the contact was OTP-verified).
+   * Attributed to the team owner's Mixpanel profile. Fire-and-forget.
+   */
+  private async emitLeadAnalytics(params: {
+    teamId: string;
+    botId: string;
+    leadId: string;
+    verified: boolean;
+    smsVerified: boolean;
+    deliveryStatus: string;
+    channelsSucceeded: string[];
+  }): Promise<void> {
+    try {
+      const { ownerId } = await this.mixpanel.resolveTeamOwner(params.teamId);
+      if (!ownerId) return;
+      const base = {
+        organization_id: params.teamId,
+        team_id: params.teamId,
+        chatbot_id: params.botId,
+        lead_source: 'widget',
+        channel: params.channelsSucceeded[0] ?? 'none',
+      };
+      this.mixpanel.track('Lead Created', ownerId, {
+        ...base,
+        verified: params.verified,
+        sms_verified: params.smsVerified,
+        delivery_status: params.deliveryStatus,
+      });
+      if (params.verified || params.smsVerified) {
+        this.mixpanel.track('Lead Qualified', ownerId, base);
+      }
+    } catch (err) {
+      console.warn('[lead-service] emitLeadAnalytics failed:', err);
+    }
+  }
 
   /**
    * Fire-and-log wrapper for ChatFlowService.transition. The state
@@ -357,6 +396,16 @@ export class LeadService {
       payload: { lead_id: lead.id, status, channelsSucceeded },
     });
 
+    void this.emitLeadAnalytics({
+      teamId: bot.teamId,
+      botId,
+      leadId: lead.id,
+      verified,
+      smsVerified,
+      deliveryStatus: status,
+      channelsSucceeded,
+    });
+
     return {
       status,
       leadId: lead.id,
@@ -447,6 +496,19 @@ export class LeadService {
       where: { id: dto.leadId },
       data: { status: dto.status },
     });
+
+    // A team member opening/actioning the lead (NEW → READ) is the closest
+    // signal we have that the lead was followed up on.
+    if (dto.status === 'READ' && lead.status !== 'READ') {
+      const { ownerId } = await this.mixpanel.resolveTeamOwner(teamId);
+      if (ownerId) {
+        this.mixpanel.track('Lead Contacted', ownerId, {
+          organization_id: teamId,
+          team_id: teamId,
+          lead_id: dto.leadId,
+        });
+      }
+    }
 
     return { message: 'Lead status updated', lead: updated };
   }

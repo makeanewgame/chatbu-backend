@@ -1,7 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+    Injectable,
+    NotFoundException,
+    BadRequestException,
+    ForbiddenException,
+} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { JwtService } from '@nestjs/jwt';
 import { firstValueFrom } from 'rxjs';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { SystemLogService } from 'src/system-log/system-log.service';
 import { GetAllUsersDto } from './dto/getAllUsers.dto';
 import { UpdateUserDto } from './dto/updateUser.dto';
 import { CreateAdminUserDto } from './dto/createAdminUser.dto';
@@ -18,7 +25,132 @@ export class AdminService {
         private minioClientService: MinioClientService,
         private configService: ConfigService,
         private httpService: HttpService,
+        private jwtService: JwtService,
+        private systemLogService: SystemLogService,
     ) { }
+
+    //#region impersonateUser
+    /**
+     * Resolve a user's primary team and their role within it, mirroring
+     * AuthenticationService.getUserPrimaryTeamId + the TeamMember role lookup
+     * used on the normal login path.
+     */
+    private async resolvePrimaryTeam(
+        userId: string,
+    ): Promise<{ teamId: string; role: string } | null> {
+        const ownedTeam = await this.prisma.team.findFirst({
+            where: { ownerId: userId },
+            select: { id: true },
+        });
+
+        if (ownedTeam) {
+            const member = await this.prisma.teamMember.findFirst({
+                where: { teamId: ownedTeam.id, userId },
+                select: { role: true },
+            });
+
+            return { teamId: ownedTeam.id, role: member?.role ?? 'TEAM_OWNER' };
+        }
+
+        const member = await this.prisma.teamMember.findFirst({
+            where: { userId, status: 'active' },
+            select: { teamId: true, role: true },
+            orderBy: { createdAt: 'asc' },
+        });
+
+        return member ? { teamId: member.teamId, role: member.role } : null;
+    }
+
+    /**
+     * Issue a short-lived ("2h") session token for `targetUserId` so an admin
+     * can use the app exactly as that customer would — for settings changes,
+     * re-ingesting data, reproducing a bug, etc.
+     *
+     * Intentionally:
+     *  - issues NO refresh token, and never touches `user.refreshToken` in the
+     *    DB (that column is single-valued and rotated by the normal login /
+     *    refresh flow — writing it here would kick the real user out).
+     *  - embeds an `act` (actor) claim = the admin's id, so the session is
+     *    auditable and can be fenced off from destructive actions
+     *    (see NotImpersonatingGuard).
+     *  - refuses to impersonate another ADMIN or a deleted account.
+     */
+    async impersonateUser(adminId: string, targetUserId: string) {
+        const target = await this.prisma.user.findUnique({
+            where: { id: targetUserId },
+            select: { id: true, email: true, name: true, role: true, isDeleted: true },
+        });
+
+        if (!target) {
+            throw new NotFoundException('User not found');
+        }
+        if (target.isDeleted) {
+            throw new BadRequestException('Cannot impersonate a deleted user');
+        }
+        if (target.role === 'ADMIN') {
+            throw new ForbiddenException('Cannot impersonate an admin account');
+        }
+
+        const primary = await this.resolvePrimaryTeam(target.id);
+        if (!primary) {
+            throw new BadRequestException('User has no team assigned');
+        }
+
+        const admin = await this.prisma.user.findUnique({
+            where: { id: adminId },
+            select: { email: true, name: true },
+        });
+
+        const team = await this.prisma.team.findUnique({
+            where: { id: primary.teamId },
+            select: { onboardingCompletedAt: true },
+        });
+
+        const accessToken = this.jwtService.sign(
+            {
+                sub: target.id,
+                email: target.email,
+                type: 'auth',
+                teamId: primary.teamId,
+                role: primary.role,
+                act: adminId,
+            },
+            { expiresIn: '2h', secret: this.configService.get('JWT_SECRET') },
+        );
+
+        await this.systemLogService.createLog({
+            category: 'AUTH',
+            action: 'LOGIN',
+            status: 'SUCCESS',
+            userId: adminId,
+            userName: admin?.name,
+            userEmail: admin?.email,
+            teamId: primary.teamId,
+            entityId: target.id,
+            entityName: target.email,
+            message: `Admin ${admin?.email ?? adminId} started impersonating ${target.email}`,
+            details: {
+                type: 'IMPERSONATION_START',
+                adminId,
+                targetUserId: target.id,
+                targetEmail: target.email,
+            },
+        });
+
+        return {
+            success: true,
+            accessToken,
+            user: {
+                userId: target.id,
+                userEmail: target.email,
+                userName: target.name,
+                teamId: primary.teamId,
+                role: primary.role,
+                onboardingCompleted: !!team?.onboardingCompletedAt,
+            },
+        };
+    }
+    //#endregion
 
     async getAllTeams(dto: GetAllTeamsDto) {
         const { page = 1, limit = 10, search } = dto;

@@ -25,11 +25,13 @@ import { SubscriptionService } from '../subscription/subscription.service';
 import { MailService } from '../mail/mail.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 import { EventsGateway } from 'src/events/events.gateway';
 import { DEFAULT_WORKING_HOURS } from 'src/appointment/appointment.constants';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
+import { HandoffNotificationService } from 'src/handoff/handoff-notification.service';
 
 @Injectable()
 export class BotService {
@@ -42,9 +44,11 @@ export class BotService {
     private mailService: MailService,
     private minioClientService: MinioClientService,
     private systemLogService: SystemLogService,
+    private mixpanel: MixpanelService,
     private eventsGateway: EventsGateway,
     private chatFlowService: ChatFlowService,
     private pushNotificationService: PushNotificationService,
+    private handoffNotificationService: HandoffNotificationService,
   ) { }
 
   async createBot(body: CreateBotRequest, userId?: string, userEmail?: string) {
@@ -131,6 +135,26 @@ export class BotService {
             entityName: body.botName,
             message: `Bot created: ${body.botName}`,
           });
+
+          const ownerId = userId ?? (await this.mixpanel.resolveTeamOwner(body.user)).ownerId;
+          if (ownerId) {
+            this.mixpanel.track(
+              'Chatbot Created',
+              ownerId,
+              {
+                organization_id: body.user,
+                team_id: body.user,
+                chatbot_id: bot.id,
+                wizard_version: body.wizardVersion ?? 1,
+                is_first_bot: bots.length === 0,
+              },
+              `chatbot_created:${bot.id}`,
+            );
+            this.mixpanel.setGroup('team', body.user, {
+              team_id: body.user,
+              bot_count: bots.length + 1,
+            });
+          }
 
           return { message: 'Bot created', botId: bot.id };
         }
@@ -492,9 +516,77 @@ export class BotService {
     });
 
     if (bot) {
+      const nowActive = !body.active;
+      const ownerId = (await this.mixpanel.resolveTeamOwner(body.teamId)).ownerId;
+      if (ownerId) {
+        this.mixpanel.track(
+          nowActive ? 'Chatbot Published' : 'Chatbot Unpublished',
+          ownerId,
+          {
+            organization_id: body.teamId,
+            team_id: body.teamId,
+            chatbot_id: body.botId,
+          },
+        );
+        const publishedCount = await this.prisma.customerBots.count({
+          where: { teamId: body.teamId, active: true, isDeleted: false },
+        });
+        this.mixpanel.setGroup('team', body.teamId, {
+          team_id: body.teamId,
+          published_bot_count: publishedCount,
+        });
+      }
       return { message: 'Bot status changed' };
     }
     throw new Error('Error changing bot status');
+  }
+
+  /**
+   * Emit conversation analytics for a freshly created chat session.
+   * `Conversation Started` every time; `First Conversation Received` only when
+   * this is the very first conversation the bot has ever received (idempotent
+   * via $insert_id keyed on botId). Attributed to the team owner's profile.
+   * Fire-and-forget — never awaited by the chat path.
+   */
+  private async emitConversationAnalytics(
+    teamId: string,
+    botId: string,
+    conversationId: string,
+    channelEnum: string,
+  ): Promise<void> {
+    try {
+      const channelMap: Record<string, string> = {
+        WIDGET: 'website',
+        WHATSAPP: 'whatsapp',
+        META_MESSENGER: 'meta_messenger',
+        INSTAGRAM: 'instagram',
+      };
+      const channel = channelMap[channelEnum] ?? 'website';
+      const { ownerId } = await this.mixpanel.resolveTeamOwner(teamId);
+      if (!ownerId) return;
+      const props = {
+        organization_id: teamId,
+        team_id: teamId,
+        chatbot_id: botId,
+        conversation_id: conversationId,
+        channel,
+      };
+      this.mixpanel.track('Conversation Started', ownerId, props);
+      const chatCount = await this.prisma.customerChats.count({
+        where: { botId },
+      });
+      if (chatCount === 1) {
+        this.mixpanel.track(
+          'First Conversation Received',
+          ownerId,
+          props,
+          `first_conversation:${botId}`,
+        );
+      }
+    } catch (err) {
+      // analytics must never break the chat path
+      console.error('emitConversationAnalytics failed', err);
+    }
   }
 
   async chat(body: ChatRequest, ip: string) {
@@ -745,6 +837,12 @@ export class BotService {
             }
           }
         });
+        void this.emitConversationAnalytics(
+          body.teamId,
+          body.botId,
+          activeChat.id,
+          chatChannel,
+        );
       } else {
         // Mevcut chat'e kullanıcı mesajını ve bot cevabını ekle
         await this.prisma.customerChatDetails.createMany({
@@ -797,84 +895,49 @@ export class BotService {
           'bot:autoHandover:requested',
         );
         const settings = botUser.settings as any;
-        const defaultAgentId = settings?.defaultAgentId;
-        if (defaultAgentId) {
-          try {
-            const team = await this.prisma.team.findUnique({
-              where: { id: body.teamId },
-              select: { ownerId: true },
+        try {
+          // defaultAgentId when configured, else the team owner — so a
+          // fresh account gets handover alerts without touching settings.
+          const assigneeId = await this.handoffNotificationService.resolveAssigneeId(
+            body.teamId,
+            settings,
+          );
+          if (
+            assigneeId &&
+            (await this.handoffNotificationService.isValidAssignee(body.teamId, assigneeId))
+          ) {
+            await this.prisma.customerChats.update({
+              where: { id: activeChat.id },
+              data: { chatStatus: 'HUMAN_ACTIVE', agentUserId: assigneeId },
             });
-            const isOwner = team?.ownerId === defaultAgentId;
-            const isMember = isOwner ? true : !!(await this.prisma.teamMember.findFirst({
-              where: { teamId: body.teamId, userId: defaultAgentId, status: 'active' },
-            }));
-            if (isMember) {
-              await this.prisma.customerChats.update({
-                where: { id: activeChat.id },
-                data: { chatStatus: 'HUMAN_ACTIVE', agentUserId: defaultAgentId },
-              });
-              // P2 Faz 4: promote REQUESTED → ASSIGNED once the chat
-              // row is flipped to HUMAN_ACTIVE and the agent is being
-              // notified. optimistic-lock from='REQUESTED' guards
-              // against the unlikely case where a second concurrent
-              // handover leaked past.
-              await this.chatFlowService.safeTransition(
-                botUser.id,
-                sessionId,
-                FlowKind.HANDOFF,
-                {
-                  from: 'REQUESTED',
-                  to: 'ASSIGNED',
-                  payload: {
-                    source: 'auto_handover_assigned',
-                    agentUserId: defaultAgentId,
-                    chatRowId: activeChat.id,
-                  },
+            // P2 Faz 4: promote REQUESTED → ASSIGNED once the chat
+            // row is flipped to HUMAN_ACTIVE and the agent is being
+            // notified. optimistic-lock from='REQUESTED' guards
+            // against the unlikely case where a second concurrent
+            // handover leaked past.
+            await this.chatFlowService.safeTransition(
+              botUser.id,
+              sessionId,
+              FlowKind.HANDOFF,
+              {
+                from: 'REQUESTED',
+                to: 'ASSIGNED',
+                payload: {
+                  source: 'auto_handover_assigned',
+                  agentUserId: assigneeId,
+                  chatRowId: activeChat.id,
                 },
-                'bot:autoHandover:assigned',
-              );
-              this.eventsGateway.notifyAgent(defaultAgentId, {
-                chatId: activeChat.id,
-                type: 'auto_handover',
-                message: 'New live chat conversation assigned to you.',
-              });
-
-              const sessionLink = `${process.env.FRONTEND_URL}/live-chat/${activeChat.id}`;
-              this.eventsGateway.notifyHandoffRequested(defaultAgentId, {
-                chatId: activeChat.id,
-                botName: botUser.botName,
-                sessionLink,
-              });
-
-              try {
-                const agentUser = await this.prisma.user.findUnique({
-                  where: { id: defaultAgentId },
-                  select: { email: true },
-                });
-                if (agentUser?.email) {
-                  await this.mailService.sendHandoffNotification(
-                    agentUser.email,
-                    botUser.botName,
-                    sessionLink,
-                  );
-                }
-              } catch (mailError) {
-                console.log('Handoff notification email failed:', mailError);
-              }
-
-              try {
-                await this.pushNotificationService.sendToUser(defaultAgentId, {
-                  title: 'Yeni canlı sohbet',
-                  body: `${botUser.botName} bir görüşmeyi size aktardı.`,
-                  data: { type: 'handoff_requested', chatId: activeChat.id },
-                });
-              } catch (pushError) {
-                console.log('Handoff push notification failed:', pushError);
-              }
-            }
-          } catch (e) {
-            console.log('Auto-handover failed:', e);
+              },
+              'bot:autoHandover:assigned',
+            );
+            await this.handoffNotificationService.notifyAssignee({
+              chatRowId: activeChat.id,
+              agentUserId: assigneeId,
+              botName: botUser.botName,
+            });
           }
+        } catch (e) {
+          console.log('Auto-handover failed:', e);
         }
       }
 
@@ -1345,6 +1408,12 @@ export class BotService {
             },
           },
         });
+        void this.emitConversationAnalytics(
+          body.teamId,
+          body.botId,
+          activeChat.id,
+          'WIDGET',
+        );
       } else {
         await this.prisma.customerChatDetails.createMany({
           data: [
@@ -1392,79 +1461,47 @@ export class BotService {
           'bot:autoHandover:requested:stream',
         );
         const settings = botUser.settings as any;
-        const defaultAgentId = settings?.defaultAgentId;
-        if (defaultAgentId) {
-          try {
-            const teamRow = await this.prisma.team.findUnique({
-              where: { id: body.teamId },
-              select: { ownerId: true },
+        try {
+          // defaultAgentId when configured, else the team owner — so a
+          // fresh account gets handover alerts without touching settings.
+          const assigneeId = await this.handoffNotificationService.resolveAssigneeId(
+            body.teamId,
+            settings,
+          );
+          if (
+            assigneeId &&
+            (await this.handoffNotificationService.isValidAssignee(body.teamId, assigneeId))
+          ) {
+            await this.prisma.customerChats.update({
+              where: { id: activeChat.id },
+              data: {
+                chatStatus: 'HUMAN_ACTIVE',
+                agentUserId: assigneeId,
+              },
             });
-            const isOwner = teamRow?.ownerId === defaultAgentId;
-            const isMember = isOwner
-              ? true
-              : !!(await this.prisma.teamMember.findFirst({
-                  where: {
-                    teamId: body.teamId,
-                    userId: defaultAgentId,
-                    status: 'active',
-                  },
-                }));
-            if (isMember) {
-              await this.prisma.customerChats.update({
-                where: { id: activeChat.id },
-                data: {
-                  chatStatus: 'HUMAN_ACTIVE',
-                  agentUserId: defaultAgentId,
+            await this.chatFlowService.safeTransition(
+              botUser.id,
+              sessionId,
+              FlowKind.HANDOFF,
+              {
+                from: 'REQUESTED',
+                to: 'ASSIGNED',
+                payload: {
+                  source: 'auto_handover_assigned_stream',
+                  agentUserId: assigneeId,
+                  chatRowId: activeChat.id,
                 },
-              });
-              await this.chatFlowService.safeTransition(
-                botUser.id,
-                sessionId,
-                FlowKind.HANDOFF,
-                {
-                  from: 'REQUESTED',
-                  to: 'ASSIGNED',
-                  payload: {
-                    source: 'auto_handover_assigned_stream',
-                    agentUserId: defaultAgentId,
-                    chatRowId: activeChat.id,
-                  },
-                },
-                'bot:autoHandover:assigned:stream',
-              );
-              this.eventsGateway.notifyAgent(defaultAgentId, {
-                chatId: activeChat.id,
-                type: 'auto_handover',
-                message: 'New live chat conversation assigned to you.',
-              });
-              const sessionLink = `${process.env.FRONTEND_URL}/live-chat/${activeChat.id}`;
-              this.eventsGateway.notifyHandoffRequested(defaultAgentId, {
-                chatId: activeChat.id,
-                botName: botUser.botName,
-                sessionLink,
-              });
-              try {
-                const agentUser = await this.prisma.user.findUnique({
-                  where: { id: defaultAgentId },
-                  select: { email: true },
-                });
-                if (agentUser?.email) {
-                  await this.mailService.sendHandoffNotification(
-                    agentUser.email,
-                    botUser.botName,
-                    sessionLink,
-                  );
-                }
-              } catch (mailError) {
-                console.log(
-                  '[chatStream] handoff notification email failed:',
-                  mailError,
-                );
-              }
-            }
-          } catch (e) {
-            console.log('[chatStream] auto-handover failed:', e);
+              },
+              'bot:autoHandover:assigned:stream',
+            );
+            await this.handoffNotificationService.notifyAssignee({
+              chatRowId: activeChat.id,
+              agentUserId: assigneeId,
+              botName: botUser.botName,
+            });
           }
+        } catch (e) {
+          console.log('[chatStream] auto-handover failed:', e);
         }
       }
     } catch (persistErr) {

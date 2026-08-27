@@ -13,6 +13,7 @@ import { randomUUID } from 'crypto';
 import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import appleSigninAuth from 'apple-signin-auth';
 import { SystemLogService } from 'src/system-log/system-log.service';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 
 @Injectable()
 export class AuthenticationService {
@@ -25,7 +26,84 @@ export class AuthenticationService {
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     private systemLogService: SystemLogService,
+    private mixpanel: MixpanelService,
   ) { }
+
+  /** FREE plan's lifetime token grant — the Chatbu "trial" allowance. */
+  private get freeTokenAllowance(): number {
+    return Number(process.env.FREE_TOKEN_LIMIT) || 100000;
+  }
+
+  /**
+   * Emit the signup analytics fan-out: Signup Completed + Trial Started +
+   * (for a brand-new team) Workspace Created, plus people/group profiles.
+   * All idempotent via $insert_id; safe to also fire from the frontend.
+   */
+  private emitSignupAnalytics(params: {
+    userId: string;
+    email: string;
+    name?: string;
+    signupMethod: 'email' | 'google' | 'apple';
+    teamId: string | null;
+    teamName?: string | null;
+    isNewTeam: boolean;
+    createdAt?: Date;
+  }): void {
+    const { userId, email, name, signupMethod, teamId, teamName, isNewTeam, createdAt } = params;
+    const signupDate = (createdAt ?? new Date()).toISOString();
+    try {
+      this.mixpanel.setPeople(userId, {
+        $email: email,
+        $name: name,
+        user_id: userId,
+        plan: 'free',
+        signup_method: signupMethod,
+        signup_date: signupDate,
+        team_id: teamId,
+        email_verified: signupMethod !== 'email',
+      });
+
+      this.mixpanel.track(
+        'Signup Completed',
+        userId,
+        { signup_method: signupMethod, team_id: teamId },
+        `signup_completed:${userId}`,
+      );
+
+      this.mixpanel.track(
+        'Trial Started',
+        userId,
+        {
+          trial_type: 'token_quota',
+          token_allowance: this.freeTokenAllowance,
+          plan: 'free',
+          team_id: teamId,
+        },
+        `trial_started:${userId}`,
+      );
+
+      if (isNewTeam && teamId) {
+        this.mixpanel.track(
+          'Workspace Created',
+          userId,
+          { organization_id: teamId, workspace_id: teamId },
+          `workspace_created:${teamId}`,
+        );
+        this.mixpanel.setGroup('team', teamId, {
+          team_id: teamId,
+          team_name: teamName,
+          plan: 'free',
+          subscription_status: 'INACTIVE',
+          created_at: signupDate,
+        });
+      }
+    } catch (err) {
+      this.logger.error('emitSignupAnalytics failed', {
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   /**
    * Get the primary team ID for a user.
@@ -197,6 +275,9 @@ export class AuthenticationService {
       }
 
       // Handle team invitation
+      let analyticsTeamId: string | null = null;
+      let analyticsTeamName: string | null = null;
+      let analyticsIsNewTeam = false;
       if (pendingTeamMember) {
         // Update the existing TeamMember record
         await this.prisma.teamMember.update({
@@ -218,6 +299,7 @@ export class AuthenticationService {
         this.logger.info(
           `User ${createdUser.id} accepted team invitation for team ${pendingTeamMember.teamId}`,
         );
+        analyticsTeamId = pendingTeamMember.teamId;
       } else {
         // Create a default team for the new user
         const defaultTeam = await this.prisma.team.create({
@@ -238,7 +320,21 @@ export class AuthenticationService {
         });
 
         await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
+        analyticsTeamId = defaultTeam.id;
+        analyticsTeamName = defaultTeam.name;
+        analyticsIsNewTeam = true;
       }
+
+      this.emitSignupAnalytics({
+        userId: createdUser.id,
+        email: createdUser.email,
+        name: createdUser.name,
+        signupMethod: 'email',
+        teamId: analyticsTeamId,
+        teamName: analyticsTeamName,
+        isNewTeam: analyticsIsNewTeam,
+        createdAt: createdUser.createdAt,
+      });
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -333,6 +429,14 @@ export class AuthenticationService {
     if (!teamId) {
       throw new UnauthorizedException('User has no team assigned');
     }
+
+    this.mixpanel.track(
+      'Email Verification Completed',
+      user.id,
+      { team_id: teamId },
+      `email_verified:${user.id}`,
+    );
+    this.mixpanel.setPeople(user.id, { email_verified: true });
 
     const tokens = this.getTokens(user.id, user.email, teamId, user.role);
 
@@ -644,13 +748,18 @@ export class AuthenticationService {
     });
   }
 
-  async googleLogin(email: string, user: any) {
+  async googleLogin(email: string, user: any, provider: 'google' | 'apple' = 'google') {
     let findUser = await this.prisma.user.findFirst({
       where: {
         email: email,
       },
       select: { email: true, id: true, name: true, password: true, role: true },
     });
+
+    let analyticsIsNewSignup = false;
+    let analyticsTeamId: string | null = null;
+    let analyticsTeamName: string | null = null;
+    let analyticsIsNewTeam = false;
 
     if (!findUser) {
       // Check if this user has a pending team invitation
@@ -701,6 +810,7 @@ export class AuthenticationService {
         this.logger.info(
           `Google user ${createdUser.id} accepted team invitation for team ${pendingTeamMember.teamId}`,
         );
+        analyticsTeamId = pendingTeamMember.teamId;
       } else {
         // Create a default team for the new user
         const defaultTeam = await this.prisma.team.create({
@@ -721,7 +831,12 @@ export class AuthenticationService {
         });
 
         await this.quoteService.createDefaultQuotas(defaultTeam.id, createdUser.id);
+        analyticsTeamId = defaultTeam.id;
+        analyticsTeamName = defaultTeam.name;
+        analyticsIsNewTeam = true;
       }
+
+      analyticsIsNewSignup = true;
 
       findUser = await this.prisma.user.findFirst({
         where: {
@@ -760,6 +875,18 @@ export class AuthenticationService {
       where: { id: teamId },
       select: { onboardingCompletedAt: true },
     });
+
+    if (analyticsIsNewSignup) {
+      this.emitSignupAnalytics({
+        userId: data.id,
+        email: data.email,
+        name: data.name,
+        signupMethod: provider,
+        teamId: analyticsTeamId ?? teamId,
+        teamName: analyticsTeamName,
+        isNewTeam: analyticsIsNewTeam,
+      });
+    }
 
     return {
       success: true,
@@ -847,7 +974,7 @@ export class AuthenticationService {
       return { success: false, message: 'Apple account could not be verified' };
     }
 
-    return this.googleLogin(email, { displayName: fullName });
+    return this.googleLogin(email, { displayName: fullName }, 'apple');
   }
 
   async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {

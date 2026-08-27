@@ -4,6 +4,7 @@ import { MailService } from '../mail/mail.service';
 import Stripe from 'stripe';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
 
 @Injectable()
 export class BillingService {
@@ -14,6 +15,7 @@ export class BillingService {
         private prisma: PrismaService,
         private mailService: MailService,
         private config: ConfigService,
+        private mixpanel: MixpanelService,
     ) {
         const stripeKey = this.config.get('STRIPE_SECRET_KEY');
         if (stripeKey) {
@@ -135,6 +137,14 @@ export class BillingService {
                 ]);
             }
 
+            this.emitSubscriptionEvent('Subscription Started', {
+                userId: subscription.userId,
+                teamId: teamMember?.teamId ?? null,
+                invoice,
+                billingInterval,
+                insertId: `sub_started:${stripeSubscription.id}`,
+            });
+
             this.logger.log(`User ${subscription.userId} upgraded to PREMIUM via webhook (billingInterval=${billingInterval})`);
             return;
         }
@@ -152,6 +162,69 @@ export class BillingService {
         });
 
         await this.applyScheduledPriceMigration(subscription, stripeSubscription, currentPeriodStart, currentPeriodEnd);
+
+        this.emitSubscriptionEvent('Subscription Renewed', {
+            userId: subscription.userId,
+            teamId: null,
+            invoice,
+            billingInterval: (subscription.billingInterval as 'monthly' | 'yearly') || 'monthly',
+            insertId: `invoice:${invoice.id}`,
+        });
+    }
+
+    /**
+     * Shared emitter for the revenue events that Mixpanel must dedupe. Resolves
+     * the team id when not supplied, records the charge on the profile, and
+     * refreshes the plan on the user profile + team group. Fire-and-forget.
+     */
+    private async emitSubscriptionEvent(
+        event: 'Subscription Started' | 'Subscription Renewed',
+        params: {
+            userId: string;
+            teamId: string | null;
+            invoice: Stripe.Invoice;
+            billingInterval: 'monthly' | 'yearly';
+            insertId: string;
+        },
+    ): Promise<void> {
+        try {
+            const { userId, invoice, billingInterval, insertId } = params;
+            const teamId =
+                params.teamId ??
+                (await this.mixpanel.resolveIdentity(userId)).teamId;
+            const amount = (invoice.amount_paid ?? 0) / 100;
+            const currency = (invoice.currency ?? 'usd').toUpperCase();
+            this.mixpanel.track(
+                event,
+                userId,
+                {
+                    plan: 'premium',
+                    billing_cycle: billingInterval,
+                    amount,
+                    currency,
+                    stripe_customer_id: invoice.customer as string,
+                    team_id: teamId,
+                },
+                insertId,
+            );
+            if (amount > 0) {
+                this.mixpanel.trackCharge(userId, amount, {
+                    event,
+                    currency,
+                    billing_cycle: billingInterval,
+                });
+            }
+            this.mixpanel.setPeople(userId, { plan: 'premium' });
+            if (teamId) {
+                this.mixpanel.setGroup('team', teamId, {
+                    team_id: teamId,
+                    plan: 'premium',
+                    subscription_status: 'ACTIVE',
+                });
+            }
+        } catch (err) {
+            this.logger.error('emitSubscriptionEvent failed', err as any);
+        }
     }
 
     /**
@@ -268,6 +341,22 @@ export class BillingService {
         // Send email notification
         await this.mailService.sendPaymentFailedEmail(subscription.user.email, subscription.user.name);
 
+        this.mixpanel.track(
+            'Payment Failed',
+            subscription.userId,
+            {
+                plan: subscription.tier === 'PREMIUM' ? 'premium' : 'free',
+                amount: (invoice.amount_due ?? 0) / 100,
+                currency: (invoice.currency ?? 'usd').toUpperCase(),
+                failure_reason:
+                    (invoice as any).last_finalization_error?.message ??
+                    (invoice as any).billing_reason ??
+                    'unknown',
+                account_blocked: true,
+            },
+            `payment_failed:${invoice.id}`,
+        );
+
         this.logger.warn(`Payment failed for user ${subscription.userId}. Account blocked.`);
     }
 
@@ -337,6 +426,25 @@ export class BillingService {
                     data: { limit: 1 }, // 1 Bot for FREE users
                 }),
             ]);
+        }
+
+        this.mixpanel.track(
+            'Subscription Cancelled',
+            subscription.userId,
+            {
+                plan: 'premium',
+                billing_cycle: subscription.billingInterval ?? 'monthly',
+                team_id: teamMember?.teamId ?? null,
+            },
+            `sub_deleted:${stripeSubscription.id}`,
+        );
+        this.mixpanel.setPeople(subscription.userId, { plan: 'free' });
+        if (teamMember?.teamId) {
+            this.mixpanel.setGroup('team', teamMember.teamId, {
+                team_id: teamMember.teamId,
+                plan: 'free',
+                subscription_status: 'INACTIVE',
+            });
         }
 
         this.logger.log(`Subscription deleted for user ${subscription.userId}. Downgraded to FREE.`);
