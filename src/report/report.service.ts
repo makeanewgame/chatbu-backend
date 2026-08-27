@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { EventsGateway } from 'src/events/events.gateway';
+import { HandoffNotificationService } from 'src/handoff/handoff-notification.service';
 import axios from 'axios';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class ReportService {
         private minioClientService: MinioClientService,
         private configService: ConfigService,
         private eventsGateway: EventsGateway,
+        private handoffNotificationService: HandoffNotificationService,
     ) { }
 
     async getChatHistory(teamId: string) {
@@ -395,6 +397,25 @@ export class ReportService {
                 agentUserId,
             },
         });
+
+        // Tell the agent the chat is now theirs (socket + push + email).
+        // Manual handover used to be completely silent — the target agent
+        // got no signal at all unless they happened to be staring at the
+        // live-chat list. Best-effort: a notification failure must not
+        // fail the handover itself.
+        try {
+            const bot = await this.prisma.customerBots.findUnique({
+                where: { id: chat.botId },
+                select: { botName: true },
+            });
+            await this.handoffNotificationService.notifyAssignee({
+                chatRowId: chat.id,
+                agentUserId,
+                botName: bot?.botName ?? 'Chatbu',
+            });
+        } catch (notifyError) {
+            console.log('[handoverChat] assignee notification failed:', notifyError);
+        }
 
         return { success: true, chat: updated };
     }

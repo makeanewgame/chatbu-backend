@@ -1,0 +1,146 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
+import { Logger } from 'winston';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { EventsGateway } from 'src/events/events.gateway';
+import { MailService } from 'src/mail/mail.service';
+import { PushNotificationService } from 'src/push-notification/push-notification.service';
+
+export interface HandoffNotifyParams {
+    /** CustomerChats.id (the internal row id, not the public chatId) */
+    chatRowId: string;
+    /** The user the chat has actually been assigned to */
+    agentUserId: string;
+    /** Display name of the bot the visitor was talking to */
+    botName: string;
+}
+
+/**
+ * Single place that decides WHO gets told about a live-chat handover and
+ * fans the "this chat is now yours" event out across every channel the
+ * agent might be reachable on: live socket, mobile push, email.
+ *
+ * Previously this logic was copy-pasted into three call sites (batch
+ * chat, streaming chat, manual dashboard handover) and each copy had
+ * drifted — the streaming path never sent push, the manual path sent
+ * nothing at all. Everything now routes through here.
+ */
+@Injectable()
+export class HandoffNotificationService {
+    constructor(
+        private prisma: PrismaService,
+        private eventsGateway: EventsGateway,
+        private mailService: MailService,
+        private pushNotificationService: PushNotificationService,
+        @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
+    ) { }
+
+    /**
+     * The agent a handover should land on.
+     *
+     * The bot's explicitly configured `settings.defaultAgentId` wins when
+     * present. Otherwise we fall back to the team owner — this is what
+     * lets a brand-new account receive handover notifications without the
+     * owner ever opening bot settings. As soon as they pick a specific
+     * agent (or change it) that choice takes over.
+     */
+    async resolveAssigneeId(
+        teamId: string,
+        botSettings: unknown,
+    ): Promise<string | null> {
+        const configured = (botSettings as { defaultAgentId?: string } | null)
+            ?.defaultAgentId;
+        if (configured) return configured;
+
+        const team = await this.prisma.team.findUnique({
+            where: { id: teamId },
+            select: { ownerId: true },
+        });
+        return team?.ownerId ?? null;
+    }
+
+    /**
+     * Guard against a stale `defaultAgentId` (or owner id) that no longer
+     * belongs to the team — e.g. a member who was removed after being set
+     * as the default agent.
+     */
+    async isValidAssignee(teamId: string, agentUserId: string): Promise<boolean> {
+        const team = await this.prisma.team.findUnique({
+            where: { id: teamId },
+            select: { ownerId: true },
+        });
+        if (team?.ownerId === agentUserId) return true;
+
+        const member = await this.prisma.teamMember.findFirst({
+            where: { teamId, userId: agentUserId, status: 'active' },
+            select: { id: true },
+        });
+        return !!member;
+    }
+
+    /**
+     * Best-effort fan-out. Each channel is isolated in its own try/catch
+     * so one failing (no push token, SMTP down, socket not connected)
+     * never blocks the others.
+     */
+    async notifyAssignee(params: HandoffNotifyParams): Promise<void> {
+        const { chatRowId, agentUserId, botName } = params;
+        const sessionLink = `${process.env.FRONTEND_URL}/live-chat/${chatRowId}`;
+
+        // 1. Live socket — agent panel / mobile app if currently connected
+        try {
+            this.eventsGateway.notifyAgent(agentUserId, {
+                chatId: chatRowId,
+                type: 'handoff',
+                message: 'New live chat conversation assigned to you.',
+            });
+            this.eventsGateway.notifyHandoffRequested(agentUserId, {
+                chatId: chatRowId,
+                botName,
+                sessionLink,
+            });
+        } catch (err) {
+            this.logger.error(
+                `[handoff] socket notify failed for agent ${agentUserId}: ${err}`,
+            );
+        }
+
+        // 2. Mobile push
+        try {
+            await this.pushNotificationService.sendToUser(agentUserId, {
+                title: 'Yeni canlı sohbet',
+                body: `${botName} bir görüşmeyi size aktardı.`,
+                data: { type: 'handoff_requested', chatId: chatRowId },
+            });
+        } catch (err) {
+            this.logger.error(
+                `[handoff] push notify failed for agent ${agentUserId}: ${err}`,
+            );
+        }
+
+        // 3. Email
+        try {
+            const agent = await this.prisma.user.findUnique({
+                where: { id: agentUserId },
+                select: { email: true },
+            });
+            const chat = await this.prisma.customerChats.findUnique({
+                where: { id: chatRowId },
+                select: { detectedLanguage: true },
+            });
+            if (agent?.email) {
+                const lang = chat?.detectedLanguage === 'en' ? 'en' : 'tr';
+                await this.mailService.sendHandoffNotification(
+                    agent.email,
+                    botName,
+                    sessionLink,
+                    lang,
+                );
+            }
+        } catch (err) {
+            this.logger.error(
+                `[handoff] email notify failed for agent ${agentUserId}: ${err}`,
+            );
+        }
+    }
+}
