@@ -7,6 +7,7 @@ import {
     Delete,
     Param,
     Query,
+    Req,
     UseGuards,
     HttpCode,
     HttpStatus
@@ -87,6 +88,23 @@ export class AdminController {
     @HttpCode(HttpStatus.CREATED)
     async createUser(@Body() dto: CreateAdminUserDto) {
         return this.adminService.createUser(dto);
+    }
+    //#endregion
+
+    //#region impersonateUser
+    @ApiOperation({
+        summary:
+            'Impersonate a user — issues a short-lived (2h) session token for that user, no refresh token (Admin only)',
+    })
+    @ApiResponse({ status: 200, description: 'Impersonation session token issued' })
+    @ApiResponse({ status: 403, description: 'Target is an admin account' })
+    @ApiResponse({ status: 404, description: 'User not found' })
+    @ApiParam({ name: 'id', type: String, description: 'Target user ID' })
+    @Post('users/:id/impersonate')
+    @HttpCode(HttpStatus.OK)
+    async impersonateUser(@Req() req, @Param('id') id: string) {
+        const adminId = req.user?.sub || req.user?.id;
+        return this.adminService.impersonateUser(adminId, id);
     }
     //#endregion
 

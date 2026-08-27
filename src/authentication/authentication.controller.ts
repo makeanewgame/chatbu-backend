@@ -16,6 +16,7 @@ import { ActivateLostPasswordRequest } from './dto/activatelostpassword.request'
 import { GoogleGuard } from './utils/google.guard';
 import { ConfigService } from '@nestjs/config';
 import { AccessTokenGuard } from './utils/accesstoken.guard';
+import { NotImpersonatingGuard } from './utils/not-impersonating.guard';
 import { ActivateRegistrationRequest } from './dto/activateregister.request';
 import { ResendVerificationRequest } from './dto/resendverification.request';
 import { LoginRequest } from './dto/login.request';
@@ -319,7 +320,7 @@ export class AuthenticationController {
     return await this.authService.checkDeletionEligibility(req.user.sub);
   }
 
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(AccessTokenGuard, NotImpersonatingGuard)
   @Post('request-deletion')
   async requestAccountDeletion(@Req() req, @Body() body: { reasons?: string[]; otherText?: string }) {
     return await this.authService.requestAccountDeletion(req.user.sub, body?.reasons, body?.otherText);
@@ -331,7 +332,7 @@ export class AuthenticationController {
     return await this.authService.cancelAccountDeletion(req.user.sub);
   }
 
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(AccessTokenGuard, NotImpersonatingGuard)
   @Post('change-password')
   async changePassword(@Req() req, @Body() body: ChangePasswordRequest) {
     return await this.authService.changePassword(

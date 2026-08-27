@@ -10,10 +10,11 @@ import { JwtModule } from '@nestjs/jwt';
 import { MinioClientModule } from 'src/minio-client/minio-client.module';
 import { ConfigModule } from '@nestjs/config';
 import { SubscriptionModule } from 'src/subscription/subscription.module';
+import { SystemLogModule } from 'src/system-log/system-log.module';
 
 @Module({
     controllers: [AdminController, SettingsController, PricePlanController],
     providers: [AdminService, K8sService],
-    imports: [PrismaModule, JwtModule, MinioClientModule, ConfigModule, SubscriptionModule, HttpModule],
+    imports: [PrismaModule, JwtModule, MinioClientModule, ConfigModule, SubscriptionModule, HttpModule, SystemLogModule],
 })
 export class AdminModule { }
