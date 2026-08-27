@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { BotService } from 'src/bot/bot.service';
 import { MetaEmbeddedService } from 'src/integration/meta-embedded/meta-embedded.service';
+import { resolveMetaReplyText } from './meta-reply.util';
 
 @Injectable()
 export class MetaService {
@@ -95,8 +96,14 @@ export class MetaService {
                         '0.0.0.0',
                     );
 
-                    const replyText = response?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
-                    await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                    const replyText = resolveMetaReplyText(response);
+                    if (replyText) {
+                        await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                    } else {
+                        this.logger.warn(
+                            `[messenger] empty chat response for botId=${botId} chatId=fb_${senderId} — no reply sent`,
+                        );
+                    }
                 } catch (err) {
                     this.logger.error(`Error processing Messenger message from ${senderId}: ${err?.toString()}`);
                 }
@@ -154,8 +161,14 @@ export class MetaService {
                         '0.0.0.0',
                     );
 
-                    const replyText = response?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
-                    await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                    const replyText = resolveMetaReplyText(response);
+                    if (replyText) {
+                        await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                    } else {
+                        this.logger.warn(
+                            `[instagram] empty chat response for botId=${botId} chatId=ig_${senderId} — no reply sent`,
+                        );
+                    }
                 } catch (err) {
                     this.logger.error(`Error processing Instagram message from ${senderId}: ${err?.toString()}`);
                 }
@@ -270,7 +283,8 @@ export class MetaService {
             '0.0.0.0',
         );
 
-        const replyText = chatResponse?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
+        const replyText =
+            resolveMetaReplyText(chatResponse) ?? 'Üzgünüm, şu an yanıt veremiyorum.';
 
         // 3. Send bot reply via WhatsApp
         const data = await this.sendWhatsAppMessage(to, replyText, phoneNumberId, accessToken);

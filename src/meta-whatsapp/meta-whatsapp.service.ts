@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { BotService } from 'src/bot/bot.service';
 import { WhatsAppEmbeddedService } from 'src/integration/whatsapp-embedded/whatsapp-embedded.service';
+import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 export interface WhatsAppWebhookEntry {
@@ -226,8 +227,14 @@ export class MetaWhatsappService {
                             '0.0.0.0',
                         );
 
-                        const replyText = response?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
-                        await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                        const replyText = resolveMetaReplyText(response);
+                        if (replyText) {
+                            await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                        } else {
+                            this.logger.warn(
+                                `[whatsapp-embedded] empty chat response for chatId=wa_${senderId} — no reply sent`,
+                            );
+                        }
                     } catch (err) {
                         this.logger.error(
                             `Error processing WhatsApp message from ${senderId}: ${err?.toString()}`,
@@ -286,7 +293,8 @@ export class MetaWhatsappService {
                     '0.0.0.0',
                 );
 
-                const replyText = response?.content ?? 'Üzgünüm, şu an yanıt veremiyorum.';
+                const replyText =
+                    resolveMetaReplyText(response) ?? 'Üzgünüm, şu an yanıt veremiyorum.';
 
                 // Send reply via WhatsApp using test credentials
                 const waRes = await axios.post(
