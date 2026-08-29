@@ -934,6 +934,7 @@ export class BotService {
               chatRowId: activeChat.id,
               agentUserId: assigneeId,
               botName: botUser.botName,
+              botPrimaryLanguage: (botUser as any).primaryLanguage ?? null,
             });
           }
         } catch (e) {
@@ -1498,6 +1499,7 @@ export class BotService {
               chatRowId: activeChat.id,
               agentUserId: assigneeId,
               botName: botUser.botName,
+              botPrimaryLanguage: (botUser as any).primaryLanguage ?? null,
             });
           }
         } catch (e) {

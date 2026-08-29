@@ -13,6 +13,13 @@ export interface HandoffNotifyParams {
     agentUserId: string;
     /** Display name of the bot the visitor was talking to */
     botName: string;
+    /**
+     * Wizard v2 `CustomerBots.primaryLanguage`. Drives the owner-facing
+     * email locale (8 supported: en/tr/de/es/fr/it/ru/ar). Unlisted /
+     * omitted → English fallback in MailService. When absent the email
+     * still ships; only the language default changes.
+     */
+    botPrimaryLanguage?: string | null;
 }
 
 /**
@@ -84,7 +91,7 @@ export class HandoffNotificationService {
      * never blocks the others.
      */
     async notifyAssignee(params: HandoffNotifyParams): Promise<void> {
-        const { chatRowId, agentUserId, botName } = params;
+        const { chatRowId, agentUserId, botName, botPrimaryLanguage } = params;
         const sessionLink = `${process.env.FRONTEND_URL}/live-chat/${chatRowId}`;
 
         // 1. Live socket — agent panel / mobile app if currently connected
@@ -118,23 +125,22 @@ export class HandoffNotificationService {
             );
         }
 
-        // 3. Email
+        // 3. Email — locale from bot.primaryLanguage (owner-facing), NOT
+        // visitor's detectedLanguage. Owner reads the language they set
+        // for their bot; a French visitor doesn't mean the Turkish owner
+        // wants a French notification. MailService's registry falls back
+        // to English for unlisted / omitted locales.
         try {
             const agent = await this.prisma.user.findUnique({
                 where: { id: agentUserId },
                 select: { email: true },
             });
-            const chat = await this.prisma.customerChats.findUnique({
-                where: { id: chatRowId },
-                select: { detectedLanguage: true },
-            });
             if (agent?.email) {
-                const lang = chat?.detectedLanguage === 'en' ? 'en' : 'tr';
                 await this.mailService.sendHandoffNotification(
                     agent.email,
                     botName,
                     sessionLink,
-                    lang,
+                    botPrimaryLanguage ?? 'en',
                 );
             }
         } catch (err) {
