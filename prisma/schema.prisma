@@ -187,6 +187,14 @@ model CustomerBots {
   // BotService.createBot writes it explicitly on create — NULL should not
   // occur in steady state, this is a belt-and-suspenders fallback only.
   appointmentWorkingHours    Json?
+  // Owner-defined appointment types with per-type duration (backlog #24).
+  // Shape: [{name: string, minutes: number}]. Empty array = bot uses only
+  // WorkingHours.slotMinutes for every booking (backward-compatible default).
+  // The agent picks a type from conversation intent and passes its `minutes`
+  // to `request_booking_slot_picker` so slot length matches the actual
+  // service duration. Only meaningful for _bot_has_calendar bots; ignored
+  // by the rest of the platform. Platform-generic — no vertical assumption.
+  appointmentTypes           Json           @default("[]")
   // Wizard v2 structured intent inputs (2026-08-24, docs/WIZARD_V2.md).
   // All nullable / defaulted so v1 bots keep working unchanged;
   // wizardVersion distinguishes v1 (unstructured owner prompt) from

@@ -123,7 +123,16 @@ export class WidgetController {
     @Post('appointment/availability')
     @Throttle({ default: { ttl: 60000, limit: 20 } })
     async appointmentAvailability(@Body() body: any) {
-        return this.widgetService.getAppointmentAvailability(body.sessionToken);
+        // durationMinutes is forwarded from the widget when the agent picked
+        // an appointment type via request_booking_slot_picker(duration_minutes=N)
+        // — see chat_sse.py APPOINTMENT_BOOKING action data. Absent or invalid
+        // → falls back to the bot's WorkingHours.slotMinutes in the service.
+        const rawDuration = body?.durationMinutes;
+        const durationMinutes =
+            typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0
+                ? Math.floor(rawDuration)
+                : undefined;
+        return this.widgetService.getAppointmentAvailability(body.sessionToken, durationMinutes);
     }
 
     /**
