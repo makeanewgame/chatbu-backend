@@ -56,13 +56,28 @@ export class AppointmentAvailabilityService {
      * endpoint, the caller falls back to the text-based booking flow
      * rather than surfacing an HTTP error to an anonymous visitor.
      */
-    async getAvailableSlots(botId: string): Promise<AvailabilityResponse | AvailabilityError> {
+    async getAvailableSlots(
+        botId: string,
+        durationMinutes?: number,
+    ): Promise<AvailabilityResponse | AvailabilityError> {
         const bot = await this.prisma.customerBots.findUnique({
             where: { id: botId },
             select: { appointmentWorkingHours: true },
         });
         const workingHours: WorkingHours =
             (bot?.appointmentWorkingHours as unknown as WorkingHours) ?? DEFAULT_WORKING_HOURS;
+        // Per-appointment-type duration override (backlog #24). Caller resolves
+        // the type name → minutes and passes the number; anything absent /
+        // invalid falls back to the bot-level slotMinutes (backward-compatible
+        // — pre-#24 behaviour). Slot granularity AND `end - start` both use
+        // this so the widget's `ISO_END:` matches what the backend will
+        // accept later at validateSlot time.
+        const effectiveMinutes =
+            typeof durationMinutes === 'number' &&
+                Number.isFinite(durationMinutes) &&
+                durationMinutes > 0
+                ? Math.floor(durationMinutes)
+                : workingHours.slotMinutes;
 
         const zone = workingHours.timezone;
         const now = DateTime.now().setZone(zone);
@@ -98,8 +113,8 @@ export class AppointmentAvailabilityService {
 
             let slotStart = day.set({ hour: startH, minute: startM, second: 0, millisecond: 0 });
             const slots: string[] = [];
-            while (slotStart.plus({ minutes: workingHours.slotMinutes }) <= dayEnd) {
-                const slotEnd = slotStart.plus({ minutes: workingHours.slotMinutes });
+            while (slotStart.plus({ minutes: effectiveMinutes }) <= dayEnd) {
+                const slotEnd = slotStart.plus({ minutes: effectiveMinutes });
                 const isPast = slotStart < now;
                 const overlapsBusy = busyIntervals.some((b) => slotStart < b.end && slotEnd > b.start);
                 if (!isPast && !overlapsBusy) {
@@ -111,7 +126,14 @@ export class AppointmentAvailabilityService {
             days.push({ date: day.toISODate()!, slots });
         }
 
-        return { timezone: zone, slotMinutes: workingHours.slotMinutes, days, workingHours };
+        // Response echoes `slotMinutes` as the picker's actual step, which is
+        // now the resolved duration (per-type override or bot default). The
+        // widget uses this value verbatim when computing ISO_END so start +
+        // slotMinutes matches the slot the backend just handed it. The
+        // workingHours object still carries the bot-level default in its own
+        // field, unchanged, so the "custom date" client-side extension keeps
+        // computing granularity from the same source as before.
+        return { timezone: zone, slotMinutes: effectiveMinutes, days, workingHours };
     }
 
     /**
