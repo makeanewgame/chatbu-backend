@@ -483,6 +483,60 @@ export class MailService {
     ar: (n) => `عميل محتمل جديد من روبوت Chatbu الخاص بك: ${n}`,
   };
 
+  // Same 8-locale coverage as lead notifications above. The three
+  // registries here share the same shape — LOCALES set for template
+  // filename lookup, INTL_TAGS for `toLocaleString`, SUBJECTS factory
+  // for the email subject. Add a locale = create the template + register
+  // it in all three constants. Unknown / unlisted locales fall back to
+  // English.
+  private static readonly HANDOFF_NOTIFICATION_LOCALES = new Set([
+    'en', 'tr', 'de', 'es', 'fr', 'it', 'ru', 'ar',
+  ]);
+  private static readonly HANDOFF_NOTIFICATION_INTL_TAGS: Record<string, string> = {
+    en: 'en-US', tr: 'tr-TR', de: 'de-DE', es: 'es-ES', fr: 'fr-FR',
+    it: 'it-IT', ru: 'ru-RU', ar: 'ar-SA',
+  };
+  private static readonly HANDOFF_NOTIFICATION_SUBJECTS: Record<string, (botName: string) => string> = {
+    en: (n) => `Live chat requested on your Chatbu bot: ${n}`,
+    tr: (n) => `Chatbu botunuzda canlı destek talebi: ${n}`,
+    de: (n) => `Live-Chat auf Ihrem Chatbu-Bot angefordert: ${n}`,
+    es: (n) => `Chat en vivo solicitado en tu bot Chatbu: ${n}`,
+    fr: (n) => `Chat en direct demandé sur votre bot Chatbu : ${n}`,
+    it: (n) => `Chat dal vivo richiesta sul tuo bot Chatbu: ${n}`,
+    ru: (n) => `На вашем Chatbu-боте запрошен онлайн-чат: ${n}`,
+    ar: (n) => `تم طلب دردشة مباشرة على روبوت Chatbu الخاص بك: ${n}`,
+  };
+
+  private static readonly NEGATIVE_FEEDBACK_LOCALES = new Set([
+    'en', 'tr', 'de', 'es', 'fr', 'it', 'ru', 'ar',
+  ]);
+  private static readonly NEGATIVE_FEEDBACK_INTL_TAGS: Record<string, string> = {
+    en: 'en-US', tr: 'tr-TR', de: 'de-DE', es: 'es-ES', fr: 'fr-FR',
+    it: 'it-IT', ru: 'ru-RU', ar: 'ar-SA',
+  };
+  private static readonly NEGATIVE_FEEDBACK_SUBJECTS: Record<string, (botName: string) => string> = {
+    en: (n) => `Negative feedback on your Chatbu bot: ${n}`,
+    tr: (n) => `Chatbu botunuzda olumsuz geri bildirim: ${n}`,
+    de: (n) => `Negatives Feedback zu Ihrem Chatbu-Bot: ${n}`,
+    es: (n) => `Feedback negativo en tu bot Chatbu: ${n}`,
+    fr: (n) => `Retour négatif sur votre bot Chatbu : ${n}`,
+    it: (n) => `Feedback negativo sul tuo bot Chatbu: ${n}`,
+    ru: (n) => `Негативный отзыв о вашем Chatbu-боте: ${n}`,
+    ar: (n) => `ملاحظات سلبية على روبوت Chatbu الخاص بك: ${n}`,
+  };
+  // Answer labels shown as the "answer-badge" inside the template body.
+  // Keys are the raw `feedbackData.answer` values from widget.service.ts.
+  private static readonly NEGATIVE_FEEDBACK_ANSWER_LABELS: Record<string, Record<'PARTIAL' | 'NO', string>> = {
+    en: { PARTIAL: 'Partially satisfied', NO: 'Not satisfied' },
+    tr: { PARTIAL: 'Kısmen memnun', NO: 'Memnun değil' },
+    de: { PARTIAL: 'Teilweise zufrieden', NO: 'Nicht zufrieden' },
+    es: { PARTIAL: 'Parcialmente satisfecho', NO: 'No satisfecho' },
+    fr: { PARTIAL: 'Partiellement satisfait', NO: 'Non satisfait' },
+    it: { PARTIAL: 'Parzialmente soddisfatto', NO: 'Non soddisfatto' },
+    ru: { PARTIAL: 'Частично удовлетворён', NO: 'Не удовлетворён' },
+    ar: { PARTIAL: 'راضٍ جزئيًا', NO: 'غير راضٍ' },
+  };
+
   async sendLeadNotification(
     to: string,
     botName: string,
@@ -536,21 +590,22 @@ export class MailService {
     sessionLink: string,
     lang: string = 'en',
   ) {
+    const locale = MailService.HANDOFF_NOTIFICATION_LOCALES.has(lang) ? lang : 'en';
     const rootDir = process.cwd();
 
-    const templatePath = path.join(
-      rootDir,
-      'dist',
-      'templates',
-      lang === 'en' ? 'handoff_notification.html' : 'handoff_notification_tr.html',
-    );
+    const filename = locale === 'en'
+      ? 'handoff_notification.html'
+      : `handoff_notification_${locale}.html`;
+    const templatePath = path.join(rootDir, 'dist', 'templates', filename);
     const templateSource = fs.readFileSync(templatePath, 'utf8');
     const template = handlebars.compile(templateSource);
 
     const html = template({
       botName,
       sessionLink,
-      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      createdAt: new Date().toLocaleString(
+        MailService.HANDOFF_NOTIFICATION_INTL_TAGS[locale],
+      ),
       company: process.env.COMPANY_NAME,
       privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
       supportUrl: process.env.FRONTEND_SUPPORT_URL,
@@ -559,15 +614,13 @@ export class MailService {
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to,
-      subject: lang === 'en'
-        ? `Live chat requested on your Chatbu bot: ${botName}`
-        : `Chatbu botunuzda canlı destek talebi: ${botName}`,
+      subject: MailService.HANDOFF_NOTIFICATION_SUBJECTS[locale](botName),
       html,
     };
 
     try {
       await this.mailerService.sendMail(mailOptions);
-      this.logger.info(`Handoff notification sent to ${to}`);
+      this.logger.info(`Handoff notification sent to ${to} (locale=${locale})`);
     } catch (error) {
       this.logger.error(`Error sending handoff notification to ${to}:`, error);
       throw error;
@@ -620,27 +673,24 @@ export class MailService {
     feedbackData: { answer: 'PARTIAL' | 'NO'; comment?: string },
     lang: string = 'en',
   ) {
+    const locale = MailService.NEGATIVE_FEEDBACK_LOCALES.has(lang) ? lang : 'en';
     const rootDir = process.cwd();
 
-    const templatePath = path.join(
-      rootDir,
-      'dist',
-      'templates',
-      lang === 'en' ? 'negative_feedback_notification.html' : 'negative_feedback_notification_tr.html',
-    );
+    const filename = locale === 'en'
+      ? 'negative_feedback_notification.html'
+      : `negative_feedback_notification_${locale}.html`;
+    const templatePath = path.join(rootDir, 'dist', 'templates', filename);
     const templateSource = fs.readFileSync(templatePath, 'utf8');
     const template = handlebars.compile(templateSource);
 
-    const answerLabelMap = {
-      PARTIAL: lang === 'en' ? 'Partially satisfied' : 'Kısmen memnun',
-      NO: lang === 'en' ? 'Not satisfied' : 'Memnun değil',
-    };
-
     const html = template({
       botName,
-      answerLabel: answerLabelMap[feedbackData.answer],
+      answerLabel:
+        MailService.NEGATIVE_FEEDBACK_ANSWER_LABELS[locale][feedbackData.answer],
       comment: feedbackData.comment,
-      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      createdAt: new Date().toLocaleString(
+        MailService.NEGATIVE_FEEDBACK_INTL_TAGS[locale],
+      ),
       company: process.env.COMPANY_NAME,
       privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
       supportUrl: process.env.FRONTEND_SUPPORT_URL,
@@ -649,15 +699,13 @@ export class MailService {
     const mailOptions = {
       from: process.env.ADMIN_EMAIL,
       to,
-      subject: lang === 'en'
-        ? `Negative feedback on your Chatbu bot: ${botName}`
-        : `Chatbu botunuzda olumsuz geri bildirim: ${botName}`,
+      subject: MailService.NEGATIVE_FEEDBACK_SUBJECTS[locale](botName),
       html,
     };
 
     try {
       await this.mailerService.sendMail(mailOptions);
-      this.logger.info(`Negative feedback notification sent to ${to}`);
+      this.logger.info(`Negative feedback notification sent to ${to} (locale=${locale})`);
     } catch (error) {
       this.logger.error(`Error sending negative feedback notification to ${to}:`, error);
       throw error;
