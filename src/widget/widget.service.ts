@@ -47,7 +47,7 @@ export class WidgetService {
      * below) — the widget never sends botId directly for this call, so a
      * tampered body can't probe another tenant's calendar.
      */
-    async getAppointmentAvailability(sessionToken: string) {
+    async getAppointmentAvailability(sessionToken: string, durationMinutes?: number) {
         let payload: any;
         try {
             payload = await this.jwtService.verifyAsync(sessionToken, {
@@ -60,7 +60,7 @@ export class WidgetService {
             throw new UnauthorizedException('Invalid session token type');
         }
 
-        return this.appointmentAvailabilityService.getAvailableSlots(payload.botId);
+        return this.appointmentAvailabilityService.getAvailableSlots(payload.botId, durationMinutes);
     }
 
     /**
