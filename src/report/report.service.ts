@@ -406,12 +406,13 @@ export class ReportService {
         try {
             const bot = await this.prisma.customerBots.findUnique({
                 where: { id: chat.botId },
-                select: { botName: true },
+                select: { botName: true, primaryLanguage: true },
             });
             await this.handoffNotificationService.notifyAssignee({
                 chatRowId: chat.id,
                 agentUserId,
                 botName: bot?.botName ?? 'Chatbu',
+                botPrimaryLanguage: bot?.primaryLanguage ?? null,
             });
         } catch (notifyError) {
             console.log('[handoverChat] assignee notification failed:', notifyError);

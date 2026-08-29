@@ -669,7 +669,9 @@ export class WidgetService {
                             destination.target,
                             bot.botName,
                             { answer: dbAnswer, comment: trimmedComment },
-                            'en',
+                            // Wizard v2 primaryLanguage → owner-facing
+                            // notification locale (fallback EN in mail service).
+                            (bot as any).primaryLanguage ?? 'en',
                         );
                     }
                     channelsSucceeded.push(destination.channel);
