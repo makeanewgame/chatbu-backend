@@ -2106,6 +2106,59 @@ export class BotService {
   }
 
   /**
+   * Owner-editable fallback contact info for a bot, exposed to the
+   * gateway so its non-widget channel-guard block can redirect
+   * Instagram DM / Messenger / WhatsApp visitors to a concrete
+   * off-platform channel (owner's booking URL, phone, or email).
+   *
+   * Slice 1c of backlog #23. Stored in `settings.fallbackContact`
+   * (free-form JSON, no Prisma migration). Shape returned:
+   *   { url?: string; phone?: string; email?: string; hint?: string }
+   * All keys optional — an empty object means the owner has not set
+   * one, and the gateway prompt block falls back to the generic
+   * "our website chat widget" wording.
+   *
+   * Same InternalApiKeyGuard pattern as getRetrievalSettings /
+   * getChatLanguage.
+   */
+  async getChannelSettings(botId: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: botId, isDeleted: false },
+      select: { settings: true },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    const settings = (bot.settings as Record<string, unknown>) || {};
+    const raw = settings.fallbackContact;
+
+    const pickString = (v: unknown): string | undefined => {
+      if (typeof v !== 'string') return undefined;
+      const trimmed = v.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    };
+
+    const fallback = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? {
+          url: pickString((raw as Record<string, unknown>).url),
+          phone: pickString((raw as Record<string, unknown>).phone),
+          email: pickString((raw as Record<string, unknown>).email),
+          hint: pickString((raw as Record<string, unknown>).hint),
+        }
+      : {};
+
+    // Strip undefined keys so the JSON payload stays lean
+    const fallbackContact: Record<string, string> = {};
+    for (const [k, v] of Object.entries(fallback)) {
+      if (v !== undefined) fallbackContact[k] = v;
+    }
+
+    return { fallbackContact };
+  }
+
+  /**
    * Locked conversation language for a chat, read-only. `chatId` is the
    * gateway's session_id, not CustomerChats.id — the row may not exist
    * yet on a chat's first turn (Nest creates it only after the gateway's

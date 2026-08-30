@@ -550,6 +550,32 @@ export class BotController {
   }
   //#endregion
 
+  //#region channelSettings
+  /**
+   * GET /api/bot/channel-settings/:botId
+   * FastAPI-gateway-facing probe (same internal-key pattern as
+   * retrieval-settings + chat-language). Returns owner-editable
+   * fallback contact info the gateway's non-widget channel-guard
+   * block injects into the prompt so Instagram DM / Messenger /
+   * WhatsApp visitors can be redirected to a concrete off-platform
+   * channel (booking URL, phone, or email).
+   *
+   * Response shape: `{ fallbackContact: { url?, phone?, email?, hint? } }`
+   * (all keys optional). Empty object = owner hasn't set one; gateway
+   * falls back to generic "our website chat widget" wording.
+   *
+   * Slice 1c of backlog #23. Consumed by the gateway's
+   * bot_channel_settings probe (60s in-memory cache).
+   */
+  @ApiOperation({ summary: 'Get owner-set fallback contact info for bot (internal)' })
+  @ApiResponse({ status: 200, description: 'Channel settings returned' })
+  @UseGuards(InternalApiKeyGuard)
+  @Get('channel-settings/:botId')
+  async getChannelSettings(@Param('botId') botId: string) {
+    return this.botService.getChannelSettings(botId);
+  }
+  //#endregion
+
   //#region chatLanguage
   /**
    * GET /api/bot/chat-language/:botId/:chatId
