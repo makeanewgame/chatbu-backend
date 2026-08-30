@@ -1,22 +1,17 @@
 import {
     Body,
     Controller,
-    Get,
     HttpCode,
     HttpException,
     HttpStatus,
-    NotFoundException,
-    Param,
     Post,
     UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IsEmail, IsIn, IsISO8601, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { InternalApiKeyGuard } from '../integration/google-calendar/internal-api-key.guard';
-import { PrismaService } from 'src/prisma/prisma.service';
 import { AppointmentService } from './appointment.service';
 import { AppointmentAvailabilityService } from './appointment-availability.service';
-import { AppointmentType, DEFAULT_WORKING_HOURS, WorkingHours } from './appointment.constants';
 
 /**
  * DTO for the MCP `/appointment-created` hop. Every field except
@@ -105,44 +100,7 @@ export class AppointmentController {
     constructor(
         private readonly appointment: AppointmentService,
         private readonly availability: AppointmentAvailabilityService,
-        private readonly prisma: PrismaService,
     ) { }
-
-    /**
-     * GET /api/integration/booking/config/:botId
-     *
-     * Gateway probe (backlog #24). Returns the bot's appointment-type
-     * catalog + the WorkingHours.slotMinutes default so the gateway can
-     * render the catalog into the calendar prompt block AND agent has a
-     * fallback duration when the visitor's intent doesn't map to any type.
-     *
-     * Empty `types` list is normal — pre-#24 behaviour. Bots that have no
-     * calendar integration still respond 200 with empty types + the
-     * default slotMinutes; the gateway already gates on _bot_has_calendar
-     * for the prompt injection itself.
-     */
-    @ApiOperation({ summary: 'Get per-bot appointment-type catalog (internal)' })
-    @ApiResponse({ status: 200, description: 'Catalog + default slot minutes' })
-    @ApiResponse({ status: 404, description: 'Bot not found' })
-    @Get('config/:botId')
-    async getConfig(@Param('botId') botId: string): Promise<{
-        appointmentTypes: AppointmentType[];
-        defaultSlotMinutes: number;
-    }> {
-        const bot = await this.prisma.customerBots.findUnique({
-            where: { id: botId },
-            select: { appointmentTypes: true, appointmentWorkingHours: true },
-        });
-        if (!bot) {
-            throw new NotFoundException(`Bot ${botId} not found`);
-        }
-        const workingHours: WorkingHours =
-            (bot.appointmentWorkingHours as unknown as WorkingHours) ?? DEFAULT_WORKING_HOURS;
-        return {
-            appointmentTypes: (bot.appointmentTypes as unknown as AppointmentType[]) ?? [],
-            defaultSlotMinutes: workingHours.slotMinutes,
-        };
-    }
 
     /**
      * POST /api/integration/booking/appointment-created
