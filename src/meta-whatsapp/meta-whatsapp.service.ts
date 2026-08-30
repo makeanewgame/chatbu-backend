@@ -223,6 +223,7 @@ export class MetaWhatsappService {
                                 chatId: `wa_${senderId}`,
                                 sender: senderId,
                                 date: new Date().toISOString(),
+                                sourceChannel: 'whatsapp_embed',
                             } as any,
                             '0.0.0.0',
                         );
@@ -289,6 +290,7 @@ export class MetaWhatsappService {
                         chatId: `wa_test_${senderId}`,
                         sender: senderId,
                         date: new Date().toISOString(),
+                        sourceChannel: 'wa_test',
                     } as any,
                     '0.0.0.0',
                 );

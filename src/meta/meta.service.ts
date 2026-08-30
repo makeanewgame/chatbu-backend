@@ -92,6 +92,7 @@ export class MetaService {
                             chatId: `fb_${senderId}`,
                             sender: senderId,
                             date: new Date().toISOString(),
+                            sourceChannel: 'messenger',
                         } as any,
                         '0.0.0.0',
                     );
@@ -157,6 +158,7 @@ export class MetaService {
                             sender: senderId,
                             externalContactName: contactName,
                             date: new Date().toISOString(),
+                            sourceChannel: 'instagram',
                         } as any,
                         '0.0.0.0',
                     );
@@ -279,6 +281,7 @@ export class MetaService {
                 chatId: `wa_test_${to.replace(/\D/g, '')}`,
                 sender: to,
                 date: new Date().toISOString(),
+                sourceChannel: 'wa_test',
             } as any,
             '0.0.0.0',
         );
