@@ -85,6 +85,7 @@ export class WhatsAppService {
                                 chatId: `wa_${senderId}`,
                                 sender: senderId,
                                 date: new Date().toISOString(),
+                                sourceChannel: 'whatsapp',
                             } as any,
                             '0.0.0.0',
                         );
