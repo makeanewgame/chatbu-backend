@@ -5,11 +5,6 @@ import { SmsService } from 'src/sms/sms.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import {
     ALLOWED_SLOT_MINUTES,
-    APPOINTMENT_TYPE_MAX_MINUTES,
-    APPOINTMENT_TYPE_MIN_MINUTES,
-    APPOINTMENT_TYPE_NAME_MAX,
-    APPOINTMENT_TYPES_MAX,
-    AppointmentType,
     WEEKDAY_KEYS,
     WorkingHours,
 } from './appointment.constants';
@@ -296,84 +291,6 @@ export class AppointmentService {
         });
         this.logger.log(`Updated appointmentWorkingHours for bot ${botId}`);
         return updated;
-    }
-
-    /**
-     * Update the per-bot list of appointment types (name + minutes). Empty
-     * list is allowed — signals "bot uses only WorkingHours.slotMinutes for
-     * every booking" (the pre-#24 behaviour). Validated imperatively same as
-     * updateWorkingHours; caps + shape checks below match
-     * appointment.constants.ts. Owner-visible only via the appointment-
-     * enabled bot settings screen; the rest of the platform ignores this
-     * column.
-     */
-    async updateAppointmentTypes(botId: string, teamId: string, types: AppointmentType[]) {
-        this.validateAppointmentTypes(types);
-
-        const bot = await this.prisma.customerBots.findUnique({
-            where: { id: botId },
-            select: { id: true, teamId: true },
-        });
-        if (!bot) {
-            throw new NotFoundException(`Bot ${botId} not found`);
-        }
-        if (bot.teamId !== teamId) {
-            throw new ForbiddenException(`Bot ${botId} does not belong to your team`);
-        }
-
-        const updated = await this.prisma.customerBots.update({
-            where: { id: botId },
-            data: { appointmentTypes: types as any },
-            select: { id: true, appointmentTypes: true },
-        });
-        this.logger.log(`Updated appointmentTypes for bot ${botId} (${types.length} types)`);
-        return updated;
-    }
-
-    private validateAppointmentTypes(types: AppointmentType[]) {
-        if (!Array.isArray(types)) {
-            throw new ForbiddenException('appointmentTypes must be an array');
-        }
-        if (types.length > APPOINTMENT_TYPES_MAX) {
-            throw new ForbiddenException(
-                `appointmentTypes exceeds max of ${APPOINTMENT_TYPES_MAX}`,
-            );
-        }
-        // Case-insensitive uniqueness so owner can't accidentally save
-        // "Massage" + "massage" as two separate entries the agent then can't
-        // disambiguate.
-        const seenNames = new Set<string>();
-        for (const [i, t] of types.entries()) {
-            if (!t || typeof t !== 'object') {
-                throw new ForbiddenException(`appointmentTypes[${i}] is not an object`);
-            }
-            if (typeof t.name !== 'string' || !t.name.trim()) {
-                throw new ForbiddenException(`appointmentTypes[${i}].name is required`);
-            }
-            if (t.name.length > APPOINTMENT_TYPE_NAME_MAX) {
-                throw new ForbiddenException(
-                    `appointmentTypes[${i}].name exceeds ${APPOINTMENT_TYPE_NAME_MAX} chars`,
-                );
-            }
-            const key = t.name.trim().toLowerCase();
-            if (seenNames.has(key)) {
-                throw new ForbiddenException(
-                    `appointmentTypes[${i}].name "${t.name}" is duplicated`,
-                );
-            }
-            seenNames.add(key);
-            if (
-                typeof t.minutes !== 'number' ||
-                !Number.isInteger(t.minutes) ||
-                t.minutes < APPOINTMENT_TYPE_MIN_MINUTES ||
-                t.minutes > APPOINTMENT_TYPE_MAX_MINUTES ||
-                t.minutes % 5 !== 0
-            ) {
-                throw new ForbiddenException(
-                    `appointmentTypes[${i}].minutes must be an integer in [${APPOINTMENT_TYPE_MIN_MINUTES}, ${APPOINTMENT_TYPE_MAX_MINUTES}] in 5-minute steps`,
-                );
-            }
-        }
     }
 
     private validateWorkingHours(workingHours: WorkingHours) {
