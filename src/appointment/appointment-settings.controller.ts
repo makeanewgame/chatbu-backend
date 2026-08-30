@@ -27,36 +27,22 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { IUser } from 'src/util/interfaces';
 import { AppointmentService } from './appointment.service';
 import { AppointmentAvailabilityService } from './appointment-availability.service';
-import { APPOINTMENT_TYPES_MAX, AppointmentType, WorkingHours } from './appointment.constants';
+import { WorkingHours } from './appointment.constants';
 
 class GetAvailabilityDto {
     @IsString()
     @IsNotEmpty()
     botId!: string;
 
-    // Optional per-appointment-type duration override (backlog #24). Sent
-    // by the widget when the agent picked a type via
-    // `request_booking_slot_picker(duration_minutes=N)`; drops back to the
-    // bot's WorkingHours.slotMinutes when absent. Positive integer.
+    // Optional per-request duration override. Sent by the widget when the
+    // agent passed `duration_minutes` to `request_booking_slot_picker` —
+    // the agent derives the value from the retrieved KB chunk covering
+    // the visitor's stated service. Drops back to the bot's
+    // WorkingHours.slotMinutes when absent. Positive integer.
     @IsOptional()
     @IsInt()
     @IsPositive()
     durationMinutes?: number;
-}
-
-/**
- * DTO for the FE appointment-types editor (backlog #24). The service
- * imperatively validates each entry — same tradeoff `settings: Json?`
- * makes elsewhere on this model.
- */
-class UpdateAppointmentTypesDto {
-    @IsString()
-    @IsNotEmpty()
-    botId!: string;
-
-    @IsArray()
-    @ArrayMaxSize(APPOINTMENT_TYPES_MAX)
-    types!: AppointmentType[];
 }
 
 /**
@@ -203,34 +189,5 @@ export class AppointmentSettingsController {
             throw new ForbiddenException(`Bot ${body.botId} does not belong to your team`);
         }
         return this.appointmentAvailability.getAvailableSlots(body.botId, body.durationMinutes);
-    }
-
-    /**
-     * POST /api/bot/updateAppointmentTypes
-     * Body: { botId: string, types: {name, minutes}[] }
-     * Response: { id: string, appointmentTypes: {name, minutes}[] }
-     *
-     * Owner-facing editor for the appointment-type catalog (backlog #24).
-     * Empty array is allowed — signals "bot uses only WorkingHours.slotMinutes
-     * for every booking" (pre-#24 behaviour).
-     */
-    @ApiOperation({ summary: 'Update per-bot appointment types (name + minutes)' })
-    @ApiResponse({ status: 200, description: 'Appointment types updated' })
-    @ApiResponse({ status: 403, description: 'Invalid types or wrong team' })
-    @ApiResponse({ status: 404, description: 'Bot not found' })
-    @ApiBearerAuth()
-    @Post('updateAppointmentTypes')
-    @UseGuards(AccessTokenGuard)
-    @HttpCode(200)
-    async updateAppointmentTypes(
-        @Body() body: UpdateAppointmentTypesDto,
-        @Req() req: Request,
-    ) {
-        const user = req.user as IUser;
-        return this.appointment.updateAppointmentTypes(
-            body.botId,
-            user.teamId,
-            body.types,
-        );
     }
 }
