@@ -179,31 +179,27 @@ export class LeadService {
     // by a bot owner 2026-08-26.
     const isCalendarBookingSource = cleanLeadData.source_bot === 'create_appointment';
 
-    // Meta-adjacent channels (Instagram DM / Messenger / WhatsApp) have
-    // no widget primitives (KVKK card, contact form, SMS OTP input) to
-    // render. The visitor's identity IS the platform account (WhatsApp
-    // number, IG handle, FB PSID) — the SMS OTP round-trip would be
-    // redundant and the KVKK card cannot be shown. On these channels
-    // the gateway's channel_guard_block instructs the agent to gather
-    // contact info from the conversation, obtain text-based consent
-    // confirmation ("kabul ediyorum" / "I consent"), then call
-    // capture_lead with source_channel set. This bypasses both
-    // verification gates below and inline-records the consent row so
-    // there's still an auditable LeadPrivacyConsent trail.
+    // Slice 6 of backlog #23: sourceChannel is still forwarded (used
+    // below for the audit-trail lead source label), but it NO LONGER
+    // bypasses the verification gates. Reason: platform identity (WA/
+    // IG/FB account) verifies who the visitor IS, not that the phone/
+    // email they typed in DM actually belongs to them. A visitor can
+    // easily give someone else's phone from DM — the anti-fraud goal
+    // of smsVerificationRequired holds regardless of channel. So on
+    // Meta channels the same SMS/email OTP round-trips run; the
+    // difference from widget is purely presentation: the code lands
+    // on the visitor's phone/inbox as usual, and the agent asks them
+    // to type the code back into the DM (guided by the revised
+    // channel_guard_block prompt on the gateway side).
     //
-    // Slice 2 of backlog #23 — plan file lives in fovi-longa-chat-be
-    // .claude/plans/channel-aware-chat-architecture.md.
-    const META_CHANNELS = new Set([
-      'messenger',
-      'instagram',
-      'whatsapp_embed',
-      'whatsapp',
-      'wa_test',
-    ]);
-    const isMetaChannel = !!sourceChannel && META_CHANNELS.has(sourceChannel);
+    // Consent record for the KVKK gate: MCP capture_lead posts to
+    // POST /widget/lead/privacy-consent right before the SMS trigger
+    // on Meta channels, so the row already exists by the time the
+    // has_fresh_kvkk_consent probe runs here. No inline creation
+    // needed anymore.
 
     let verified = false;
-    if (bot.leadVerificationRequired && !isCalendarBookingSource && !isMetaChannel) {
+    if (bot.leadVerificationRequired && !isCalendarBookingSource) {
       if (!verificationToken) {
         await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'verification_required');
         throw new BadRequestException({ code: 'VERIFICATION_REQUIRED' });
@@ -236,11 +232,6 @@ export class LeadService {
       // The phone was already SMS-OTP-verified as a hard prerequisite of
       // the booking itself — see comment above `isCalendarBookingSource`.
       smsVerified = true;
-    } else if (isMetaChannel && cleanLeadData.phone) {
-      // Meta-channel bypass: the platform identifies the visitor. Skip
-      // the SMS OTP round-trip and mark verified. Consent row is
-      // inline-recorded below so the audit trail still exists.
-      smsVerified = true;
     } else if (bot.smsVerificationRequired && leadData.phone) {
       if (!smsVerificationToken) {
         await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'sms_verification_required');
@@ -272,39 +263,6 @@ export class LeadService {
         orderBy: { createdAt: 'desc' },
       });
       privacyConsentId = consent?.id ?? null;
-    }
-
-    // Meta-channel inline text-consent record. The agent has confirmed
-    // consent verbally through the chat ("kabul ediyorum" / "I consent")
-    // before calling capture_lead — persist an audit row here so the
-    // legal trail still exists even though no widget card was tapped.
-    // Only creates a row when the visitor supplied a phone (the field
-    // KVKK gates); email-only Meta leads have nothing to gate.
-    if (isMetaChannel && cleanLeadData.phone) {
-      try {
-        const inlineConsent = await this.prisma.leadPrivacyConsent.create({
-          data: {
-            botId,
-            teamId: bot.teamId,
-            chatId: chatId ?? null,
-            phone: cleanLeadData.phone,
-            // Distinguish Meta-channel text-consent rows from
-            // widget-tapped 'chatbot' rows in the audit trail.
-            source: `chatbot_${sourceChannel}`,
-            privacyVersion: 'inline-text-v1',
-            privacyAcceptedAt: new Date(),
-            // otpVerified stays false — the platform (WA/IG/FB) already
-            // identifies the visitor; no OTP round-trip was needed.
-          },
-        });
-        privacyConsentId = inlineConsent.id;
-      } catch (err) {
-        // Non-fatal — the lead itself still lands, but flag the audit
-        // gap in logs so ops can spot it if it starts happening a lot.
-        console.warn(
-          `[LeadCapture] inline consent insert failed for bot=${botId} chat=${chatId} channel=${sourceChannel}: ${(err as Error)?.message}`,
-        );
-      }
     }
 
     let destinations = ((bot.leadDestinations as unknown as LeadDestination[]) || []).filter(
