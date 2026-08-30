@@ -1,4 +1,15 @@
-import { IsNotEmpty, IsOptional, IsString } from '@nestjs/class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString } from '@nestjs/class-validator';
+
+export const CHAT_SOURCE_CHANNELS = [
+  'widget',
+  'messenger',
+  'instagram',
+  'whatsapp_embed',
+  'whatsapp',
+  'wa_test',
+] as const;
+
+export type ChatSourceChannel = typeof CHAT_SOURCE_CHANNELS[number];
 
 export interface ChatAttachment {
   storageId: string;
@@ -60,4 +71,24 @@ export class ChatRequest {
   @IsOptional()
   @IsString()
   acceptLanguage?: string;
+
+  // Which surface originated this chat turn. Populated by the caller
+  // that hands the message to the bot pipeline: 'widget' for the site
+  // chat widget (default when unset), 'messenger' / 'instagram' /
+  // 'whatsapp_embed' / 'whatsapp' / 'wa_test' for the Meta-adjacent
+  // webhook handlers in src/meta, src/meta-whatsapp, src/whatsapp.
+  //
+  // Forwarded to the gateway as `source_channel` so the agent knows
+  // whether widget-rendered primitives (KVKK consent card, contact
+  // form, SMS OTP input, appointment slot picker) are actually
+  // renderable. Older gateway pods that predate the field ignore it
+  // (Pydantic Optional pattern). Additive and backward-compat: absent
+  // = widget = today's behaviour.
+  //
+  // See fovi-longa-chat-be .claude/plans/channel-aware-chat-architecture.md
+  // (backlog #23) for the end-to-end design.
+  @IsOptional()
+  @IsString()
+  @IsIn(CHAT_SOURCE_CHANNELS as unknown as string[])
+  sourceChannel?: ChatSourceChannel;
 }

@@ -746,6 +746,12 @@ export class BotService {
             // there's no session sticky AND lingua abstains AND no
             // visitor_locale. Older gateway pods (pre-v2) ignore this.
             accept_language: body.acceptLanguage,
+            // Surface that originated this turn: widget (default) or a
+            // Meta-adjacent channel where widget primitives cannot
+            // render. Older gateway pods ignore it (Pydantic Optional).
+            // Slice 1a of backlog #23 — plan file lives in
+            // fovi-longa-chat-be/.claude/plans/channel-aware-chat-architecture.md.
+            source_channel: body.sourceChannel ?? 'widget',
           })
         );
         data = response.data;
@@ -1228,6 +1234,7 @@ export class BotService {
             // See non-stream /chat path above for rationale.
             visitor_locale: body.visitorLocale,
             accept_language: body.acceptLanguage,
+            source_channel: body.sourceChannel ?? 'widget',
           },
           {
             responseType: 'stream',
