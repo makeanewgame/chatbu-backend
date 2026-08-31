@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { BotService } from 'src/bot/bot.service';
 import { MetaEmbeddedService } from 'src/integration/meta-embedded/meta-embedded.service';
+import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
 import { resolveMetaReplyText } from './meta-reply.util';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class MetaService {
         private botService: BotService,
         private configService: ConfigService,
         private metaEmbeddedService: MetaEmbeddedService,
+        private metaChatCursor: MetaChatCursorService,
     ) { }
 
     async verifyWebhook(mode: string, verifyToken: string, challenge: string): Promise<string> {
@@ -82,6 +84,7 @@ export class MetaService {
 
                 const senderId = messagingEvent.sender.id;
                 const text = messagingEvent.message.text;
+                const chatId = await this.metaChatCursor.resolveChatId('fb', senderId);
 
                 try {
                     const response = await this.botService.chat(
@@ -89,7 +92,7 @@ export class MetaService {
                             botId,
                             teamId: integration.teamId,
                             message: text,
-                            chatId: `fb_${senderId}`,
+                            chatId,
                             sender: senderId,
                             date: new Date().toISOString(),
                             sourceChannel: 'messenger',
@@ -102,7 +105,7 @@ export class MetaService {
                         await this.sendMetaMessage(senderId, replyText, pageAccessToken);
                     } else {
                         this.logger.warn(
-                            `[messenger] empty chat response for botId=${botId} chatId=fb_${senderId} — no reply sent`,
+                            `[messenger] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,
                         );
                     }
                 } catch (err) {
@@ -147,6 +150,7 @@ export class MetaService {
                 const senderId = messagingEvent.sender.id;
                 const text = messagingEvent.message.text;
                 const contactName = await this.fetchInstagramContactName(senderId, pageAccessToken);
+                const chatId = await this.metaChatCursor.resolveChatId('ig', senderId);
 
                 try {
                     const response = await this.botService.chat(
@@ -154,7 +158,7 @@ export class MetaService {
                             botId,
                             teamId: integration.teamId,
                             message: text,
-                            chatId: `ig_${senderId}`,
+                            chatId,
                             sender: senderId,
                             externalContactName: contactName,
                             date: new Date().toISOString(),
@@ -168,7 +172,7 @@ export class MetaService {
                         await this.sendMetaMessage(senderId, replyText, pageAccessToken);
                     } else {
                         this.logger.warn(
-                            `[instagram] empty chat response for botId=${botId} chatId=ig_${senderId} — no reply sent`,
+                            `[instagram] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,
                         );
                     }
                 } catch (err) {
@@ -273,12 +277,14 @@ export class MetaService {
         }
 
         // 2. Process message through chat service
+        const wa_test_visitor = to.replace(/\D/g, '');
+        const chatId = await this.metaChatCursor.resolveChatId('wa_test', wa_test_visitor);
         const chatResponse = await this.botService.chat(
             {
                 botId,
                 teamId: bot.teamId,
                 message,
-                chatId: `wa_test_${to.replace(/\D/g, '')}`,
+                chatId,
                 sender: to,
                 date: new Date().toISOString(),
                 sourceChannel: 'wa_test',

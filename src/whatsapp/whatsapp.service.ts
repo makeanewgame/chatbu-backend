@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { BotService } from 'src/bot/bot.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class WhatsAppService {
     constructor(
         private prisma: PrismaService,
         private botService: BotService,
+        private metaChatCursor: MetaChatCursorService,
     ) { }
 
     async verifyWebhook(mode: string, verifyToken: string, challenge: string): Promise<string> {
@@ -75,6 +77,7 @@ export class WhatsAppService {
 
                     const senderId = message.from;
                     const text = message.text.body;
+                    const chatId = await this.metaChatCursor.resolveChatId('wa', senderId);
 
                     try {
                         const response = await this.botService.chat(
@@ -82,7 +85,7 @@ export class WhatsAppService {
                                 botId,
                                 teamId: integration.teamId,
                                 message: text,
-                                chatId: `wa_${senderId}`,
+                                chatId,
                                 sender: senderId,
                                 date: new Date().toISOString(),
                                 sourceChannel: 'whatsapp',
@@ -95,7 +98,7 @@ export class WhatsAppService {
                             await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
                         } else {
                             this.logger.warn(
-                                `[whatsapp-legacy] empty chat response for botId=${botId} chatId=wa_${senderId} — no reply sent`,
+                                `[whatsapp-legacy] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,
                             );
                         }
                     } catch (err) {
