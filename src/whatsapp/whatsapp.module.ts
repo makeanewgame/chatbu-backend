@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { BotModule } from 'src/bot/bot.module';
 import { PrismaModule } from 'src/prisma/prisma.module';
+import { MetaChatCursorModule } from 'src/meta-chat-cursor/meta-chat-cursor.module';
 import { WhatsAppController } from './whatsapp.controller';
 import { WhatsAppService } from './whatsapp.service';
 
 @Module({
-    imports: [PrismaModule, BotModule],
+    imports: [PrismaModule, BotModule, MetaChatCursorModule],
     controllers: [WhatsAppController],
     providers: [WhatsAppService],
 })
