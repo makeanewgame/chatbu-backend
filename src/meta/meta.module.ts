@@ -7,9 +7,10 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { BotModule } from 'src/bot/bot.module';
 import { MetaWhatsappModule } from 'src/meta-whatsapp/meta-whatsapp.module';
 import { IntegrationModule } from 'src/integration/integration.module';
+import { MetaChatCursorModule } from 'src/meta-chat-cursor/meta-chat-cursor.module';
 
 @Module({
-    imports: [PrismaModule, BotModule, JwtModule, MetaWhatsappModule, IntegrationModule],
+    imports: [PrismaModule, BotModule, JwtModule, MetaWhatsappModule, IntegrationModule, MetaChatCursorModule],
     controllers: [MetaController, MetaIntegrationController],
     providers: [MetaService],
 })

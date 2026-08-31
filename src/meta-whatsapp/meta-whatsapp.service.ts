@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { BotService } from 'src/bot/bot.service';
 import { WhatsAppEmbeddedService } from 'src/integration/whatsapp-embedded/whatsapp-embedded.service';
+import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -66,6 +67,7 @@ export class MetaWhatsappService {
         private readonly whatsAppEmbeddedService: WhatsAppEmbeddedService,
         private readonly botService: BotService,
         private readonly prisma: PrismaService,
+        private readonly metaChatCursor: MetaChatCursorService,
     ) { }
 
     // ── Test mode management (DB-backed so all replicas share state) ─────────
@@ -213,6 +215,7 @@ export class MetaWhatsappService {
 
                     const senderId = message.from;
                     const text = message.text.body;
+                    const chatId = await this.metaChatCursor.resolveChatId('wa', senderId);
 
                     try {
                         const response = await this.botService.chat(
@@ -220,7 +223,7 @@ export class MetaWhatsappService {
                                 botId,
                                 teamId: integration.teamId,
                                 message: text,
-                                chatId: `wa_${senderId}`,
+                                chatId,
                                 sender: senderId,
                                 date: new Date().toISOString(),
                                 sourceChannel: 'whatsapp_embed',
@@ -233,7 +236,7 @@ export class MetaWhatsappService {
                             await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
                         } else {
                             this.logger.warn(
-                                `[whatsapp-embedded] empty chat response for chatId=wa_${senderId} — no reply sent`,
+                                `[whatsapp-embedded] empty chat response for chatId=${chatId} — no reply sent`,
                             );
                         }
                     } catch (err) {
@@ -282,12 +285,13 @@ export class MetaWhatsappService {
                 // Look up bot teamId
                 const bot = await this.botService.botDetail(testBotId);
 
+                const chatId = await this.metaChatCursor.resolveChatId('wa_test', senderId);
                 const response = await this.botService.chat(
                     {
                         botId: testBotId,
                         teamId: bot.teamId,
                         message: text,
-                        chatId: `wa_test_${senderId}`,
+                        chatId,
                         sender: senderId,
                         date: new Date().toISOString(),
                         sourceChannel: 'wa_test',
