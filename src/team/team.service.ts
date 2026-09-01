@@ -266,11 +266,13 @@ export class TeamService {
             throw new BadRequestException('You cannot remove yourself from the team');
         }
 
-        // Find the target member
+        // `targetUserId` is the user's id for active members, but pending
+        // invitations have no user yet, so the frontend sends the TeamMember
+        // row id instead. Match on either.
         const targetMember = await this.prisma.teamMember.findFirst({
             where: {
-                userId: targetUserId,
                 teamId,
+                OR: [{ userId: targetUserId }, { id: targetUserId }],
             },
         });
 
@@ -278,18 +280,27 @@ export class TeamService {
             throw new NotFoundException('Team member not found');
         }
 
-        // Delete the team member
+        // Guard again in case we matched the owner's own row by id.
+        if (targetMember.userId && targetMember.userId === userId) {
+            throw new BadRequestException('You cannot remove yourself from the team');
+        }
+
+        // Delete the team member (or cancel the pending invitation)
         await this.prisma.teamMember.delete({
             where: { id: targetMember.id },
         });
 
+        const what = targetMember.status === 'pending' ? 'invitation' : 'member';
         this.logger.info(
-            `User ${targetUserId} removed from team ${teamId} by ${userId}`,
+            `Team ${what} ${targetMember.id} removed from team ${teamId} by ${userId}`,
         );
 
         return {
             success: true,
-            message: 'Member removed successfully',
+            message:
+                targetMember.status === 'pending'
+                    ? 'Invitation cancelled successfully'
+                    : 'Member removed successfully',
         };
     }
 
