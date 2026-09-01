@@ -108,11 +108,16 @@ export class ReportService {
 
     async getChatHistoryDetail(teamId: string, chatId: string) {
 
+        // `chatId` here is either a CustomerChats PK (chat-history table links)
+        // or a gateway session id string (lead "view conversation" links, which
+        // only know botLeads.chatId). Match either — PK first so an exact row
+        // wins when both could resolve.
         const targetRow = await this.prisma.customerChats.findFirst({
             where: {
                 teamId: teamId,
-                id: chatId,
+                OR: [{ id: chatId }, { chatId: chatId }],
             },
+            orderBy: { createdAt: 'asc' },
             select: {
                 id: true,
                 teamId: true,
