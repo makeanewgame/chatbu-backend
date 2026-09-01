@@ -524,6 +524,56 @@ export class WidgetService {
     }
 
     // ---------------------------------------------------------------------------
+    // Auto-close stale human-handoff chats — runs every minute
+    // A live chat handed to a human agent (HUMAN_REQUESTED / HUMAN_ASSIGNED /
+    // HUMAN_ACTIVE) otherwise stays open until the agent closes it manually.
+    // When the agent forgets or the visitor abandons the tab, the chat lingers
+    // forever and keeps showing in the agent's live-chat list. Close any
+    // handoff chat with no activity (visitor or agent message) for 30+ minutes.
+    // `updatedAt` is bumped on every visitor message (bot.service HUMAN_ACTIVE
+    // bypass) and every agent message (report.service.sendAgentMessage), so it
+    // tracks real two-way activity.
+    // ---------------------------------------------------------------------------
+
+    @Cron('* * * * *')
+    async autoCloseStaleHandoffChats() {
+        const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+        const chatsToClose = await this.prisma.customerChats.findMany({
+            where: {
+                chatStatus: { in: ['HUMAN_REQUESTED', 'HUMAN_ASSIGNED', 'HUMAN_ACTIVE'] },
+                isDeleted: false,
+                updatedAt: { lt: thirtyMinutesAgo },
+            },
+            select: { id: true, chatId: true, agentUserId: true },
+        });
+
+        if (chatsToClose.length === 0) {
+            return;
+        }
+
+        await this.prisma.customerChats.updateMany({
+            where: { id: { in: chatsToClose.map((c) => c.id) } },
+            data: {
+                chatStatus: 'CLOSED',
+            },
+        });
+
+        for (const chat of chatsToClose) {
+            // Widget: end the conversation and let the feedback panel open,
+            // same as an agent-initiated close.
+            this.eventsGateway.notifyChatEnded(chat.id, { chatId: chat.id, reason: 'auto_closed_handoff_timeout' });
+            this.eventsGateway.notifyChatEnded(chat.chatId, { chatId: chat.chatId, reason: 'auto_closed_handoff_timeout' });
+            // Agent: drop the chat from their open live-chat view.
+            if (chat.agentUserId) {
+                this.eventsGateway.notifyAgentChatClosed(chat.agentUserId, {
+                    chatId: chat.id,
+                    reason: 'auto_closed_handoff_timeout',
+                });
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------------
     // POST /widget/feedback
     // Two shapes are accepted on the same endpoint so older embedded widgets
     // keep working during a rolling deploy:
