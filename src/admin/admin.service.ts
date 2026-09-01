@@ -16,6 +16,7 @@ import { GetAllTeamsDto } from './dto/getAllTeams.dto';
 import { GetAllChatbotsDto } from './dto/getAllChatbots.dto';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { ConfigService } from '@nestjs/config';
+import { collectConversationRowIds } from 'src/report/conversation-merge.util';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -951,29 +952,46 @@ export class AdminService {
     }
 
     async getBotCustomerChatDetail(botId: string, chatId: string) {
-        const chat = await this.prisma.customerChats.findFirst({
+        const targetRow = await this.prisma.customerChats.findFirst({
             where: { botId, id: chatId },
             select: {
                 id: true,
-                chatId: true,
+                teamId: true,
                 botId: true,
-                CustomerChatDetails: {
-                    where: { chatId },
-                    orderBy: { createdAt: 'asc' },
-                    select: {
-                        message: true,
-                        createdAt: true,
-                        sender: true,
-                        id: true,
-                        attachments: true,
-                    },
-                },
+                chatId: true,
+                channel: true,
+                externalContactId: true,
+                createdAt: true,
             },
         });
 
-        if (!chat) {
+        if (!targetRow) {
             throw new NotFoundException('Chat not found');
         }
+
+        // Reunite a conversation that was split across multiple
+        // CustomerChats rows (see conversation-merge.util).
+        const rowIds = await collectConversationRowIds(this.prisma, targetRow);
+
+        const details = await this.prisma.customerChatDetails.findMany({
+            where: { chatId: { in: rowIds } },
+            orderBy: { createdAt: 'asc' },
+            select: {
+                message: true,
+                createdAt: true,
+                sender: true,
+                id: true,
+                attachments: true,
+            },
+        });
+
+        const chat = {
+            id: targetRow.id,
+            chatId: targetRow.chatId,
+            botId: targetRow.botId,
+            mergedSessionCount: rowIds.length,
+            CustomerChatDetails: details,
+        };
 
         const bucket = this.configService.get('S3_BUCKET_NAME');
 
