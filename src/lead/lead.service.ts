@@ -836,6 +836,17 @@ export class LeadService {
    */
   async hasFreshKvkkConsent(botId: string, chatId: string): Promise<{ fresh: boolean }> {
     if (!botId || !chatId) return { fresh: false };
+    // Per-bot opt-out: when the owner collects KVKK consent out-of-band
+    // (CustomerBots.kvkkConsentRequired = false), report "fresh" so every
+    // downstream probe (gateway pre-agent scrub, MCP request_contact_form
+    // gate) treats consent as already satisfied and skips the card. This
+    // single early-return covers both callers of GET
+    // /lead/kvkk-consent/:botId/:chatId.
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: botId, isDeleted: false },
+      select: { kvkkConsentRequired: true },
+    });
+    if (bot && !bot.kvkkConsentRequired) return { fresh: true };
     const consentWindowStart = new Date(Date.now() - CONSENT_FRESHNESS_MINUTES * 60 * 1000);
     const consent = await this.prisma.leadPrivacyConsent.findFirst({
       where: { botId, chatId, createdAt: { gte: consentWindowStart } },
@@ -862,14 +873,23 @@ export class LeadService {
       throw new BadRequestException({ code: 'NOT_REQUIRED' });
     }
 
-    const consentWindowStart = new Date(Date.now() - CONSENT_FRESHNESS_MINUTES * 60 * 1000);
-    const consent = await this.prisma.leadPrivacyConsent.findFirst({
-      where: { botId: dto.botId, chatId: dto.chatId, createdAt: { gte: consentWindowStart } },
-      orderBy: { createdAt: 'desc' },
-    });
+    // KVKK consent gate — skipped when the bot owner opts out
+    // (kvkkConsentRequired = false) and collects consent out-of-band.
+    // SMS OTP verification itself still runs; only the in-widget
+    // consent card requirement is relaxed. `consent` stays null in the
+    // opt-out case, so the phone-backfill update further down is guarded.
+    let consent: { id: string } | null = null;
+    if (bot.kvkkConsentRequired) {
+      const consentWindowStart = new Date(Date.now() - CONSENT_FRESHNESS_MINUTES * 60 * 1000);
+      consent = await this.prisma.leadPrivacyConsent.findFirst({
+        where: { botId: dto.botId, chatId: dto.chatId, createdAt: { gte: consentWindowStart } },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
 
-    if (!consent) {
-      throw new BadRequestException({ code: 'KVKK_CONSENT_REQUIRED' });
+      if (!consent) {
+        throw new BadRequestException({ code: 'KVKK_CONSENT_REQUIRED' });
+      }
     }
 
     // Cross-flow SMS dedup: this phone may already have been
@@ -921,10 +941,12 @@ export class LeadService {
       return { status: 'rate_limited' as const };
     }
 
-    await this.prisma.leadPrivacyConsent.update({
-      where: { id: consent.id },
-      data: { phone: dto.phone },
-    });
+    if (consent) {
+      await this.prisma.leadPrivacyConsent.update({
+        where: { id: consent.id },
+        data: { phone: dto.phone },
+      });
+    }
 
     const code = crypto.randomInt(100000, 999999).toString();
     const codeHash = crypto.createHash('sha256').update(code).digest('hex');

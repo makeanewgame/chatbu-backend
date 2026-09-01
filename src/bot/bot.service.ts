@@ -12,6 +12,7 @@ import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
+import { UpdateKvkkConsentRequest } from './dto/updateKvkkConsentRequest';
 import { UpdateStreamingEnabledRequest } from './dto/updateStreamingEnabledRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
@@ -1719,6 +1720,12 @@ export class BotService {
         settings: true,
         botName: true,
         smsVerificationRequired: true,
+        // `kvkkConsentRequired` (default true) tells the widget's
+        // client-side KVKK pre-send gate (ChatFormPublic.tsx) whether
+        // to block a phone-carrying message pending consent. Server-side
+        // enforcement still lives in the gateway pre-agent scrub +
+        // lead.service consent gate; this only improves widget UX.
+        kvkkConsentRequired: true,
         streamingEnabled: true,
         team: {
           select: {
@@ -2050,6 +2057,50 @@ export class BotService {
   }
 
   /**
+   * Per-bot toggle for the in-widget KVKK consent card (Aydınlatma
+   * Metni + Kullanım Şartları) shown before a visitor hands over a
+   * phone / email in the lead + contact-form flows. Structurally
+   * identical to updateSmsVerification. Flipping it off does NOT
+   * relax SMS / email OTP verification — those stay governed by
+   * sms/leadVerificationRequired. Default true, so a bad flip is a
+   * one-request rollback.
+   */
+  async updateKvkkConsent(body: UpdateKvkkConsentRequest, teamId: string, userId?: string, userEmail?: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    const oldValue = bot.kvkkConsentRequired;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { kvkkConsentRequired: body.kvkkConsentRequired },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_KVKK_CONSENT',
+      status: 'SUCCESS',
+      userId,
+      userEmail,
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot kvkk-consent: ${oldValue} -> ${body.kvkkConsentRequired}`,
+    });
+
+    return { message: 'KVKK consent setting updated', bot: updated };
+  }
+
+  /**
    * Per-bot toggle for the widget SSE streaming path (voice plan
    * Faz 2b, 2026-08-04). Structurally identical to
    * updateSmsVerification — same team-ownership check, same audit log
@@ -2100,7 +2151,11 @@ export class BotService {
   async getLeadVerificationStatus(botId: string) {
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: botId, isDeleted: false },
-      select: { leadVerificationRequired: true, smsVerificationRequired: true },
+      select: {
+        leadVerificationRequired: true,
+        smsVerificationRequired: true,
+        kvkkConsentRequired: true,
+      },
     });
 
     if (!bot) {
@@ -2110,6 +2165,10 @@ export class BotService {
     return {
       requiresVerification: bot.leadVerificationRequired,
       requiresSmsVerification: bot.smsVerificationRequired,
+      // Consumed by app-gateway `_bot_requires_kvkk_consent` to decide
+      // whether the KVKK consent card / pre-agent short-circuit should
+      // fire at all for this bot.
+      requiresKvkkConsent: bot.kvkkConsentRequired,
     };
   }
 

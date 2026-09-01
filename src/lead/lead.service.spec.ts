@@ -9,6 +9,14 @@ import { SmsService } from 'src/sms/sms.service';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
+import { MixpanelService } from 'src/analytics/mixpanel.service';
+
+// Shared stub — LeadService fires Mixpanel calls fire-and-forget; tests
+// never assert on them.
+const mixpanelStub = {
+  resolveTeamOwner: jest.fn().mockResolvedValue({ ownerId: null }),
+  track: jest.fn(),
+};
 
 describe('LeadService — lead verification', () => {
   let service: LeadService;
@@ -60,6 +68,7 @@ describe('LeadService — lead verification', () => {
           useValue: { transition: jest.fn().mockResolvedValue(undefined), list: jest.fn().mockResolvedValue([]) },
         },
         { provide: PushNotificationService, useValue: { sendToUsers: jest.fn(), sendToUser: jest.fn() } },
+        { provide: MixpanelService, useValue: mixpanelStub },
       ],
     }).compile();
 
@@ -415,10 +424,14 @@ describe('LeadService — lead verification', () => {
 describe('LeadService — hasFreshKvkkConsent (gateway pre-agent probe)', () => {
   let service: LeadService;
   let leadPrivacyConsent: { findFirst: jest.Mock };
+  let customerBots: { findUnique: jest.Mock };
 
   beforeEach(async () => {
     leadPrivacyConsent = { findFirst: jest.fn() };
-    const prisma: any = { leadPrivacyConsent };
+    customerBots = {
+      findUnique: jest.fn().mockResolvedValue({ kvkkConsentRequired: true }),
+    };
+    const prisma: any = { leadPrivacyConsent, customerBots };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LeadService,
@@ -426,6 +439,10 @@ describe('LeadService — hasFreshKvkkConsent (gateway pre-agent probe)', () => 
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: {} },
         { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
+        { provide: LegalDocumentService, useValue: {} },
+        { provide: ChatFlowService, useValue: {} },
+        { provide: PushNotificationService, useValue: {} },
+        { provide: MixpanelService, useValue: mixpanelStub },
       ],
     }).compile();
     service = module.get(LeadService);
@@ -465,5 +482,12 @@ describe('LeadService — hasFreshKvkkConsent (gateway pre-agent probe)', () => 
     await service.hasFreshKvkkConsent('bot-1', 'chat-1');
     const call = leadPrivacyConsent.findFirst.mock.calls[0][0];
     expect(call.select).toEqual({ id: true });
+  });
+
+  it('returns fresh:true without a consent lookup when the bot opted out of KVKK consent', async () => {
+    customerBots.findUnique.mockResolvedValue({ kvkkConsentRequired: false });
+    const result = await service.hasFreshKvkkConsent('bot-1', 'chat-1');
+    expect(result).toEqual({ fresh: true });
+    expect(leadPrivacyConsent.findFirst).not.toHaveBeenCalled();
   });
 });
