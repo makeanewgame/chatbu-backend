@@ -26,6 +26,18 @@ import {
 } from './dto/team-responses.dto';
 import { IUser } from 'src/util/interfaces';
 
+/**
+ * Pick the mail template language. The web app sends its active i18next
+ * locale in a custom `language` header (prepareHeaders in reauth.ts); the
+ * browser's `Accept-Language` is only a fallback since it reflects the OS
+ * locale, not the app's selected language. Only `tr` and `en` templates
+ * exist, so everything else falls back to English.
+ */
+function resolveLang(appLang?: string, acceptLang?: string): 'tr' | 'en' {
+    const hint = (appLang || acceptLang || '').toLowerCase();
+    return hint.startsWith('tr') ? 'tr' : 'en';
+}
+
 @Controller('team')
 @UseGuards(AccessTokenGuard)
 export class TeamController {
@@ -60,16 +72,16 @@ export class TeamController {
     async inviteMember(
         @Req() req,
         @Body() inviteMemberDto: InviteMemberDto,
-        @Headers('accept-language') lang?: string,
+        @Headers('language') appLang?: string,
+        @Headers('accept-language') acceptLang?: string,
     ): Promise<InvitationResponse> {
         const userId = req.user.sub;
         const teamId = req.user.teamId;
-        const language = lang?.startsWith('tr') ? 'tr' : 'en';
         return this.teamService.inviteMember(
             userId,
             teamId,
             inviteMemberDto.email,
-            language,
+            resolveLang(appLang, acceptLang),
         );
     }
 
@@ -77,16 +89,16 @@ export class TeamController {
     async resendInvitation(
         @Req() req,
         @Body() resendInvitationDto: ResendInvitationDto,
-        @Headers('accept-language') lang?: string,
+        @Headers('language') appLang?: string,
+        @Headers('accept-language') acceptLang?: string,
     ): Promise<InvitationResponse> {
         const userId = req.user.sub;
         const teamId = req.user.teamId;
-        const language = lang?.startsWith('tr') ? 'tr' : 'en';
         return this.teamService.resendInvitation(
             userId,
             teamId,
             resendInvitationDto.memberId,
-            language,
+            resolveLang(appLang, acceptLang),
         );
     }
 
