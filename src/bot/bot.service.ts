@@ -589,6 +589,40 @@ export class BotService {
     }
   }
 
+  /**
+   * Re-check for an existing CustomerChats row right before we would
+   * create a new one. The first lookup at the top of chat()/chatStream()
+   * runs BEFORE the gateway call; a sibling turn fired milliseconds later
+   * (rapid-fire quick-reply taps, a slot tap racing the greeting turn)
+   * clears that same lookup and then both turns try to create a row for
+   * the same conversation. By the time we reach the create, the sibling's
+   * row usually exists — match it on either the client-sent chatId or the
+   * gateway session id and append instead of forking.
+   *
+   * Not fully atomic (no unique constraint on (botId, chatId) — legacy
+   * data has same-chatId dups a migration would have to clean first), but
+   * it collapses the fork window from seconds to milliseconds, which is
+   * below real user click cadence.
+   */
+  private async findRacedChat(
+    botId: string,
+    teamId: string,
+    candidateChatIds: (string | null | undefined)[],
+  ) {
+    const ids = Array.from(
+      new Set(candidateChatIds.filter((v): v is string => !!v)),
+    );
+    if (ids.length === 0) return null;
+    return this.prisma.customerChats.findFirst({
+      where: {
+        botId,
+        teamId,
+        chatId: { in: ids },
+        isDeleted: false,
+      },
+    });
+  }
+
   async chat(body: ChatRequest, ip: string) {
 
     console.log("chat body", body);
@@ -793,11 +827,26 @@ export class BotService {
       const externalContactId = (chatChannel !== 'WIDGET') ? body.sender : null;
 
       if (isNewChat) {
+        const raced = await this.findRacedChat(body.botId, body.teamId, [
+          body.chatId,
+          sessionId,
+        ]);
+        if (raced) {
+          isNewChat = false;
+          activeChat = raced;
+        }
+      }
+
+      if (isNewChat) {
         activeChat = await this.prisma.customerChats.create({
           data: {
             botId: body.botId,
             teamId: body.teamId,
-            chatId: sessionId, // FastAPI'den gelen session_id
+            // Prefer the client-sent id (the widget pins a stable one from
+            // turn 1 and the gateway echoes it back, so the two match);
+            // fall back to the gateway session id only for the very first
+            // turn where the client had nothing to send yet.
+            chatId: body.chatId ?? sessionId,
             isDeleted: false,
             totalTokens: tokenCount,
             channel: chatChannel,
@@ -1366,11 +1415,24 @@ export class BotService {
       // (Meta/WhatsApp adapters call the batch `chat()` and never
       // reach this method).
       if (isNewChat) {
+        const raced = await this.findRacedChat(body.botId, body.teamId, [
+          body.chatId,
+          sessionId,
+        ]);
+        if (raced) {
+          isNewChat = false;
+          activeChat = raced;
+        }
+      }
+
+      if (isNewChat) {
         activeChat = await this.prisma.customerChats.create({
           data: {
             botId: body.botId,
             teamId: body.teamId,
-            chatId: sessionId,
+            // See batch chat() — prefer the client-pinned id, fall back to
+            // the gateway session id only for the first turn.
+            chatId: body.chatId ?? sessionId,
             isDeleted: false,
             totalTokens: tokenCount,
             channel: 'WIDGET',

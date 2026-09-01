@@ -4,6 +4,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { EventsGateway } from 'src/events/events.gateway';
 import { HandoffNotificationService } from 'src/handoff/handoff-notification.service';
+import { collectConversationRowIds } from './conversation-merge.util';
 import axios from 'axios';
 
 @Injectable()
@@ -106,40 +107,55 @@ export class ReportService {
 
     async getChatHistoryDetail(teamId: string, chatId: string) {
 
-        const chatHistoryList = await this.prisma.customerChats.findFirst({
+        const targetRow = await this.prisma.customerChats.findFirst({
             where: {
                 teamId: teamId,
                 id: chatId,
             },
             select: {
+                id: true,
+                teamId: true,
+                botId: true,
+                chatId: true,
                 channel: true,
                 externalContactId: true,
                 externalContactName: true,
-                CustomerChatDetails: {
-                    where: {
-                        chatId: chatId,
-                    },
-                    orderBy: {
-                        createdAt: 'asc',
-                    },
-                    select: {
-                        message: true,
-                        createdAt: true,
-                        sender: true,
-                        id: true,
-                        attachments: true,
-                    }
-                }
+                createdAt: true,
             },
-
         });
 
-        if (!chatHistoryList) {
+        if (!targetRow) {
             return {
                 message: 'No chat history found',
                 data: [],
             }
         }
+
+        // A single visitor conversation can be split across multiple
+        // CustomerChats rows (pre-fix widget bursts, races). Pull every
+        // sibling row that belongs to the same logical conversation so the
+        // detail view shows the whole thing, not one fragment.
+        const rowIds = await collectConversationRowIds(this.prisma, targetRow);
+
+        const details = await this.prisma.customerChatDetails.findMany({
+            where: { chatId: { in: rowIds } },
+            orderBy: { createdAt: 'asc' },
+            select: {
+                message: true,
+                createdAt: true,
+                sender: true,
+                id: true,
+                attachments: true,
+            },
+        });
+
+        const chatHistoryList = {
+            channel: targetRow.channel,
+            externalContactId: targetRow.externalContactId,
+            externalContactName: targetRow.externalContactName,
+            mergedSessionCount: rowIds.length,
+            CustomerChatDetails: details,
+        };
 
         const bucket = this.configService.get('S3_BUCKET_NAME');
 
