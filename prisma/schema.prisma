@@ -68,6 +68,13 @@ model Team {
   industry              String?
   website               String?
   onboardingCompletedAt DateTime?
+  // Live-chat handoff routing. defaultLiveChatAgentId is the fallback assignee
+  // (used when no member has canLiveChat enabled) and the pre-selected option in
+  // the manual handover modal. lastLiveChatAgentId is the round-robin cursor:
+  // the userId that received the most recent auto-handoff for this team.
+  // Both hold a User.id validated in code (like ownerId) — no FK on purpose.
+  defaultLiveChatAgentId String?
+  lastLiveChatAgentId    String?
   Content               Content[]
   CustomerBots          CustomerBots[]
   CustomerChats         CustomerChats[]
@@ -87,6 +94,9 @@ model TeamMember {
   email           String?
   role            String   @default("TEAM_MEMBER")
   status          String   @default("pending")
+  // Whether this member takes part in live-chat handoff round-robin. Managers
+  // who never handle live chat stay false; toggled from Team Settings.
+  canLiveChat     Boolean  @default(false)
   invitationToken String?  @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

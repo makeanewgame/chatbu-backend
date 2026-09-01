@@ -45,25 +45,76 @@ export class HandoffNotificationService {
     /**
      * The agent a handover should land on.
      *
-     * The bot's explicitly configured `settings.defaultAgentId` wins when
-     * present. Otherwise we fall back to the team owner — this is what
-     * lets a brand-new account receive handover notifications without the
-     * owner ever opening bot settings. As soon as they pick a specific
-     * agent (or change it) that choice takes over.
+     * Team-wide round-robin: every active member with `canLiveChat = true`
+     * is in the rotation. We order the pool by `TeamMember.createdAt` and
+     * pick the member right after `Team.lastLiveChatAgentId` (the cursor
+     * updated by {@link recordLiveChatAssignment} after each assignment),
+     * wrapping around — so consecutive handoffs land on A → B → C → A …
+     *
+     * When nobody is flagged we fall back, in order, to
+     * `Team.defaultLiveChatAgentId` → the bot's legacy
+     * `settings.defaultAgentId` → the team owner. This keeps brand-new
+     * accounts (and accounts that never opened Team Settings) working.
      */
     async resolveAssigneeId(
         teamId: string,
         botSettings: unknown,
     ): Promise<string | null> {
-        const configured = (botSettings as { defaultAgentId?: string } | null)
-            ?.defaultAgentId;
-        if (configured) return configured;
-
         const team = await this.prisma.team.findUnique({
             where: { id: teamId },
-            select: { ownerId: true },
+            select: {
+                ownerId: true,
+                defaultLiveChatAgentId: true,
+                lastLiveChatAgentId: true,
+            },
         });
-        return team?.ownerId ?? null;
+
+        const pool = await this.prisma.teamMember.findMany({
+            where: {
+                teamId,
+                status: 'active',
+                canLiveChat: true,
+                userId: { not: null },
+            },
+            select: { userId: true },
+            orderBy: { createdAt: 'asc' },
+        });
+        const poolIds = pool
+            .map((m) => m.userId)
+            .filter((id): id is string => !!id);
+
+        if (poolIds.length > 0) {
+            const lastIdx = team?.lastLiveChatAgentId
+                ? poolIds.indexOf(team.lastLiveChatAgentId)
+                : -1;
+            // lastIdx === -1 (cursor unset or no longer in the pool) → start at 0
+            return poolIds[(lastIdx + 1) % poolIds.length];
+        }
+
+        const legacy = (botSettings as { defaultAgentId?: string } | null)
+            ?.defaultAgentId;
+        return team?.defaultLiveChatAgentId ?? legacy ?? team?.ownerId ?? null;
+    }
+
+    /**
+     * Advance the team's round-robin cursor after a successful auto-handoff
+     * assignment. Best-effort: a failure here only means the next handoff
+     * may repeat the same agent, so it must never derail the flow.
+     */
+    async recordLiveChatAssignment(
+        teamId: string,
+        agentUserId: string,
+    ): Promise<void> {
+        try {
+            await this.prisma.team.update({
+                where: { id: teamId },
+                data: { lastLiveChatAgentId: agentUserId },
+            });
+        } catch (err) {
+            this.logger.error(
+                `[handoff] failed to advance round-robin cursor for team ${teamId}: ${err}`,
+            );
+        }
     }
 
     /**

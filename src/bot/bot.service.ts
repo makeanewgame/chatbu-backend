@@ -72,8 +72,6 @@ export class BotService {
       },
     });
 
-    console.log('user bots  -->', bots);
-
     const botQuota = await this.prisma.quota.findFirst({
       where: {
         teamId: body.user,
@@ -81,16 +79,10 @@ export class BotService {
       },
     });
 
-    console.log('bot quota  -->', botQuota);
-
     if (botQuota) {
       if (bots.length >= botQuota.limit) {
         throw new ForbiddenException('Bot quota exceeded');
       } else if (bots.length < botQuota.limit) {
-        console.log('bot creation...', body.systemPrompt);
-        console.log('bot creation...', body.settings);
-
-
         const bot = await this.prisma.customerBots.create({
           data: {
             botName: body.botName,
@@ -625,9 +617,6 @@ export class BotService {
   }
 
   async chat(body: ChatRequest, ip: string) {
-
-    console.log("chat body", body);
-
     const rawMessage = body.message ?? '';
     if (rawMessage.length > 2000) {
       throw new BadRequestException('Message exceeds the 2000-character limit.');
@@ -713,7 +702,6 @@ export class BotService {
                 throw 'An error happened!';
               }),
             ));
-        console.log("geo", geo.data);
         geoData = geo.data;
       }
 
@@ -798,7 +786,6 @@ export class BotService {
         console.log('error', error);
         throw new Error('Error in chat');
       }
-      console.log("ingest gelen", data);
 
       // FastAPI'den dönen session_id'yi kullan
       const sessionId = data.session_id;
@@ -808,9 +795,6 @@ export class BotService {
 
       const tokenArr = data.content.split(" ");
       const tokenCount = data.tokens?.total_tokens || tokenArr.length;
-
-      console.log("tokenArr", tokenArr.length);
-      console.log("token count", tokenCount);
 
       // Track token usage in subscription system
       await this.subscriptionService.trackTokenUsage(
@@ -992,6 +976,12 @@ export class BotService {
               botName: botUser.botName,
               botPrimaryLanguage: (botUser as any).primaryLanguage ?? null,
             });
+            // Advance the team round-robin cursor so the next handoff
+            // rotates to the following agent.
+            await this.handoffNotificationService.recordLiveChatAssignment(
+              body.teamId,
+              assigneeId,
+            );
           }
         } catch (e) {
           console.log('Auto-handover failed:', e);
@@ -1571,6 +1561,12 @@ export class BotService {
               botName: botUser.botName,
               botPrimaryLanguage: (botUser as any).primaryLanguage ?? null,
             });
+            // Advance the team round-robin cursor so the next handoff
+            // rotates to the following agent.
+            await this.handoffNotificationService.recordLiveChatAssignment(
+              body.teamId,
+              assigneeId,
+            );
           }
         } catch (e) {
           console.log('[chatStream] auto-handover failed:', e);
@@ -1847,38 +1843,6 @@ export class BotService {
       token: token,
     }
   }
-
-  // async generateEmbedToken(
-  //   botId: string,
-  //   userId: string,
-  // ) {
-  //   const bot = await this.prisma.customerBots.findUnique({
-  //     where: {
-  //       id: botId,
-  //       userId: userId,
-  //       isDeleted: false
-  //     },
-  //     select: {
-  //       id: true,
-  //     }
-  //   });
-
-  //   if (!bot) {
-  //     throw new Error('Error acuring bot');
-  //   }
-
-  //   // Generate a token for the bot
-  //   const token = this.prisma.customerEmbedTokens.create({
-  //     data: {
-  //       botId: bot.id,
-  //       userId: userId,
-  //       integrationType: integrationType,
-  //       token: this.generateRandomToken(),
-  //     }
-  //   });
-
-  //   return token;
-  // }
 
   async updateModelTier(body: UpdateModelTierRequest, teamId: string, userId?: string, userEmail?: string) {
     if (!MODEL_TIERS.includes(body.modelTier as any)) {
@@ -2263,11 +2227,11 @@ export class BotService {
 
     const fallback = raw && typeof raw === 'object' && !Array.isArray(raw)
       ? {
-          url: pickString((raw as Record<string, unknown>).url),
-          phone: pickString((raw as Record<string, unknown>).phone),
-          email: pickString((raw as Record<string, unknown>).email),
-          hint: pickString((raw as Record<string, unknown>).hint),
-        }
+        url: pickString((raw as Record<string, unknown>).url),
+        phone: pickString((raw as Record<string, unknown>).phone),
+        email: pickString((raw as Record<string, unknown>).email),
+        hint: pickString((raw as Record<string, unknown>).hint),
+      }
       : {};
 
     // Strip undefined keys so the JSON payload stays lean

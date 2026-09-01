@@ -25,7 +25,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "backfill:chat-flow": "tsx scripts/backfill-chat-flow-state.ts"
+    "backfill:chat-flow": "tsx scripts/backfill-chat-flow-state.ts",
+    "backfill:live-chat-roster": "tsx scripts/backfill-live-chat-roster.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.1",

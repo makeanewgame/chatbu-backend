@@ -5,6 +5,7 @@ import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { EventsGateway } from 'src/events/events.gateway';
 import { HandoffNotificationService } from 'src/handoff/handoff-notification.service';
 import { collectConversationRowIds } from './conversation-merge.util';
+import { formatAgentPublicName } from 'src/util/agent-name.util';
 import axios from 'axios';
 
 @Injectable()
@@ -309,8 +310,6 @@ export class ReportService {
 
         });
 
-        console.log(geoLocation);
-
         if (!geoLocation) {
             return {
                 message: 'No geo location found',
@@ -508,7 +507,9 @@ export class ReportService {
             where: { id: agentUserId },
             select: { name: true },
         });
-        const agentName = agentUser?.name ? agentUser.name.trim().split(' ')[0] : undefined;
+        // Visitor-facing: full first name + surname initial ("Ahmet E.").
+        // Dashboards/records still use the agent's full name.
+        const agentName = formatAgentPublicName(agentUser?.name);
 
         if (chat.channel === 'WHATSAPP' || chat.channel === 'META_MESSENGER' || chat.channel === 'INSTAGRAM') {
             await this.deliverToExternalChannel(chat, message);

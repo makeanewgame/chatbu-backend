@@ -4,6 +4,7 @@ export interface TeamMemberResponse {
     teamId: string;
     role: string;
     status: string;
+    canLiveChat: boolean;
     createdAt: Date;
     updatedAt: Date;
     user?: {
@@ -12,6 +13,19 @@ export interface TeamMemberResponse {
         email: string;
     };
     email?: string;
+}
+
+export interface LiveChatConfigAgent {
+    userId: string;
+    name: string;
+    email: string;
+    role: string;
+    canLiveChat: boolean;
+}
+
+export interface LiveChatConfigResponse {
+    agents: LiveChatConfigAgent[];
+    defaultAgentId: string | null;
 }
 
 export interface InvitationResponse {
