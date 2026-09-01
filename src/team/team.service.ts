@@ -16,8 +16,10 @@ import {
     RemoveMemberResponse,
     BusinessProfileResponse,
     CompleteOnboardingResponse,
+    LiveChatConfigResponse,
 } from './dto/team-responses.dto';
 import { SaveBusinessProfileDto } from './dto/save-business-profile.dto';
+import { UpdateLiveChatConfigDto } from './dto/live-chat-config.dto';
 import { MixpanelService } from 'src/analytics/mixpanel.service';
 
 @Injectable()
@@ -40,8 +42,6 @@ export class TeamService {
                 teamId,
             },
         });
-
-        console.log('User Membership:', userMembership);
 
         if (!userMembership) {
             throw new ForbiddenException('You are not a member of this team');
@@ -74,6 +74,7 @@ export class TeamService {
                 teamId: member.teamId,
                 role: member.role,
                 status: member.status,
+                canLiveChat: member.canLiveChat,
                 createdAt: member.createdAt,
                 updatedAt: member.updatedAt,
             };
@@ -290,6 +291,126 @@ export class TeamService {
             success: true,
             message: 'Member removed successfully',
         };
+    }
+
+    /**
+     * The live-chat handoff roster for the team: every active member with a
+     * `canLiveChat` flag, plus the fallback (`defaultAgentId`) used when
+     * nobody is flagged and pre-selected in the manual handover modal.
+     */
+    async getLiveChatConfig(
+        userId: string,
+        teamId: string,
+    ): Promise<LiveChatConfigResponse> {
+        const membership = await this.prisma.teamMember.findFirst({
+            where: { userId, teamId },
+            select: { id: true },
+        });
+        if (!membership) {
+            throw new ForbiddenException('You are not a member of this team');
+        }
+
+        const [team, members] = await Promise.all([
+            this.prisma.team.findUnique({
+                where: { id: teamId },
+                select: { defaultLiveChatAgentId: true },
+            }),
+            this.prisma.teamMember.findMany({
+                where: { teamId, status: 'active', userId: { not: null } },
+                include: { user: { select: { id: true, name: true, email: true } } },
+                orderBy: { createdAt: 'asc' },
+            }),
+        ]);
+
+        return {
+            defaultAgentId: team?.defaultLiveChatAgentId ?? null,
+            agents: members
+                .filter((m) => m.user)
+                .map((m) => ({
+                    userId: m.userId as string,
+                    name: m.user!.name,
+                    email: m.user!.email,
+                    role: m.role,
+                    canLiveChat: m.canLiveChat,
+                })),
+        };
+    }
+
+    /**
+     * Team-owner-only. Sets each member's `canLiveChat` flag and the team's
+     * fallback agent. A member picked as fallback is auto-enabled for live
+     * chat. If the fallback agent ends up outside the rotation pool the
+     * round-robin cursor is reset so distribution restarts cleanly.
+     */
+    async updateLiveChatConfig(
+        userId: string,
+        teamId: string,
+        dto: UpdateLiveChatConfigDto,
+    ): Promise<LiveChatConfigResponse> {
+        const requesterMembership = await this.prisma.teamMember.findFirst({
+            where: { userId, teamId, role: 'TEAM_OWNER' },
+        });
+        if (!requesterMembership) {
+            throw new ForbiddenException(
+                'Only team owners can change the live-chat roster',
+            );
+        }
+
+        const activeMembers = await this.prisma.teamMember.findMany({
+            where: { teamId, status: 'active', userId: { not: null } },
+            select: { id: true, userId: true },
+        });
+        const activeUserIds = new Set(
+            activeMembers.map((m) => m.userId as string),
+        );
+
+        const flags = new Map<string, boolean>();
+        for (const a of dto.agents ?? []) {
+            if (!activeUserIds.has(a.userId)) {
+                throw new BadRequestException(
+                    `User ${a.userId} is not an active member of this team`,
+                );
+            }
+            flags.set(a.userId, a.canLiveChat);
+        }
+
+        const defaultChanged = dto.defaultAgentId !== undefined;
+        const defaultAgentId =
+            dto.defaultAgentId === undefined || dto.defaultAgentId === ''
+                ? null
+                : dto.defaultAgentId;
+        if (defaultChanged && defaultAgentId) {
+            if (!activeUserIds.has(defaultAgentId)) {
+                throw new BadRequestException(
+                    'The default agent must be an active member of this team',
+                );
+            }
+            // A fallback agent must be able to take live chats.
+            flags.set(defaultAgentId, true);
+        }
+
+        await this.prisma.$transaction([
+            ...activeMembers
+                .filter((m) => flags.has(m.userId as string))
+                .map((m) =>
+                    this.prisma.teamMember.update({
+                        where: { id: m.id },
+                        data: { canLiveChat: flags.get(m.userId as string) },
+                    }),
+                ),
+            this.prisma.team.update({
+                where: { id: teamId },
+                data: {
+                    ...(defaultChanged && { defaultLiveChatAgentId: defaultAgentId }),
+                    // Restart rotation from the top on any roster change so a
+                    // stale cursor can't skip the newly-added agents.
+                    lastLiveChatAgentId: null,
+                },
+            }),
+        ]);
+
+        this.logger.info(`Live-chat roster updated for team ${teamId}`);
+        return this.getLiveChatConfig(userId, teamId);
     }
 
     async getBusinessProfile(teamId: string): Promise<BusinessProfileResponse> {

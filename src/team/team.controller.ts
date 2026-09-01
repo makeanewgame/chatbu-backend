@@ -5,6 +5,7 @@ import {
     Get,
     Param,
     Post,
+    Put,
     Req,
     UseGuards,
     Headers,
@@ -14,12 +15,14 @@ import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { ResendInvitationDto } from './dto/resend-invitation.dto';
 import { SaveBusinessProfileDto } from './dto/save-business-profile.dto';
+import { UpdateLiveChatConfigDto } from './dto/live-chat-config.dto';
 import {
     TeamMemberResponse,
     InvitationResponse,
     RemoveMemberResponse,
     BusinessProfileResponse,
     CompleteOnboardingResponse,
+    LiveChatConfigResponse,
 } from './dto/team-responses.dto';
 import { IUser } from 'src/util/interfaces';
 
@@ -36,6 +39,21 @@ export class TeamController {
         const userId = user.sub;
         const teamId = user.teamId;
         return this.teamService.getMembers(userId, teamId);
+    }
+
+    @Get('live-chat-config')
+    async getLiveChatConfig(@Req() req): Promise<LiveChatConfigResponse> {
+        const user = req.user as IUser;
+        return this.teamService.getLiveChatConfig(user.sub, user.teamId);
+    }
+
+    @Put('live-chat-config')
+    async updateLiveChatConfig(
+        @Req() req,
+        @Body() dto: UpdateLiveChatConfigDto,
+    ): Promise<LiveChatConfigResponse> {
+        const user = req.user as IUser;
+        return this.teamService.updateLiveChatConfig(user.sub, user.teamId, dto);
     }
 
     @Post('invite')

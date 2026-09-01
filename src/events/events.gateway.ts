@@ -101,4 +101,10 @@ export class EventsGateway {
   async notifyChatEnded(chatId: string, payload: any) {
     this.server.to(`chat-${chatId}`).emit('chat_ended', payload);
   }
+
+  // Ajana: atandığı bir canlı sohbet kapandı (cron zaman aşımıyla kapattı)
+  // Ajan panelinin açık sohbet görünümünden düşürmesi için.
+  async notifyAgentChatClosed(agentUserId: string, payload: any) {
+    this.server.to(`agent-${agentUserId}`).emit('chat_closed', payload);
+  }
 }

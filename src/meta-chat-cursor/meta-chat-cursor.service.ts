@@ -26,33 +26,51 @@ export type MetaChatPrefix = 'ig' | 'fb' | 'wa' | 'wa_test';
  * Kill switch: META_IDLE_ROTATION_ENABLED=false makes resolveChatId a
  * no-op that returns the legacy `<prefix>_<senderId>` shape, matching
  * pre-Slice-8 behavior for rollback without a code change.
+ *
+ * No Redis, no rotation: if REDIS_URL is unset (local dev without the
+ * cluster Redis — `redis-service` is a k8s-internal name that only
+ * resolves in-cluster) the service skips the client entirely and
+ * resolveChatId returns the legacy shape. k8s always sets REDIS_URL
+ * (see k8s/deployment.yaml), so prod/dev behaviour is unchanged.
  */
 @Injectable()
 export class MetaChatCursorService implements OnModuleDestroy {
     private readonly logger = new Logger(MetaChatCursorService.name);
-    private readonly redis: Redis;
+    private readonly redis: Redis | null;
     private readonly enabled: boolean;
     private readonly idleWindowSecs: number;
 
     constructor() {
-        const redisUrl = process.env.REDIS_URL || 'redis://redis-service:6379';
-        this.redis = new Redis(redisUrl, {
-            lazyConnect: false,
-            maxRetriesPerRequest: 2,
-        });
-        this.redis.on('error', (err) => {
-            this.logger.warn(`Redis client error: ${err.message}`);
-        });
-
-        this.enabled = (process.env.META_IDLE_ROTATION_ENABLED ?? 'true')
+        const redisUrl = process.env.REDIS_URL;
+        const killSwitchOn = (process.env.META_IDLE_ROTATION_ENABLED ?? 'true')
             .trim()
             .toLowerCase() === 'true';
+
+        if (redisUrl && killSwitchOn) {
+            this.redis = new Redis(redisUrl, {
+                lazyConnect: false,
+                maxRetriesPerRequest: 2,
+            });
+            this.redis.on('error', (err) => {
+                this.logger.warn(`Redis client error: ${err.message}`);
+            });
+            this.enabled = true;
+        } else {
+            this.redis = null;
+            this.enabled = false;
+            this.logger.log(
+                redisUrl
+                    ? 'Meta idle-rotation disabled via META_IDLE_ROTATION_ENABLED'
+                    : 'REDIS_URL not set — Meta idle-rotation disabled, using legacy chatId shape',
+            );
+        }
+
         const hours = parseInt(process.env.META_IDLE_ROTATION_HOURS ?? '6', 10);
         this.idleWindowSecs = (Number.isFinite(hours) && hours > 0 ? hours : 6) * 3600;
     }
 
     onModuleDestroy() {
-        this.redis.disconnect();
+        this.redis?.disconnect();
     }
 
     /**
@@ -69,7 +87,7 @@ export class MetaChatCursorService implements OnModuleDestroy {
      */
     async resolveChatId(prefix: MetaChatPrefix, visitorId: string): Promise<string> {
         const legacy = `${prefix}_${visitorId}`;
-        if (!this.enabled) return legacy;
+        if (!this.enabled || !this.redis) return legacy;
 
         const key = `meta:chat-cursor:${prefix}:${visitorId}`;
         const nowSecs = Math.floor(Date.now() / 1000);

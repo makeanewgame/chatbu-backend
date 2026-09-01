@@ -68,6 +68,13 @@ model Team {
   industry              String?
   website               String?
   onboardingCompletedAt DateTime?
+  // Live-chat handoff routing. defaultLiveChatAgentId is the fallback assignee
+  // (used when no member has canLiveChat enabled) and the pre-selected option in
+  // the manual handover modal. lastLiveChatAgentId is the round-robin cursor:
+  // the userId that received the most recent auto-handoff for this team.
+  // Both hold a User.id validated in code (like ownerId) — no FK on purpose.
+  defaultLiveChatAgentId String?
+  lastLiveChatAgentId    String?
   Content               Content[]
   CustomerBots          CustomerBots[]
   CustomerChats         CustomerChats[]
@@ -87,6 +94,9 @@ model TeamMember {
   email           String?
   role            String   @default("TEAM_MEMBER")
   status          String   @default("pending")
+  // Whether this member takes part in live-chat handoff round-robin. Managers
+  // who never handle live chat stay false; toggled from Team Settings.
+  canLiveChat     Boolean  @default(false)
   invitationToken String?  @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -162,6 +172,15 @@ model CustomerBots {
   leadDestinations           Json           @default("[]")
   leadVerificationRequired   Boolean        @default(false)
   smsVerificationRequired    Boolean        @default(false)
+  // Per-bot toggle for the KVKK Aydınlatma Metni + Kullanım Şartları
+  // consent card shown to a visitor BEFORE they hand over a phone /
+  // email in the widget lead + contact-form flows. Default true keeps
+  // every existing bot on today's mandatory-consent behaviour. Owners
+  // who collect KVKK consent themselves out-of-band (e.g. verbally on
+  // the first call back) flip this off to drop the in-widget step —
+  // SMS / email OTP verification is governed by its own flags
+  // (sms/leadVerificationRequired) and is unaffected by this toggle.
+  kvkkConsentRequired        Boolean        @default(true)
   // Per-bot toggle for the widget SSE streaming path (voice agent
   // plan Faz 2b, 2026-08-04). When true, the frontend widget sends
   // `Accept: text/event-stream` on `/widget/chat` and the backend
@@ -1080,6 +1099,7 @@ enum LogAction {
   UPDATE_LEAD_VERIFICATION
   UPDATE_SMS_VERIFICATION
   UPDATE_STREAMING_ENABLED
+  UPDATE_KVKK_CONSENT
 }
 
 enum LeadStatus {

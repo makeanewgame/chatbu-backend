@@ -154,17 +154,12 @@ export class ContentService {
             }
         })
 
-        console.log("content created", body.type);
-
         if (isUrlBasedType) {
-            console.log(`${body.type} content ingest started`);
             await this.ingestWebPage(body, user, body.content.url);
             // KB quota is updated by ML service after ingestion completes
         } else if (body.type === 'Q&A') {
-            console.log("Q&A content ingest started");
             await this.ingestQA(body, user);
         } else if (body.type === 'CONTENT') {
-            console.log("CONTENT ingest started");
             await this.ingestContent(body, user);
         }
 
@@ -399,8 +394,6 @@ export class ContentService {
                 }
             })
 
-            console.log("content edited", body.contentId);
-
             // Fetch current content to determine type
             const existingContent = await this.prisma.content.findUnique({
                 where: { id: body.contentId }
@@ -459,12 +452,6 @@ export class ContentService {
         //Vector DB den de silinecek
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
-        console.log("Deleting vectors for content",);
-        console.log("bot_cuid : ", botId);
-        console.log("customer_cuid : ", user.teamId);
-        console.log("sourceId : ", sourceId);
-
-
         const { data } = await firstValueFrom(
             this.httpService.post(`${ingestUrl}/delete-vectors`, {
                 "bot_cuid": botId,
@@ -503,7 +490,6 @@ export class ContentService {
                         throw 'An error happened!';
                     }),
                 ));
-        console.log("ingest gelen", data);
     }
 
     async ingestWebPages(body: any, user: IUser) {
@@ -672,8 +658,6 @@ export class ContentService {
                 throw mlErr;
             }
 
-            console.log("ingest response", data);
-
             // Phase B-2 — record the request-side batch snapshot so
             // future FE views (per-URL results, retry-failed-only) can
             // reconstruct what was actually asked to be ingested. Best-
@@ -725,9 +709,6 @@ export class ContentService {
     }
 
     async ingestQA(body: any, user: IUser) {
-
-        console.log("ingestQA body", body);
-
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
         const { data } = await firstValueFrom(
@@ -751,14 +732,9 @@ export class ContentService {
                         throw 'An error happened!';
                     }),
                 ));
-
-        console.log("ingestQA gelen", data);
     }
 
     async ingestContent(body: any, user: IUser) {
-
-        console.log("ingestContent body", body);
-
         const ingestUrl = this.configService.get('INGEST_ENPOINT')
 
         const { data } = await firstValueFrom(
@@ -780,9 +756,6 @@ export class ContentService {
                         throw 'An error happened!';
                     }),
                 ));
-
-        console.log("ingestQA gelen", data);
-
     }
 
     async ingestVideo(body: any, user: IUser, url: string) {

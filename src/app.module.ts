@@ -4,7 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { AuthenticationModule } from './authentication/authentication.module';
-import { WinstonModule } from 'nest-winston';
+import { WinstonModule, utilities as nestWinstonModuleUtilities } from 'nest-winston';
 import * as winston from 'winston';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -58,17 +58,31 @@ import { AnalyticsModule } from './analytics/analytics.module';
         limit: parseInt(process.env.THROTTLE_LIMIT || '100', 10),
       },
     ]),
-    // Winston: single-line JSON to stdout. Loki's Alloy pipeline parses
-    // this at `stage.match {container="backend"} { stage.json ... }` and
-    // promotes `level`, `context`, `trace_id` as structured metadata.
+    // Winston console output is environment-aware:
+    //   - production: single-line JSON to stdout. Loki's Alloy pipeline
+    //     parses this at `stage.match {container="backend"} { stage.json ... }`
+    //     and promotes `level`, `context`, `trace_id` as structured metadata.
+    //   - dev/local: the classic colorized Nest-style output
+    //     (`[Nest] 123  - 01/09/2026, ...  LOG [Context] message`) so
+    //     terminal logs stay readable while developing.
     // File transport removed 2026-07-09: writing `combined.log` inside
     // a stateless container fills the ephemeral filesystem, and nobody
     // ever tailed that file — Loki is the log store.
     WinstonModule.forRoot({
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.json(),
-      ),
+      format:
+        process.env.NODE_ENV === 'production'
+          ? winston.format.combine(
+              winston.format.timestamp(),
+              winston.format.json(),
+            )
+          : winston.format.combine(
+              winston.format.timestamp(),
+              winston.format.ms(),
+              nestWinstonModuleUtilities.format.nestLike('Chatbu', {
+                colors: true,
+                prettyPrint: true,
+              }),
+            ),
       transports: [
         new winston.transports.Console(),
       ],

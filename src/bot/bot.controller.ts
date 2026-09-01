@@ -29,6 +29,7 @@ import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
+import { UpdateKvkkConsentRequest } from './dto/updateKvkkConsentRequest';
 import { UpdateStreamingEnabledRequest } from './dto/updateStreamingEnabledRequest';
 import {
   ApiBadRequestResponse,
@@ -495,6 +496,21 @@ export class BotController {
   ) {
     const user = req.user as IUser;
     return this.botService.updateSmsVerification(body, user.teamId, user.sub, user.email);
+  }
+  //#endregion
+
+  //#region updateKvkkConsent
+  @ApiOperation({ summary: 'Toggle the in-widget KVKK consent card for bot leads' })
+  @ApiResponse({ status: 200, description: 'KVKK consent setting updated' })
+  @ApiBearerAuth()
+  @Post('updateKvkkConsent')
+  @UseGuards(AccessTokenGuard)
+  async updateKvkkConsent(
+    @Body() body: UpdateKvkkConsentRequest,
+    @Req() req: Request,
+  ) {
+    const user = req.user as IUser;
+    return this.botService.updateKvkkConsent(body, user.teamId, user.sub, user.email);
   }
   //#endregion
 

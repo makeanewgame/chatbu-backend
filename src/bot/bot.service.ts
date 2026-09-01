@@ -12,6 +12,7 @@ import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
 import { UpdateSmsVerificationRequest } from './dto/updateSmsVerificationRequest';
+import { UpdateKvkkConsentRequest } from './dto/updateKvkkConsentRequest';
 import { UpdateStreamingEnabledRequest } from './dto/updateStreamingEnabledRequest';
 import { catchError, firstValueFrom } from 'rxjs';
 import { HttpService } from '@nestjs/axios';
@@ -71,8 +72,6 @@ export class BotService {
       },
     });
 
-    console.log('user bots  -->', bots);
-
     const botQuota = await this.prisma.quota.findFirst({
       where: {
         teamId: body.user,
@@ -80,16 +79,10 @@ export class BotService {
       },
     });
 
-    console.log('bot quota  -->', botQuota);
-
     if (botQuota) {
       if (bots.length >= botQuota.limit) {
         throw new ForbiddenException('Bot quota exceeded');
       } else if (bots.length < botQuota.limit) {
-        console.log('bot creation...', body.systemPrompt);
-        console.log('bot creation...', body.settings);
-
-
         const bot = await this.prisma.customerBots.create({
           data: {
             botName: body.botName,
@@ -589,10 +582,41 @@ export class BotService {
     }
   }
 
+  /**
+   * Re-check for an existing CustomerChats row right before we would
+   * create a new one. The first lookup at the top of chat()/chatStream()
+   * runs BEFORE the gateway call; a sibling turn fired milliseconds later
+   * (rapid-fire quick-reply taps, a slot tap racing the greeting turn)
+   * clears that same lookup and then both turns try to create a row for
+   * the same conversation. By the time we reach the create, the sibling's
+   * row usually exists — match it on either the client-sent chatId or the
+   * gateway session id and append instead of forking.
+   *
+   * Not fully atomic (no unique constraint on (botId, chatId) — legacy
+   * data has same-chatId dups a migration would have to clean first), but
+   * it collapses the fork window from seconds to milliseconds, which is
+   * below real user click cadence.
+   */
+  private async findRacedChat(
+    botId: string,
+    teamId: string,
+    candidateChatIds: (string | null | undefined)[],
+  ) {
+    const ids = Array.from(
+      new Set(candidateChatIds.filter((v): v is string => !!v)),
+    );
+    if (ids.length === 0) return null;
+    return this.prisma.customerChats.findFirst({
+      where: {
+        botId,
+        teamId,
+        chatId: { in: ids },
+        isDeleted: false,
+      },
+    });
+  }
+
   async chat(body: ChatRequest, ip: string) {
-
-    console.log("chat body", body);
-
     const rawMessage = body.message ?? '';
     if (rawMessage.length > 2000) {
       throw new BadRequestException('Message exceeds the 2000-character limit.');
@@ -678,7 +702,6 @@ export class BotService {
                 throw 'An error happened!';
               }),
             ));
-        console.log("geo", geo.data);
         geoData = geo.data;
       }
 
@@ -763,7 +786,6 @@ export class BotService {
         console.log('error', error);
         throw new Error('Error in chat');
       }
-      console.log("ingest gelen", data);
 
       // FastAPI'den dönen session_id'yi kullan
       const sessionId = data.session_id;
@@ -773,9 +795,6 @@ export class BotService {
 
       const tokenArr = data.content.split(" ");
       const tokenCount = data.tokens?.total_tokens || tokenArr.length;
-
-      console.log("tokenArr", tokenArr.length);
-      console.log("token count", tokenCount);
 
       // Track token usage in subscription system
       await this.subscriptionService.trackTokenUsage(
@@ -793,11 +812,26 @@ export class BotService {
       const externalContactId = (chatChannel !== 'WIDGET') ? body.sender : null;
 
       if (isNewChat) {
+        const raced = await this.findRacedChat(body.botId, body.teamId, [
+          body.chatId,
+          sessionId,
+        ]);
+        if (raced) {
+          isNewChat = false;
+          activeChat = raced;
+        }
+      }
+
+      if (isNewChat) {
         activeChat = await this.prisma.customerChats.create({
           data: {
             botId: body.botId,
             teamId: body.teamId,
-            chatId: sessionId, // FastAPI'den gelen session_id
+            // Prefer the client-sent id (the widget pins a stable one from
+            // turn 1 and the gateway echoes it back, so the two match);
+            // fall back to the gateway session id only for the very first
+            // turn where the client had nothing to send yet.
+            chatId: body.chatId ?? sessionId,
             isDeleted: false,
             totalTokens: tokenCount,
             channel: chatChannel,
@@ -942,6 +976,12 @@ export class BotService {
               botName: botUser.botName,
               botPrimaryLanguage: (botUser as any).primaryLanguage ?? null,
             });
+            // Advance the team round-robin cursor so the next handoff
+            // rotates to the following agent.
+            await this.handoffNotificationService.recordLiveChatAssignment(
+              body.teamId,
+              assigneeId,
+            );
           }
         } catch (e) {
           console.log('Auto-handover failed:', e);
@@ -1366,11 +1406,24 @@ export class BotService {
       // (Meta/WhatsApp adapters call the batch `chat()` and never
       // reach this method).
       if (isNewChat) {
+        const raced = await this.findRacedChat(body.botId, body.teamId, [
+          body.chatId,
+          sessionId,
+        ]);
+        if (raced) {
+          isNewChat = false;
+          activeChat = raced;
+        }
+      }
+
+      if (isNewChat) {
         activeChat = await this.prisma.customerChats.create({
           data: {
             botId: body.botId,
             teamId: body.teamId,
-            chatId: sessionId,
+            // See batch chat() — prefer the client-pinned id, fall back to
+            // the gateway session id only for the first turn.
+            chatId: body.chatId ?? sessionId,
             isDeleted: false,
             totalTokens: tokenCount,
             channel: 'WIDGET',
@@ -1508,6 +1561,12 @@ export class BotService {
               botName: botUser.botName,
               botPrimaryLanguage: (botUser as any).primaryLanguage ?? null,
             });
+            // Advance the team round-robin cursor so the next handoff
+            // rotates to the following agent.
+            await this.handoffNotificationService.recordLiveChatAssignment(
+              body.teamId,
+              assigneeId,
+            );
           }
         } catch (e) {
           console.log('[chatStream] auto-handover failed:', e);
@@ -1657,6 +1716,12 @@ export class BotService {
         settings: true,
         botName: true,
         smsVerificationRequired: true,
+        // `kvkkConsentRequired` (default true) tells the widget's
+        // client-side KVKK pre-send gate (ChatFormPublic.tsx) whether
+        // to block a phone-carrying message pending consent. Server-side
+        // enforcement still lives in the gateway pre-agent scrub +
+        // lead.service consent gate; this only improves widget UX.
+        kvkkConsentRequired: true,
         streamingEnabled: true,
         team: {
           select: {
@@ -1778,38 +1843,6 @@ export class BotService {
       token: token,
     }
   }
-
-  // async generateEmbedToken(
-  //   botId: string,
-  //   userId: string,
-  // ) {
-  //   const bot = await this.prisma.customerBots.findUnique({
-  //     where: {
-  //       id: botId,
-  //       userId: userId,
-  //       isDeleted: false
-  //     },
-  //     select: {
-  //       id: true,
-  //     }
-  //   });
-
-  //   if (!bot) {
-  //     throw new Error('Error acuring bot');
-  //   }
-
-  //   // Generate a token for the bot
-  //   const token = this.prisma.customerEmbedTokens.create({
-  //     data: {
-  //       botId: bot.id,
-  //       userId: userId,
-  //       integrationType: integrationType,
-  //       token: this.generateRandomToken(),
-  //     }
-  //   });
-
-  //   return token;
-  // }
 
   async updateModelTier(body: UpdateModelTierRequest, teamId: string, userId?: string, userEmail?: string) {
     if (!MODEL_TIERS.includes(body.modelTier as any)) {
@@ -1988,6 +2021,50 @@ export class BotService {
   }
 
   /**
+   * Per-bot toggle for the in-widget KVKK consent card (Aydınlatma
+   * Metni + Kullanım Şartları) shown before a visitor hands over a
+   * phone / email in the lead + contact-form flows. Structurally
+   * identical to updateSmsVerification. Flipping it off does NOT
+   * relax SMS / email OTP verification — those stay governed by
+   * sms/leadVerificationRequired. Default true, so a bad flip is a
+   * one-request rollback.
+   */
+  async updateKvkkConsent(body: UpdateKvkkConsentRequest, teamId: string, userId?: string, userEmail?: string) {
+    const bot = await this.prisma.customerBots.findUnique({
+      where: { id: body.botId, isDeleted: false },
+    });
+
+    if (!bot) {
+      throw new NotFoundException('Bot not found');
+    }
+
+    if (bot.teamId !== teamId) {
+      throw new ForbiddenException('Bot not owned by your team');
+    }
+
+    const oldValue = bot.kvkkConsentRequired;
+
+    const updated = await this.prisma.customerBots.update({
+      where: { id: body.botId },
+      data: { kvkkConsentRequired: body.kvkkConsentRequired },
+    });
+
+    await this.systemLogService.createLog({
+      category: 'BOT',
+      action: 'UPDATE_KVKK_CONSENT',
+      status: 'SUCCESS',
+      userId,
+      userEmail,
+      teamId,
+      entityId: bot.id,
+      entityName: bot.botName,
+      message: `Bot kvkk-consent: ${oldValue} -> ${body.kvkkConsentRequired}`,
+    });
+
+    return { message: 'KVKK consent setting updated', bot: updated };
+  }
+
+  /**
    * Per-bot toggle for the widget SSE streaming path (voice plan
    * Faz 2b, 2026-08-04). Structurally identical to
    * updateSmsVerification — same team-ownership check, same audit log
@@ -2038,7 +2115,11 @@ export class BotService {
   async getLeadVerificationStatus(botId: string) {
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: botId, isDeleted: false },
-      select: { leadVerificationRequired: true, smsVerificationRequired: true },
+      select: {
+        leadVerificationRequired: true,
+        smsVerificationRequired: true,
+        kvkkConsentRequired: true,
+      },
     });
 
     if (!bot) {
@@ -2048,6 +2129,10 @@ export class BotService {
     return {
       requiresVerification: bot.leadVerificationRequired,
       requiresSmsVerification: bot.smsVerificationRequired,
+      // Consumed by app-gateway `_bot_requires_kvkk_consent` to decide
+      // whether the KVKK consent card / pre-agent short-circuit should
+      // fire at all for this bot.
+      requiresKvkkConsent: bot.kvkkConsentRequired,
     };
   }
 
@@ -2142,11 +2227,11 @@ export class BotService {
 
     const fallback = raw && typeof raw === 'object' && !Array.isArray(raw)
       ? {
-          url: pickString((raw as Record<string, unknown>).url),
-          phone: pickString((raw as Record<string, unknown>).phone),
-          email: pickString((raw as Record<string, unknown>).email),
-          hint: pickString((raw as Record<string, unknown>).hint),
-        }
+        url: pickString((raw as Record<string, unknown>).url),
+        phone: pickString((raw as Record<string, unknown>).phone),
+        email: pickString((raw as Record<string, unknown>).email),
+        hint: pickString((raw as Record<string, unknown>).hint),
+      }
       : {};
 
     // Strip undefined keys so the JSON payload stays lean

@@ -306,6 +306,8 @@ export class AuthenticationService {
           data: {
             name: `${user.name}'s Team`,
             ownerId: createdUser.id,
+            // Sole member of a fresh team is the live-chat fallback agent.
+            defaultLiveChatAgentId: createdUser.id,
           },
         });
 
@@ -316,6 +318,7 @@ export class AuthenticationService {
             userId: createdUser.id,
             role: 'TEAM_OWNER',
             status: 'active',
+            canLiveChat: true,
           },
         });
 
@@ -817,6 +820,8 @@ export class AuthenticationService {
           data: {
             name: `${createdUser.name}'s Team`,
             ownerId: createdUser.id,
+            // Sole member of a fresh team is the live-chat fallback agent.
+            defaultLiveChatAgentId: createdUser.id,
           },
         });
 
@@ -827,6 +832,7 @@ export class AuthenticationService {
             userId: createdUser.id,
             role: 'TEAM_OWNER',
             status: 'active',
+            canLiveChat: true,
           },
         });
 

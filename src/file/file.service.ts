@@ -78,7 +78,6 @@ export class FileService {
                     remainingKb,
                 }
             }
-            console.log("filesLength", files.length, " totalUploadKb:", totalUploadKb, " used..:", existingQuota.Quota[0].used)
             //async function to upload files
             for (const file of files) {
                 const uploaded_file = await this.minioClientService.upload(file, this.configService.get('S3_BUCKET_NAME'), user.teamId, body.botId)
@@ -288,7 +287,6 @@ export class FileService {
                         }
                     }
 
-                    console.log("deleted Vectors response", data);
                     return {
                         message: "File deleted successfully"
                     }
@@ -418,8 +416,6 @@ export class FileService {
     }
 
     async getFiles(user: IUser, botId: string) {
-
-        console.log("getFiles user.teamId", user.teamId);
         const fileList = await this.prisma.storage.findMany({
             where: {
                 teamId: user.teamId ? user.teamId : '',
@@ -474,7 +470,6 @@ export class FileService {
                         throw 'An error happened!';
                     }),
                 ));
-        console.log("ingest gelen", data);
         return data;
     }
 
@@ -546,7 +541,6 @@ export class FileService {
                 type: 'UPLOADED',
             }
         })
-        console.log("ingest gelen", data);
         return { ...data, pending_count: userStorage };
 
     }
