@@ -1,10 +1,20 @@
 ---
-# ServiceAccount for the NestJS backend
+# ServiceAccount for the NestJS backend.
+#
+# `eks.amazonaws.com/role-arn` binds the pod to the IRSA role
+# `chatbu-backend-role` (Terraform: fovi-longa-chat-be/terraform/
+# chatbu-backend-iam.tf, module.chatbu_backend_irsa_role). Grants
+# transcribe:StartStreamTranscription for the AudioTranscriptionService.
+# Same annotation is applied to the sibling `chatbu-dev:backend-sa`
+# via the dev overlay (the IRSA trust policy already whitelists both
+# namespaces).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: backend-sa
   namespace: chatbu
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::152100380489:role/chatbu-backend-role
 
 ---
 # Role: read pods/logs + restart deployments in chatbu namespace
