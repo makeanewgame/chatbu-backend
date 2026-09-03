@@ -3,10 +3,19 @@
 # resource; this is a small dev-local copy (namespace is injected by the
 # overlay's namespace transformer → chatbu-dev). backend pods run as
 # serviceAccountName: backend-sa and would fail to start without it.
+#
+# `eks.amazonaws.com/role-arn` binds the pod to IRSA role
+# `chatbu-backend-role` (Terraform: fovi-longa-chat-be/terraform/
+# chatbu-backend-iam.tf). Trust policy whitelists both
+# `chatbu:backend-sa` and `chatbu-dev:backend-sa`, so the SAME role ARN
+# works for both namespaces. Grants transcribe:StartStreamTranscription
+# for the AudioTranscriptionService (voice message plan Slice A).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: backend-sa
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::152100380489:role/chatbu-backend-role
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
