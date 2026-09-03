@@ -32,6 +32,8 @@
  * outbound-agent-message adapters per channel.
  */
 
+import { stripMarkdown } from 'src/util/strip-markdown.util';
+
 export type MetaReplyLang = 'tr' | 'en';
 
 /**
@@ -42,8 +44,8 @@ export type MetaReplyLang = 'tr' | 'en';
  * fallback the visitor previously saw.
  */
 const HANDOFF_PENDING_MESSAGE: Record<MetaReplyLang, string> = {
-    tr: 'Mesajınız ekibimize iletildi. Kısa süre içinde sizinle iletişime geçilecek.',
-    en: 'Your message has been forwarded to the team. Someone will be in touch shortly.',
+  tr: 'Mesajınız ekibimize iletildi. Kısa süre içinde sizinle iletişime geçilecek.',
+  en: 'Your message has been forwarded to the team. Someone will be in touch shortly.',
 };
 
 /**
@@ -51,8 +53,18 @@ const HANDOFF_PENDING_MESSAGE: Record<MetaReplyLang, string> = {
  * the caller should skip the send entirely (unknown state — log + move on
  * rather than post a misleading apology).
  */
-export function resolveMetaReplyText(response: any, lang: MetaReplyLang = 'tr'): string | null {
-    if (response?.content) return response.content;
-    if (response?.agent_active) return HANDOFF_PENDING_MESSAGE[lang];
-    return null;
+export function resolveMetaReplyText(
+  response: any,
+  lang: MetaReplyLang = 'tr',
+): string | null {
+  // Messenger / Instagram DM / WhatsApp render plain text only, so any
+  // Markdown the model produced (`**bold**`, `[label](url)`, `## H2`)
+  // would show up literally in the visitor's chat. The gateway strips on
+  // the non-streaming path but only when MARKDOWN_STRIP_ENABLED is set
+  // and never in SSE mode — strip again here so the guarantee holds for
+  // these channels regardless of gateway config or the bot's streaming
+  // flag.
+  if (response?.content) return stripMarkdown(response.content);
+  if (response?.agent_active) return HANDOFF_PENDING_MESSAGE[lang];
+  return null;
 }

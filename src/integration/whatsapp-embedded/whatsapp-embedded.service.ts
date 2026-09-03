@@ -25,11 +25,20 @@ export class WhatsAppEmbeddedService {
      *   4. Persist the integration
      */
     async completeSignup(teamId: string, dto: CompleteWhatsAppSignupDto) {
-        const { chatbotId, authorizationCode, wabaId, phoneNumberId } = dto;
+        const { chatbotId, authorizationCode, wabaId, coexistence } = dto;
+        let { phoneNumberId } = dto;
 
-        if (!wabaId || !phoneNumberId) {
+        if (!wabaId) {
             throw new BadRequestException(
-                'wabaId and phoneNumberId are required — they are returned by the Embedded Signup message event',
+                'wabaId is required — it is returned by the Embedded Signup message event',
+            );
+        }
+
+        // Coexistence onboarding only returns waba_id; the phone number id is
+        // resolved from the WABA below. Any other flow must supply it.
+        if (!phoneNumberId && !coexistence) {
+            throw new BadRequestException(
+                'phoneNumberId is required — it is returned by the Embedded Signup message event',
             );
         }
 
@@ -61,6 +70,27 @@ export class WhatsAppEmbeddedService {
             throw new BadRequestException('Failed to exchange Meta authorization code');
         }
 
+        // ── Coexistence: resolve the phone number id from the WABA ──
+        // FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING does not include phone_number_id.
+        // A coexistence WABA has exactly one number (the WhatsApp Business app number).
+        if (!phoneNumberId) {
+            try {
+                const phoneListRes = await axios.get<{ data: Array<{ id: string }> }>(
+                    `${GRAPH_BASE}/${wabaId}/phone_numbers`,
+                    { params: { access_token: businessToken } },
+                );
+                phoneNumberId = phoneListRes.data.data?.[0]?.id;
+            } catch (err: any) {
+                this.logger.error('Failed to list WABA phone numbers', err?.response?.data ?? err?.message);
+            }
+
+            if (!phoneNumberId) {
+                throw new BadRequestException(
+                    'Could not resolve a phone number for this WhatsApp Business account',
+                );
+            }
+        }
+
         // ── Step 2: Subscribe our app to webhooks on the customer's WABA ──
         // This enables incoming message webhooks to reach our server.
         try {
@@ -77,17 +107,23 @@ export class WhatsAppEmbeddedService {
 
         // ── Step 3: Register the phone number for Cloud API messaging ──
         // Generates a 6-digit two-step verification PIN for the number.
-        const pin = randomInt(100000, 999999).toString();
-        try {
-            await axios.post(
-                `${GRAPH_BASE}/${phoneNumberId}/register`,
-                { messaging_product: 'whatsapp', pin },
-                { headers: { Authorization: `Bearer ${businessToken}`, 'Content-Type': 'application/json' } },
-            );
-            this.logger.log(`Phone number registered for Cloud API | phoneNumberId=${phoneNumberId}`);
-        } catch (err: any) {
-            // Non-fatal: the number may already be registered with Cloud API.
-            this.logger.warn('Phone registration failed (may already be registered)', err?.response?.data ?? err?.message);
+        // Coexistence numbers are already registered via the WhatsApp Business app —
+        // calling /register there would fail, so it is skipped.
+        const pin = coexistence ? null : randomInt(100000, 999999).toString();
+        if (coexistence) {
+            this.logger.log(`Coexistence onboarding — skipping phone registration | phoneNumberId=${phoneNumberId}`);
+        } else {
+            try {
+                await axios.post(
+                    `${GRAPH_BASE}/${phoneNumberId}/register`,
+                    { messaging_product: 'whatsapp', pin },
+                    { headers: { Authorization: `Bearer ${businessToken}`, 'Content-Type': 'application/json' } },
+                );
+                this.logger.log(`Phone number registered for Cloud API | phoneNumberId=${phoneNumberId}`);
+            } catch (err: any) {
+                // Non-fatal: the number may already be registered with Cloud API.
+                this.logger.warn('Phone registration failed (may already be registered)', err?.response?.data ?? err?.message);
+            }
         }
 
         // ── Step 4: Fetch display info for the UI ──
@@ -117,7 +153,8 @@ export class WhatsAppEmbeddedService {
         // ── Step 5: Persist the integration ──
         const config = {
             botId: chatbotId,
-            connectionType: 'embedded_signup',
+            connectionType: coexistence ? 'coexistence' : 'embedded_signup',
+            coexistence: !!coexistence,
             wabaId,
             phoneNumberId,
             businessToken,

@@ -40,6 +40,16 @@ export interface WhatsAppWebhookValue {
         timestamp: string;
         recipient_id: string;
     }>;
+    // Coexistence: messages the business sent from the WhatsApp Business app
+    // (or a linked companion device) — delivered on the `smb_message_echoes` field.
+    message_echoes?: Array<{
+        from: string;
+        to: string;
+        id: string;
+        timestamp: string;
+        text?: { body: string };
+        type: string;
+    }>;
 }
 
 export interface WhatsAppWebhookBody {
@@ -158,6 +168,11 @@ export class MetaWhatsappService {
 
         for (const entry of body.entry || []) {
             for (const change of entry.changes || []) {
+                if (change.field === 'smb_message_echoes') {
+                    await this.handleMessageEchoes(change.value);
+                    continue;
+                }
+
                 if (change.field !== 'messages') continue;
 
                 const value = change.value;
@@ -196,7 +211,9 @@ export class MetaWhatsappService {
 
                 const cfg = integration.config as any;
                 const botId: string = cfg?.botId;
-                const accessToken: string = cfg?.accessToken;
+                // Embedded Signup / Coexistence integrations store the system-user
+                // token as `businessToken`; only the legacy manual form used `accessToken`.
+                const accessToken: string = cfg?.businessToken ?? cfg?.accessToken;
 
                 if (!botId || !accessToken) {
                     this.logger.warn(`Integration config incomplete for phoneNumberId=${phoneNumberId}`);
@@ -231,13 +248,23 @@ export class MetaWhatsappService {
                             '0.0.0.0',
                         );
 
-                        const replyText = resolveMetaReplyText(response);
-                        if (replyText) {
-                            await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
-                        } else {
-                            this.logger.warn(
-                                `[whatsapp-embedded] empty chat response for chatId=${chatId} — no reply sent`,
+                        if ((response as any)?.agent_active) {
+                            // Chat is with a human — the business replied from the
+                            // WhatsApp Business app (coexistence) or a dashboard
+                            // handover. Stay fully silent: the business sees the
+                            // customer's message in their own WhatsApp app.
+                            this.logger.log(
+                                `[whatsapp-embedded] chat ${chatId} is HUMAN_ACTIVE — bot staying silent`,
                             );
+                        } else {
+                            const replyText = resolveMetaReplyText(response);
+                            if (replyText) {
+                                await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                            } else {
+                                this.logger.warn(
+                                    `[whatsapp-embedded] empty chat response for chatId=${chatId} — no reply sent`,
+                                );
+                            }
                         }
                     } catch (err) {
                         this.logger.error(
@@ -254,6 +281,85 @@ export class MetaWhatsappService {
                         ` | recipient_id=${status.recipient_id}`,
                     );
                 }
+            }
+        }
+    }
+
+    /**
+     * `smb_message_echoes` — under Coexistence the business keeps replying to
+     * customers from the WhatsApp Business app on their phone. Each such reply
+     * is echoed here. When it lands, hand the conversation to the human:
+     * flip it to HUMAN_ACTIVE (the bot's chat pipeline then short-circuits and
+     * stops auto-replying) and mirror the message into the transcript so the
+     * dashboard shows the full thread.
+     */
+    private async handleMessageEchoes(value: WhatsAppWebhookValue): Promise<void> {
+        const phoneNumberId = value?.metadata?.phone_number_id;
+        const echoes = value?.message_echoes || [];
+
+        if (!phoneNumberId || !echoes.length) return;
+
+        const integration = await this.whatsAppEmbeddedService.findByPhoneNumberId(phoneNumberId);
+
+        if (!integration) {
+            this.logger.warn(`smb_message_echoes: no WhatsApp integration for phoneNumberId=${phoneNumberId}`);
+            return;
+        }
+
+        const cfg = integration.config as any;
+        const botId: string = cfg?.botId;
+
+        if (!botId) return;
+
+        for (const echo of echoes) {
+            const customerId = echo.to; // the WhatsApp user the business replied to
+
+            if (!customerId) continue;
+
+            // Resolve the chat by the stable contact id — NOT metaChatCursor,
+            // whose resolveChatId() bumps the idle-rotation cursor and can mint a
+            // fresh chatId, which would miss the row the bot already owns.
+            const chat = await this.prisma.customerChats.findFirst({
+                where: {
+                    botId,
+                    teamId: integration.teamId,
+                    externalContactId: customerId,
+                    isDeleted: false,
+                    chatStatus: { not: 'CLOSED' },
+                },
+                orderBy: { updatedAt: 'desc' },
+            });
+
+            if (!chat) {
+                this.logger.log(`smb_message_echoes: no active chat for customer=${customerId} — nothing to hand over`);
+                continue;
+            }
+
+            const text = echo.text?.body ?? `[${echo.type || 'media'}]`;
+
+            // The details table has no external-message-id column, so de-dupe
+            // redelivered echoes by matching the most recent identical agent line.
+            const last = await this.prisma.customerChatDetails.findFirst({
+                where: { chatId: chat.id, sender: 'agent', message: text },
+                orderBy: { createdAt: 'desc' },
+            });
+
+            if (last && Date.now() - last.createdAt.getTime() < 120_000) continue;
+
+            await this.prisma.customerChatDetails.create({
+                data: { chatId: chat.id, sender: 'agent', message: text, createdAt: new Date() },
+            });
+
+            await this.prisma.customerChats.update({
+                where: { id: chat.id },
+                data: { chatStatus: 'HUMAN_ACTIVE', updatedAt: new Date() },
+            });
+
+            if (chat.chatStatus !== 'HUMAN_ACTIVE') {
+                this.logger.log(
+                    `smb_message_echoes: chat ${chat.id} → HUMAN_ACTIVE` +
+                    ` (business replied from the WhatsApp Business app)`,
+                );
             }
         }
     }

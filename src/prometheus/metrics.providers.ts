@@ -1,7 +1,11 @@
 import {
+  getToken,
   makeCounterProvider,
   makeHistogramProvider,
 } from '@willsoto/nestjs-prometheus';
+import type { OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import type { Counter } from 'prom-client';
 
 /**
  * Central provider factory for Chatbu-owned metrics on the NestJS backend.
@@ -92,3 +96,78 @@ export const chatbuSmsSendTotal = makeCounterProvider({
   help: 'SMS send outcomes across all providers, sliced by provider + country + context',
   labelNames: ['provider', 'context', 'country', 'outcome'] as const,
 });
+
+/**
+ * Voice message → transcript pipeline (Slice A of the async voice
+ * message plan, 2026-09-01). Three metrics, all labelled by the source
+ * `channel` so per-surface breakdowns fall out for free on the Grafana
+ * side.
+ *
+ * Channels — enumerated in `AudioTranscriptionService.VoiceChannel`:
+ *   widget | messenger | instagram | whatsapp | wa_test | internal_smoke
+ *
+ * `.labels(...)` MUST be pre-initialised for the (channel, outcome)
+ * combinations Grafana panels query, otherwise the counter series is
+ * lazy-materialised on the first `inc()` call and
+ * `increase(counter[24h])` reads 0 until then. This is the exact panel-
+ * zero foot-gun that prod-broke the SMS lead panel on 2026-08-14 — see
+ * `VoiceMessageMetricsPreinit` below.
+ */
+export const chatbuVoiceMessageTranscribeTotal = makeCounterProvider({
+  name: 'chatbu_voice_message_transcribe_total',
+  help: 'Voice message transcription outcomes per channel (success/empty/error/unsupported_format)',
+  labelNames: ['channel', 'outcome'] as const,
+});
+
+export const chatbuVoiceMessageTranscribeDurationSeconds = makeHistogramProvider({
+  name: 'chatbu_voice_message_transcribe_duration_seconds',
+  help: 'End-to-end transcription latency per channel (ffmpeg decode + AWS Transcribe streaming)',
+  labelNames: ['channel'] as const,
+  buckets: [0.25, 0.5, 1, 2, 3, 5, 8, 13, 21],
+});
+
+export const chatbuVoiceMessageAudioDurationSeconds = makeHistogramProvider({
+  name: 'chatbu_voice_message_audio_duration_seconds',
+  help: 'Input audio duration per channel — feeds cost/quota panels and outlier detection',
+  labelNames: ['channel'] as const,
+  buckets: [1, 3, 5, 10, 20, 30, 60, 120],
+});
+
+/**
+ * Pre-initialises every (channel, outcome) series for the voice
+ * message counter at Nest startup, so `sum by (channel) (increase(
+ * chatbu_voice_message_transcribe_total[24h]))` reports 0 the first
+ * time an outcome fires — not "no data" — on any Grafana panel that
+ * ships before the first real event. See [[incident_prometheus_lazy_
+ * labels_2026-08-14]].
+ */
+const VOICE_CHANNELS = [
+  'widget',
+  'messenger',
+  'instagram',
+  'whatsapp',
+  'wa_test',
+  'internal_smoke',
+] as const;
+const VOICE_OUTCOMES = [
+  'success',
+  'empty',
+  'error',
+  'unsupported_format',
+] as const;
+
+@Injectable()
+export class VoiceMessageMetricsPreinit implements OnModuleInit {
+  constructor(
+    @Inject(getToken('chatbu_voice_message_transcribe_total'))
+    private readonly transcribeCounter: Counter<string>,
+  ) {}
+
+  onModuleInit(): void {
+    for (const channel of VOICE_CHANNELS) {
+      for (const outcome of VOICE_OUTCOMES) {
+        this.transcribeCounter.labels(channel, outcome);
+      }
+    }
+  }
+}
