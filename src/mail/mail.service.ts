@@ -5,6 +5,8 @@ import * as path from 'path';
 import * as handlebars from 'handlebars';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
+import { formatNotificationDate } from '../util/format-date.util';
+import { enOrTr } from '../util/mail-locale.util';
 
 // This service is responsible for sending all types of emails in the system, including registration, password reset, team invitations, and booking verifications. It uses Handlebars templates for email content and supports multiple languages (English and Turkish). Also includes methods for sending notifications about token limits and payment issues. Language is determined by the caller and defaults to English if not specified. All email sending operations are logged for monitoring and debugging purposes.
 
@@ -291,6 +293,7 @@ export class MailService {
   }
 
   async sendTokenLimitReachedEmail(email: string, name: string, lang: string = 'en') {
+    lang = enOrTr(lang);
     const rootDir = process.cwd();
 
     const templatePath = path.join(
@@ -325,6 +328,7 @@ export class MailService {
   }
 
   async sendPaymentFailedEmail(email: string, name: string, lang: string = 'en') {
+    lang = enOrTr(lang);
     const rootDir = process.cwd();
 
     const templatePath = path.join(
@@ -359,11 +363,8 @@ export class MailService {
   }
 
   async sendPaymentReminderEmail(email: string, name: string, dueDate: Date, lang: string = 'en') {
-    const formattedDate = dueDate.toLocaleDateString(lang === 'en' ? 'en-US' : 'tr-TR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
+    lang = enOrTr(lang);
+    const formattedDate = formatNotificationDate(dueDate, lang);
 
     const rootDir = process.cwd();
 
@@ -411,6 +412,7 @@ export class MailService {
     },
     lang: string = 'en',
   ) {
+    lang = enOrTr(lang);
     const rootDir = process.cwd();
 
     const templatePath = path.join(
@@ -435,7 +437,7 @@ export class MailService {
       userEmail: feedbackData.userEmail,
       category: categoryMap[feedbackData.category] || feedbackData.category,
       message: feedbackData.message,
-      createdAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'tr-TR'),
+      createdAt: formatNotificationDate(new Date(), lang, { withTime: true }),
       adminPanelUrl: `${process.env.FRONTEND_URL}/admin/feedbacks`,
       company: process.env.COMPANY_NAME,
       privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
@@ -463,15 +465,10 @@ export class MailService {
   // Locales for which a translated `lead_notification_{code}.html` template
   // exists. `en` uses the un-suffixed filename (`lead_notification.html`).
   // Adding a new locale = add its template file + register the code here +
-  // add its `toLocaleString` tag + subject line. Unknown / unlisted locales
-  // fall back to English.
+  // add its subject line. Unknown / unlisted locales fall back to English.
   private static readonly LEAD_NOTIFICATION_LOCALES = new Set([
     'en', 'tr', 'de', 'es', 'fr', 'it', 'ru', 'ar',
   ]);
-  private static readonly LEAD_NOTIFICATION_INTL_TAGS: Record<string, string> = {
-    en: 'en-US', tr: 'tr-TR', de: 'de-DE', es: 'es-ES', fr: 'fr-FR',
-    it: 'it-IT', ru: 'ru-RU', ar: 'ar-SA',
-  };
   private static readonly LEAD_NOTIFICATION_SUBJECTS: Record<string, (botName: string) => string> = {
     en: (n) => `New lead from your Chatbu bot: ${n}`,
     tr: (n) => `Chatbu botunuzdan yeni bir kayıt: ${n}`,
@@ -483,19 +480,14 @@ export class MailService {
     ar: (n) => `عميل محتمل جديد من روبوت Chatbu الخاص بك: ${n}`,
   };
 
-  // Same 8-locale coverage as lead notifications above. The three
+  // Same 8-locale coverage as lead notifications above. The two
   // registries here share the same shape — LOCALES set for template
-  // filename lookup, INTL_TAGS for `toLocaleString`, SUBJECTS factory
-  // for the email subject. Add a locale = create the template + register
-  // it in all three constants. Unknown / unlisted locales fall back to
-  // English.
+  // filename lookup, SUBJECTS factory for the email subject. Add a
+  // locale = create the template + register it in both constants.
+  // Unknown / unlisted locales fall back to English.
   private static readonly HANDOFF_NOTIFICATION_LOCALES = new Set([
     'en', 'tr', 'de', 'es', 'fr', 'it', 'ru', 'ar',
   ]);
-  private static readonly HANDOFF_NOTIFICATION_INTL_TAGS: Record<string, string> = {
-    en: 'en-US', tr: 'tr-TR', de: 'de-DE', es: 'es-ES', fr: 'fr-FR',
-    it: 'it-IT', ru: 'ru-RU', ar: 'ar-SA',
-  };
   private static readonly HANDOFF_NOTIFICATION_SUBJECTS: Record<string, (botName: string) => string> = {
     en: (n) => `Live chat requested on your Chatbu bot: ${n}`,
     tr: (n) => `Chatbu botunuzda canlı destek talebi: ${n}`,
@@ -510,10 +502,6 @@ export class MailService {
   private static readonly NEGATIVE_FEEDBACK_LOCALES = new Set([
     'en', 'tr', 'de', 'es', 'fr', 'it', 'ru', 'ar',
   ]);
-  private static readonly NEGATIVE_FEEDBACK_INTL_TAGS: Record<string, string> = {
-    en: 'en-US', tr: 'tr-TR', de: 'de-DE', es: 'es-ES', fr: 'fr-FR',
-    it: 'it-IT', ru: 'ru-RU', ar: 'ar-SA',
-  };
   private static readonly NEGATIVE_FEEDBACK_SUBJECTS: Record<string, (botName: string) => string> = {
     en: (n) => `Negative feedback on your Chatbu bot: ${n}`,
     tr: (n) => `Chatbu botunuzda olumsuz geri bildirim: ${n}`,
@@ -559,9 +547,7 @@ export class MailService {
       email: leadData.email,
       phone: leadData.phone,
       notes: leadData.notes,
-      createdAt: new Date().toLocaleString(
-        MailService.LEAD_NOTIFICATION_INTL_TAGS[locale],
-      ),
+      createdAt: formatNotificationDate(new Date(), locale, { withTime: true }),
       leadsInboxUrl: `${process.env.FRONTEND_URL}/leads`,
       company: process.env.COMPANY_NAME,
       privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
@@ -603,9 +589,7 @@ export class MailService {
     const html = template({
       botName,
       sessionLink,
-      createdAt: new Date().toLocaleString(
-        MailService.HANDOFF_NOTIFICATION_INTL_TAGS[locale],
-      ),
+      createdAt: formatNotificationDate(new Date(), locale, { withTime: true }),
       company: process.env.COMPANY_NAME,
       privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
       supportUrl: process.env.FRONTEND_SUPPORT_URL,
@@ -688,9 +672,7 @@ export class MailService {
       answerLabel:
         MailService.NEGATIVE_FEEDBACK_ANSWER_LABELS[locale][feedbackData.answer],
       comment: feedbackData.comment,
-      createdAt: new Date().toLocaleString(
-        MailService.NEGATIVE_FEEDBACK_INTL_TAGS[locale],
-      ),
+      createdAt: formatNotificationDate(new Date(), locale, { withTime: true }),
       company: process.env.COMPANY_NAME,
       privacyPolicyUrl: process.env.FRONTEND_PRIVACY_POLICY_URL,
       supportUrl: process.env.FRONTEND_SUPPORT_URL,

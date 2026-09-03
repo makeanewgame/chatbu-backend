@@ -5,6 +5,7 @@ import Stripe from 'stripe';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { MixpanelService } from 'src/analytics/mixpanel.service';
+import { mailLocaleFromBillingCountry } from '../util/mail-locale.util';
 
 @Injectable()
 export class BillingService {
@@ -316,7 +317,7 @@ export class BillingService {
     private async handlePaymentFailed(invoice: Stripe.Invoice) {
         const subscription = await this.prisma.subscription.findFirst({
             where: { stripeCustomerId: invoice.customer as string },
-            include: { user: true },
+            include: { user: { include: { BillingInfo: true } } },
         });
 
         if (!subscription) return;
@@ -338,8 +339,12 @@ export class BillingService {
             },
         });
 
-        // Send email notification
-        await this.mailService.sendPaymentFailedEmail(subscription.user.email, subscription.user.name);
+        // Send email notification — language from the billing address country
+        await this.mailService.sendPaymentFailedEmail(
+            subscription.user.email,
+            subscription.user.name,
+            mailLocaleFromBillingCountry(subscription.user.BillingInfo?.country),
+        );
 
         this.mixpanel.track(
             'Payment Failed',
@@ -466,16 +471,18 @@ export class BillingService {
                 },
             },
             include: {
-                user: true,
+                user: { include: { BillingInfo: true } },
             },
         });
 
         for (const subscription of subscriptions) {
-            // Send reminder email 3 days before renewal
+            // Send reminder email 3 days before renewal — language from the
+            // billing address country
             await this.mailService.sendPaymentReminderEmail(
                 subscription.user.email,
                 subscription.user.name,
                 subscription.currentPeriodEnd,
+                mailLocaleFromBillingCountry(subscription.user.BillingInfo?.country),
             );
 
             this.logger.log(`Payment reminder sent to user ${subscription.userId}`);

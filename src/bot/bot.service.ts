@@ -730,7 +730,11 @@ export class BotService {
         });
 
         if (subscription?.tier === 'FREE') {
-          await this.mailService.sendTokenLimitReachedEmail(team.owner.email, team.owner.name, 'en');
+          await this.mailService.sendTokenLimitReachedEmail(
+            team.owner.email,
+            team.owner.name,
+            (botUser as any).primaryLanguage ?? 'en',
+          );
         }
 
         throw new ForbiddenException(quotaCheck.message || 'Token quota exceeded');
@@ -1234,7 +1238,7 @@ export class BotService {
         await this.mailService.sendTokenLimitReachedEmail(
           team.owner.email,
           team.owner.name,
-          'en',
+          (botUser as any).primaryLanguage ?? 'en',
         );
       }
       throw new ForbiddenException(
