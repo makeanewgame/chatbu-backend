@@ -41,9 +41,14 @@ import {
   chatbuHttpRequestsTotal,
   chatbuNetgsmSendTotal,
   chatbuSmsSendTotal,
+  chatbuVoiceMessageAudioDurationSeconds,
+  chatbuVoiceMessageTranscribeDurationSeconds,
+  chatbuVoiceMessageTranscribeTotal,
+  VoiceMessageMetricsPreinit,
 } from './prometheus/metrics.providers';
 import { PrometheusHttpInterceptor } from './prometheus/prometheus-http.interceptor';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AudioTranscriptionModule } from './audio-transcription/audio-transcription.module';
 
 @Module({
   imports: [
@@ -101,7 +106,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
       defaultLabels: { app: 'chatbu-backend' },
       defaultMetrics: { enabled: true },
     }),
-    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule, AppointmentModule, LegalDocumentModule, ChatFlowModule, PushNotificationModule, AnalyticsModule],
+    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule, AppointmentModule, LegalDocumentModule, ChatFlowModule, PushNotificationModule, AnalyticsModule, AudioTranscriptionModule],
   controllers: [AppController],
   providers: [
     AppService,
@@ -123,6 +128,17 @@ import { AnalyticsModule } from './analytics/analytics.module';
     // abstraction (2026-08-13). Kept in parallel with the legacy
     // NETGSM-scoped counter above until Grafana + alerts migrate.
     chatbuSmsSendTotal,
+    // Voice message → transcript pipeline metrics (Slice A of the
+    // 2026-09-01 async voice message plan). Registered at the app
+    // level because AudioTranscriptionModule also imports the counter
+    // providers — dropping them here too keeps the registry list
+    // exhaustive for on-call to grep. VoiceMessageMetricsPreinit is
+    // an OnModuleInit that materialises every (channel, outcome)
+    // series so panels don't read "no data" on first firing.
+    chatbuVoiceMessageTranscribeTotal,
+    chatbuVoiceMessageTranscribeDurationSeconds,
+    chatbuVoiceMessageAudioDurationSeconds,
+    VoiceMessageMetricsPreinit,
     {
       provide: APP_INTERCEPTOR,
       useClass: PrometheusHttpInterceptor,
