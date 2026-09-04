@@ -4,6 +4,8 @@ import axios from 'axios';
 import { BotService } from 'src/bot/bot.service';
 import { WhatsAppEmbeddedService } from 'src/integration/whatsapp-embedded/whatsapp-embedded.service';
 import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
+import { AudioTranscriptionService } from 'src/audio-transcription/audio-transcription.service';
+import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -32,6 +34,9 @@ export interface WhatsAppWebhookValue {
         id: string;
         timestamp: string;
         text?: { body: string };
+        // Voice notes / audio clips: the webhook carries only a media id;
+        // the bytes are resolved via GET /<media_id> with the same token.
+        audio?: { id: string; mime_type?: string; voice?: boolean };
         type: string;
     }>;
     statuses?: Array<{
@@ -78,7 +83,50 @@ export class MetaWhatsappService {
         private readonly botService: BotService,
         private readonly prisma: PrismaService,
         private readonly metaChatCursor: MetaChatCursorService,
+        private readonly audioTranscription: AudioTranscriptionService,
+        private readonly metaAudio: MetaAudioService,
     ) { }
+
+    /**
+     * Text of an inbound WA Cloud message, transcribing a voice note when
+     * the message is audio. Returns null for anything unusable (silent
+     * drop — same as the pre-voice behaviour for stickers/locations/etc.).
+     * Voice branch stays dark while VOICE_TRANSCRIBE_ENABLED != true, so
+     * the media resolve round trips are never attempted with the kill
+     * switch closed.
+     */
+    private async extractWhatsAppText(
+        message: { type: string; text?: { body: string }; audio?: { id: string }; from: string },
+        accessToken: string,
+        tenant: { botId: string; teamId: string },
+    ): Promise<string | null> {
+        if (message.type === 'text' && message.text?.body) return message.text.body;
+
+        if (message.type !== 'audio' || !message.audio?.id) return null;
+        if (!this.audioTranscription.isEnabled()) return null;
+
+        const fetched = await this.metaAudio.downloadWhatsAppAudio(message.audio.id, accessToken);
+        if (!fetched) return null;
+
+        try {
+            const result = await this.audioTranscription.transcribe({
+                audio: fetched.audio,
+                mimeType: fetched.mimeType,
+                channel: 'whatsapp',
+                tenantContext: { ...tenant, chatId: message.from },
+            });
+            if (!result.transcript) {
+                this.logger.log(`[whatsapp] voice note transcribed empty for botId=${tenant.botId} — dropping`);
+                return null;
+            }
+            return result.transcript;
+        } catch (err) {
+            this.logger.warn(
+                `[whatsapp] voice note transcription failed for botId=${tenant.botId}: ${err?.message}`,
+            );
+            return null;
+        }
+    }
 
     // ── Test mode management (DB-backed so all replicas share state) ─────────
 
@@ -228,10 +276,14 @@ export class MetaWhatsappService {
                         ` | text=${message.text?.body ?? '(non-text)'}`,
                     );
 
-                    if (message.type !== 'text' || !message.text?.body) continue;
-
                     const senderId = message.from;
-                    const text = message.text.body;
+                    // Text passes straight through; audio (voice note) is
+                    // transcribed. Everything else stays silent-drop.
+                    const text = await this.extractWhatsAppText(message, accessToken, {
+                        botId,
+                        teamId: integration.teamId,
+                    });
+                    if (!text) continue;
                     const chatId = await this.metaChatCursor.resolveChatId('wa', senderId);
 
                     try {

@@ -5,6 +5,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { BotService } from 'src/bot/bot.service';
 import { MetaEmbeddedService } from 'src/integration/meta-embedded/meta-embedded.service';
 import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
+import { AudioTranscriptionService, VoiceChannel } from 'src/audio-transcription/audio-transcription.service';
+import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { resolveMetaReplyText } from './meta-reply.util';
 
 @Injectable()
@@ -17,7 +19,59 @@ export class MetaService {
         private configService: ConfigService,
         private metaEmbeddedService: MetaEmbeddedService,
         private metaChatCursor: MetaChatCursorService,
+        private audioTranscription: AudioTranscriptionService,
+        private metaAudio: MetaAudioService,
     ) { }
+
+    /**
+     * Text of a Messenger/IG messaging event, transcribing a voice-note
+     * attachment when there is no text. Returns null when the event has
+     * no usable content (the caller's silent-drop path — identical to
+     * the pre-voice behaviour for stickers, images, reactions, etc.).
+     *
+     * Voice branch is dark unless VOICE_TRANSCRIBE_ENABLED=true, so the
+     * CDN download isn't even attempted with the kill switch closed.
+     */
+    private async extractTextOrTranscribe(
+        message: any,
+        channel: VoiceChannel,
+        tenant: { botId: string; teamId: string; chatId: string },
+    ): Promise<string | null> {
+        if (message.text) return message.text;
+
+        if (!this.audioTranscription.isEnabled()) return null;
+
+        const audioAttachment = (message.attachments || []).find(
+            (a: any) => a?.type === 'audio' && a?.payload?.url,
+        );
+        if (!audioAttachment) return null;
+
+        const fetched = await this.metaAudio.downloadMessengerAudio(audioAttachment.payload.url);
+        if (!fetched) return null;
+
+        try {
+            const result = await this.audioTranscription.transcribe({
+                audio: fetched.audio,
+                mimeType: fetched.mimeType,
+                channel,
+                tenantContext: tenant,
+            });
+            if (!result.transcript) {
+                this.logger.log(
+                    `[${channel}] voice note transcribed empty for botId=${tenant.botId} — dropping`,
+                );
+                return null;
+            }
+            return result.transcript;
+        } catch (err) {
+            // transcribe() already counted the error metric; a broken voice
+            // note must not take the webhook batch down with it.
+            this.logger.warn(
+                `[${channel}] voice note transcription failed for botId=${tenant.botId}: ${err?.message}`,
+            );
+            return null;
+        }
+    }
 
     async verifyWebhook(mode: string, verifyToken: string, challenge: string): Promise<string> {
         if (mode !== 'subscribe') {
@@ -77,13 +131,21 @@ export class MetaService {
             }
 
             for (const messagingEvent of entry.messaging || []) {
-                if (!messagingEvent.message || !messagingEvent.message.text) continue;
+                if (!messagingEvent.message) continue;
                 // Echoes are our own bot's outbound messages reflected back by Meta —
                 // replying to them would create an infinite loop.
                 if (messagingEvent.message.is_echo) continue;
 
                 const senderId = messagingEvent.sender.id;
-                const text = messagingEvent.message.text;
+                // Voice notes arrive as audio attachments with no text — the
+                // helper transcribes them; sender id doubles as chat context
+                // because the chat cursor is only resolved for usable content.
+                const text = await this.extractTextOrTranscribe(
+                    messagingEvent.message,
+                    'messenger',
+                    { botId, teamId: integration.teamId, chatId: senderId },
+                );
+                if (!text) continue;
                 const chatId = await this.metaChatCursor.resolveChatId('fb', senderId);
 
                 try {
@@ -142,13 +204,19 @@ export class MetaService {
             }
 
             for (const messagingEvent of entry.messaging || []) {
-                if (!messagingEvent.message || !messagingEvent.message.text) continue;
+                if (!messagingEvent.message) continue;
                 // Echoes are our own bot's outbound messages reflected back by Meta —
                 // replying to them would create an infinite loop.
                 if (messagingEvent.message.is_echo) continue;
 
                 const senderId = messagingEvent.sender.id;
-                const text = messagingEvent.message.text;
+                // Same voice-note handling as Messenger above.
+                const text = await this.extractTextOrTranscribe(
+                    messagingEvent.message,
+                    'instagram',
+                    { botId, teamId: integration.teamId, chatId: senderId },
+                );
+                if (!text) continue;
                 const contactName = await this.fetchInstagramContactName(senderId, pageAccessToken);
                 const chatId = await this.metaChatCursor.resolveChatId('ig', senderId);
 

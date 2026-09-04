@@ -3,6 +3,8 @@ import axios from 'axios';
 import { BotService } from 'src/bot/bot.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
+import { AudioTranscriptionService } from 'src/audio-transcription/audio-transcription.service';
+import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 
 @Injectable()
@@ -13,7 +15,49 @@ export class WhatsAppService {
         private prisma: PrismaService,
         private botService: BotService,
         private metaChatCursor: MetaChatCursorService,
+        private audioTranscription: AudioTranscriptionService,
+        private metaAudio: MetaAudioService,
     ) { }
+
+    /**
+     * Mirror of MetaWhatsappService.extractWhatsAppText for the legacy
+     * manually-configured WA integration — same Cloud API payload shape,
+     * same silent-drop semantics, kept separate only because the two
+     * services have different config resolution. Without this the same
+     * visitor gets voice replies on IG but silence on legacy WA.
+     */
+    private async extractWhatsAppText(
+        message: { type: string; text?: { body: string }; audio?: { id: string }; from: string },
+        accessToken: string,
+        tenant: { botId: string; teamId: string },
+    ): Promise<string | null> {
+        if (message.type === 'text' && message.text?.body) return message.text.body;
+
+        if (message.type !== 'audio' || !message.audio?.id) return null;
+        if (!this.audioTranscription.isEnabled()) return null;
+
+        const fetched = await this.metaAudio.downloadWhatsAppAudio(message.audio.id, accessToken);
+        if (!fetched) return null;
+
+        try {
+            const result = await this.audioTranscription.transcribe({
+                audio: fetched.audio,
+                mimeType: fetched.mimeType,
+                channel: 'whatsapp',
+                tenantContext: { ...tenant, chatId: message.from },
+            });
+            if (!result.transcript) {
+                this.logger.log(`[whatsapp-legacy] voice note transcribed empty for botId=${tenant.botId} — dropping`);
+                return null;
+            }
+            return result.transcript;
+        } catch (err) {
+            this.logger.warn(
+                `[whatsapp-legacy] voice note transcription failed for botId=${tenant.botId}: ${err?.message}`,
+            );
+            return null;
+        }
+    }
 
     async verifyWebhook(mode: string, verifyToken: string, challenge: string): Promise<string> {
         if (mode !== 'subscribe') {
@@ -73,10 +117,14 @@ export class WhatsAppService {
                 }
 
                 for (const message of messages) {
-                    if (message.type !== 'text' || !message.text?.body) continue;
-
                     const senderId = message.from;
-                    const text = message.text.body;
+                    // Text passes straight through; audio (voice note) is
+                    // transcribed. Everything else stays silent-drop.
+                    const text = await this.extractWhatsAppText(message, accessToken, {
+                        botId,
+                        teamId: integration.teamId,
+                    });
+                    if (!text) continue;
                     const chatId = await this.metaChatCursor.resolveChatId('wa', senderId);
 
                     try {
