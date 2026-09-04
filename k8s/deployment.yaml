@@ -76,6 +76,27 @@ spec:
           value: "http://fastapi-gateway-service:8000"
         - name: REDIS_URL
           value: "redis://redis-service:6379"
+        # Voice message plan Slice A — the backend does NOT consume the
+        # chatbu-config ConfigMap wholesale (that map feeds the fovi
+        # services: gateway / ml / mcp), so these two keys are pulled in
+        # surgically. `optional: true` keeps the pod bootable in any
+        # namespace where the map or key is absent — the service treats
+        # a missing key as `enabled=false` (kill switch closed).
+        # chatbu-config is namespace-relative: prod resolves the chatbu
+        # map (ENABLED="false"), chatbu-dev resolves the dev-patched map
+        # (ENABLED="true" since the Slice A canary flip).
+        - name: VOICE_TRANSCRIBE_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: VOICE_TRANSCRIBE_ENABLED
+              optional: true
+        - name: VOICE_TRANSCRIBE_LANG_DEFAULT
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: VOICE_TRANSCRIBE_LANG_DEFAULT
+              optional: true
         resources:
           requests:
             memory: "1Gi"
