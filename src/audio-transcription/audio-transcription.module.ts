@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { AudioTranscriptionService } from './audio-transcription.service';
 import { AudioTranscriptionController } from './audio-transcription.controller';
+import { MetaAudioService } from './meta-audio.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import {
   chatbuVoiceMessageAudioDurationSeconds,
@@ -14,10 +15,11 @@ import {
   controllers: [AudioTranscriptionController],
   providers: [
     AudioTranscriptionService,
+    MetaAudioService,
     chatbuVoiceMessageTranscribeTotal,
     chatbuVoiceMessageTranscribeDurationSeconds,
     chatbuVoiceMessageAudioDurationSeconds,
   ],
-  exports: [AudioTranscriptionService],
+  exports: [AudioTranscriptionService, MetaAudioService],
 })
 export class AudioTranscriptionModule {}

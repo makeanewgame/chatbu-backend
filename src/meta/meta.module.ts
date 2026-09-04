@@ -8,9 +8,10 @@ import { BotModule } from 'src/bot/bot.module';
 import { MetaWhatsappModule } from 'src/meta-whatsapp/meta-whatsapp.module';
 import { IntegrationModule } from 'src/integration/integration.module';
 import { MetaChatCursorModule } from 'src/meta-chat-cursor/meta-chat-cursor.module';
+import { AudioTranscriptionModule } from 'src/audio-transcription/audio-transcription.module';
 
 @Module({
-    imports: [PrismaModule, BotModule, JwtModule, MetaWhatsappModule, IntegrationModule, MetaChatCursorModule],
+    imports: [PrismaModule, BotModule, JwtModule, MetaWhatsappModule, IntegrationModule, MetaChatCursorModule, AudioTranscriptionModule],
     controllers: [MetaController, MetaIntegrationController],
     providers: [MetaService],
 })
