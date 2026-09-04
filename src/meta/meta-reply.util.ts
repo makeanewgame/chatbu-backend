@@ -43,10 +43,22 @@ export type MetaReplyLang = 'tr' | 'en';
  * infinitely better than the confusing "Üzgünüm, şu an yanıt veremiyorum."
  * fallback the visitor previously saw.
  */
-const HANDOFF_PENDING_MESSAGE: Record<MetaReplyLang, string> = {
-  tr: 'Mesajınız ekibimize iletildi. Kısa süre içinde sizinle iletişime geçilecek.',
-  en: 'Your message has been forwarded to the team. Someone will be in touch shortly.',
-};
+// HANDOFF_PENDING_MESSAGE removed 2026-09-05. It dated from when the
+// dashboard had no outbound agent-reply path to Meta channels: the bot
+// acknowledged every visitor message during HUMAN_ACTIVE with
+// "Mesajınız ekibimize iletildi…" so the visitor wasn't staring at a
+// void. Now that agents actually reply (dashboard →
+// deliverToExternalChannel, or natively from the IG/WA app via
+// echo-takeover), that acknowledgment interjected bot noise into live
+// human conversations — the 2026-09-04 Beautyisland canary showed it
+// racing the human agent on every visitor turn ("Önce davranıyor"),
+// and because the send was never written to CustomerChatDetails, the
+// dashboard transcript didn't match what the visitor saw. HUMAN_ACTIVE
+// now means the bot is FULLY silent on every Meta channel — the same
+// semantics the embedded-WhatsApp handler has had all along, and the
+// handoff acknowledgment the model sends when calling
+// request_human_handoff already sets the "a person will join"
+// expectation.
 
 /**
  * Returns the text to send to the visitor on a Meta channel, or `null` if
@@ -65,6 +77,9 @@ export function resolveMetaReplyText(
   // these channels regardless of gateway config or the bot's streaming
   // flag.
   if (response?.content) return stripMarkdown(response.content);
-  if (response?.agent_active) return HANDOFF_PENDING_MESSAGE[lang];
+  // HUMAN_ACTIVE: a human owns this conversation — the bot sends
+  // nothing. Callers distinguish this from a broken-pipeline null via
+  // response.agent_active before logging.
+  if (response?.agent_active) return null;
   return null;
 }

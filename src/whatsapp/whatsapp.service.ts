@@ -151,6 +151,11 @@ export class WhatsAppService {
                             if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'whatsapp')) continue;
                             await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
                             await this.loopGuard.recordReply(botId, senderId, replyText);
+                        } else if ((response as any)?.agent_active) {
+                            // A human owns this conversation — full bot silence.
+                            this.logger.log(
+                                `[whatsapp-legacy] chat ${chatId} is HUMAN_ACTIVE — bot staying silent`,
+                            );
                         } else {
                             this.logger.warn(
                                 `[whatsapp-legacy] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,

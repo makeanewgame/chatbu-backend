@@ -280,6 +280,12 @@ export class MetaService {
                         if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'messenger')) continue;
                         await this.sendMetaMessage(senderId, replyText, pageAccessToken);
                         await this.loopGuard.recordReply(botId, senderId, replyText);
+                    } else if ((response as any)?.agent_active) {
+                        // A human owns this conversation — full bot silence,
+                        // same semantics as the embedded-WhatsApp handler.
+                        this.logger.log(
+                            `[messenger] chat ${chatId} is HUMAN_ACTIVE — bot staying silent`,
+                        );
                     } else {
                         this.logger.warn(
                             `[messenger] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,
@@ -361,6 +367,11 @@ export class MetaService {
                         if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'instagram')) continue;
                         await this.sendMetaMessage(senderId, replyText, pageAccessToken);
                         await this.loopGuard.recordReply(botId, senderId, replyText);
+                    } else if ((response as any)?.agent_active) {
+                        // A human owns this conversation — full bot silence.
+                        this.logger.log(
+                            `[instagram] chat ${chatId} is HUMAN_ACTIVE — bot staying silent`,
+                        );
                     } else {
                         this.logger.warn(
                             `[instagram] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,
