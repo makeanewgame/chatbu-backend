@@ -67,6 +67,79 @@ export class ReportController {
     }
     //#endregion
 
+    //#region conversations (unified inbox)
+    @ApiOperation({ summary: 'Unified conversation inbox (live + history in one list)' })
+    @ApiResponse({ status: 200, description: 'Paged, three-tier-sorted conversation cards' })
+    @ApiBearerAuth()
+    @ApiQuery({ name: 'filter', required: false, enum: ['all', 'live', 'ai', 'closed'] })
+    @ApiQuery({ name: 'page', required: false, type: Number })
+    @ApiQuery({ name: 'pageSize', required: false, type: Number })
+    @ApiQuery({ name: 'search', required: false, type: String })
+    @ApiQuery({ name: 'startDate', required: false, type: String, description: 'ISO date, inclusive lower bound on createdAt' })
+    @ApiQuery({ name: 'endDate', required: false, type: String, description: 'ISO date, inclusive upper bound on createdAt' })
+    @ApiQuery({ name: 'channels', required: false, type: String, description: 'Comma-separated: WIDGET,WHATSAPP,META_MESSENGER,INSTAGRAM' })
+    @ApiQuery({ name: 'agentIds', required: false, type: String, description: 'Comma-separated team member userIds; "unassigned" for unassigned chats' })
+    @ApiQuery({ name: 'hasRating', required: false, type: Boolean })
+    @ApiQuery({ name: 'minRating', required: false, type: Number })
+    @ApiQuery({ name: 'country', required: false, type: String })
+    @ApiQuery({ name: 'city', required: false, type: String })
+    @Get('conversations')
+    @UseGuards(AccessTokenGuard)
+    async getConversations(
+        @Req() req: Request,
+        @Query('filter') filter?: 'all' | 'live' | 'ai' | 'closed',
+        @Query('page') page?: string,
+        @Query('pageSize') pageSize?: string,
+        @Query('search') search?: string,
+        @Query('startDate') startDate?: string,
+        @Query('endDate') endDate?: string,
+        @Query('channels') channels?: string,
+        @Query('agentIds') agentIds?: string,
+        @Query('hasRating') hasRating?: string,
+        @Query('minRating') minRating?: string,
+        @Query('country') country?: string,
+        @Query('city') city?: string,
+    ) {
+        const user = req.user as IUser;
+        return this.reportService.getConversations(user.teamId, {
+            filter,
+            page: page ? Number(page) : undefined,
+            pageSize: pageSize ? Number(pageSize) : undefined,
+            search,
+            startDate,
+            endDate,
+            channels: channels ? channels.split(',').filter(Boolean) : undefined,
+            agentIds: agentIds ? agentIds.split(',').filter(Boolean) : undefined,
+            hasRating: hasRating === undefined ? undefined : hasRating === 'true',
+            minRating: minRating ? Number(minRating) : undefined,
+            country,
+            city,
+        });
+    }
+
+    @ApiOperation({ summary: 'Conversation detail: messages + card meta + activity' })
+    @ApiResponse({ status: 200, description: 'Conversation detail' })
+    @ApiBearerAuth()
+    @ApiParam({ name: 'chatId', description: 'Chat row id or gateway session id', required: true, type: String })
+    @Get('conversations/:chatId')
+    @UseGuards(AccessTokenGuard)
+    async getConversationDetail(@Req() req: Request, @Param('chatId') chatId: string) {
+        const user = req.user as IUser;
+        return this.reportService.getConversationDetail(user.teamId, chatId);
+    }
+
+    @ApiOperation({ summary: 'Mark a conversation read (clears its unread counter)' })
+    @ApiResponse({ status: 200, description: 'Unread counter cleared' })
+    @ApiBearerAuth()
+    @ApiParam({ name: 'chatId', description: 'Chat row id or gateway session id', required: true, type: String })
+    @Post('conversations/:chatId/read')
+    @UseGuards(AccessTokenGuard)
+    async markConversationRead(@Req() req: Request, @Param('chatId') chatId: string) {
+        const user = req.user as IUser;
+        return this.reportService.markConversationRead(user.teamId, chatId, user.sub);
+    }
+    //#endregion
+
     //#region user-Usage
     @ApiOperation({ summary: 'Get user quota usage for uploaded file,comsumed token, and created bots' })
     @ApiResponse({

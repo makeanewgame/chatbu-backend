@@ -7,6 +7,14 @@ import { HandoffNotificationService } from 'src/handoff/handoff-notification.ser
 import { MetaSentRegistryService } from 'src/meta-sent-registry/meta-sent-registry.service';
 import { collectConversationRowIds } from './conversation-merge.util';
 import { formatAgentPublicName } from 'src/util/agent-name.util';
+import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
+import {
+    buildConversationCard,
+    compareConversationCards,
+    isLiveStatus,
+    LIVE_STATUSES,
+} from 'src/events/conversation-card.util';
+import { FlowKind } from '../../generated/prisma/client';
 import axios from 'axios';
 
 @Injectable()
@@ -18,6 +26,7 @@ export class ReportService {
         private eventsGateway: EventsGateway,
         private handoffNotificationService: HandoffNotificationService,
         private metaSentRegistry: MetaSentRegistryService,
+        private conversationBroadcast: ConversationBroadcastService,
     ) { }
 
     async getChatHistory(teamId: string) {
@@ -106,6 +115,253 @@ export class ReportService {
             ...chat,
             feedbackComment: chat.chatId ? commentByChatId.get(chat.chatId) ?? null : null,
         }));
+    }
+
+    // ── Unified "Sohbetler" inbox: canlı + geçmiş tek liste ──────────────────
+    // Replaces the split getChatHistory (tab: Görüşmeler) + getLiveChats (tab:
+    // Canlı Görüşmeler). Three-tier ordering (live → open → closed, then by most
+    // recent activity) is done in JS because it can't be expressed in a single
+    // Prisma orderBy. `filter` narrows by ChatStatus group; `search` matches the
+    // contact name / external id.
+    async getConversations(
+        teamId: string,
+        opts: {
+            filter?: 'all' | 'live' | 'ai' | 'closed';
+            page?: number;
+            pageSize?: number;
+            search?: string;
+            startDate?: string;
+            endDate?: string;
+            channels?: string[];
+            agentIds?: string[];
+            hasRating?: boolean;
+            minRating?: number;
+            country?: string;
+            city?: string;
+        } = {},
+    ) {
+        const filter = opts.filter ?? 'all';
+        const page = Math.max(1, opts.page ?? 1);
+        const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 20));
+        const search = opts.search?.trim();
+
+        const where: any = { teamId, isDeleted: false };
+        if (filter === 'live') where.chatStatus = { in: LIVE_STATUSES };
+        else if (filter === 'ai') where.chatStatus = 'BOT_ACTIVE';
+        else if (filter === 'closed') where.chatStatus = 'CLOSED';
+
+        // Independent OR-groups (search, agent) are kept in separate `AND`
+        // entries rather than merged into one `where.OR`, so they combine as
+        // (search) AND (agent) instead of collapsing into (search OR agent).
+        const andGroups: any[] = [];
+        if (search) {
+            andGroups.push({
+                OR: [
+                    { externalContactName: { contains: search, mode: 'insensitive' } },
+                    { externalContactId: { contains: search, mode: 'insensitive' } },
+                    { chatId: { contains: search, mode: 'insensitive' } },
+                ],
+            });
+        }
+
+        if (opts.startDate || opts.endDate) {
+            where.createdAt = {};
+            if (opts.startDate) where.createdAt.gte = new Date(`${opts.startDate}T00:00:00.000Z`);
+            if (opts.endDate) where.createdAt.lte = new Date(`${opts.endDate}T23:59:59.999Z`);
+        }
+
+        if (opts.channels?.length) {
+            where.channel = { in: opts.channels };
+        }
+
+        if (opts.agentIds?.length) {
+            const wantsUnassigned = opts.agentIds.includes('unassigned');
+            const ids = opts.agentIds.filter((id) => id !== 'unassigned');
+            if (wantsUnassigned && ids.length) {
+                andGroups.push({ OR: [{ agentUserId: { in: ids } }, { agentUserId: null }] });
+            } else if (wantsUnassigned) {
+                where.agentUserId = null;
+            } else if (ids.length) {
+                where.agentUserId = { in: ids };
+            }
+        }
+
+        if (andGroups.length) where.AND = andGroups;
+
+        if (opts.hasRating === true) {
+            where.feedbackRating = opts.minRating ? { gte: opts.minRating } : { not: null };
+        } else if (opts.hasRating === false) {
+            where.feedbackRating = null;
+        } else if (opts.minRating) {
+            where.feedbackRating = { gte: opts.minRating };
+        }
+
+        if (opts.country?.trim() || opts.city?.trim()) {
+            where.GeoLocation = {
+                some: {
+                    ...(opts.country?.trim() ? { country: { contains: opts.country.trim(), mode: 'insensitive' } } : {}),
+                    ...(opts.city?.trim() ? { city: { contains: opts.city.trim(), mode: 'insensitive' } } : {}),
+                },
+            };
+        }
+
+        // Safety cap — a cursor-paginated variant is a follow-up if a team ever
+        // outgrows this. The old getChatHistory already loaded the whole table
+        // unbounded, so this is strictly better.
+        const rows = await this.prisma.customerChats.findMany({
+            where,
+            orderBy: { updatedAt: 'desc' },
+            take: 2000,
+            select: {
+                id: true,
+                chatId: true,
+                teamId: true,
+                botId: true,
+                channel: true,
+                chatStatus: true,
+                agentUserId: true,
+                agentUnreadCount: true,
+                externalContactName: true,
+                externalContactId: true,
+                createdAt: true,
+                feedbackRating: true,
+                agent: { select: { name: true } },
+                CustomerChatDetails: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    select: { sender: true, message: true, createdAt: true },
+                },
+                GeoLocation: { take: 1, select: { country: true, city: true } },
+            },
+        });
+
+        const cards = rows
+            .map((row) => {
+                const card = buildConversationCard(row as any);
+                const geo = row.GeoLocation?.[0] ?? null;
+                return {
+                    ...card,
+                    createdAt: row.createdAt.toISOString(),
+                    feedbackRating: row.feedbackRating ?? null,
+                    geo: geo ? { country: geo.country, city: geo.city } : null,
+                };
+            })
+            .sort(compareConversationCards);
+
+        const total = cards.length;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const items = cards.slice((page - 1) * pageSize, page * pageSize);
+
+        return { items, total, page, pageSize, totalPages };
+    }
+
+    // ── Conversation detail for the middle panel: messages (attachment-presigned
+    // via getChatHistoryDetail) + card meta + a "Son Etkinlik" activity list
+    // sourced from PerChatFlowState (LEAD / BOOKING / HANDOFF / FEEDBACK). ─────
+    async getConversationDetail(teamId: string, chatId: string) {
+        const messages = await this.getChatHistoryDetail(teamId, chatId);
+
+        const row = await this.prisma.customerChats.findFirst({
+            where: { teamId, OR: [{ id: chatId }, { chatId: chatId }] },
+            orderBy: { createdAt: 'asc' },
+            select: {
+                id: true,
+                chatId: true,
+                botId: true,
+                channel: true,
+                chatStatus: true,
+                agentUserId: true,
+                agentUnreadCount: true,
+                totalTokens: true,
+                feedbackRating: true,
+                externalContactName: true,
+                externalContactId: true,
+                createdAt: true,
+                agent: { select: { name: true } },
+                GeoLocation: { take: 1, select: { country: true, city: true, region: true } },
+                CustomerChatDetails: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                    select: { createdAt: true },
+                },
+            },
+        });
+
+        if (!row) {
+            return { ...messages, meta: null, activity: [] };
+        }
+
+        const feedback = await this.prisma.chatFeedback.findFirst({
+            where: { chatId: row.chatId, botId: row.botId },
+            orderBy: { createdAt: 'desc' },
+            select: { comment: true },
+        });
+
+        const flowStates = await this.prisma.perChatFlowState.findMany({
+            where: { chatId: row.chatId, botId: row.botId },
+            orderBy: { updatedAt: 'asc' },
+            select: { flowKind: true, state: true, updatedAt: true, payload: true },
+        });
+
+        const activity = flowStates
+            .map((fs) => {
+                const at = fs.updatedAt.toISOString();
+                const payload = (fs.payload ?? {}) as Record<string, any>;
+                switch (fs.flowKind) {
+                    case FlowKind.BOOKING:
+                        if (fs.state !== 'BOOKED') return null;
+                        return { type: 'BOOKING', state: fs.state, at, meta: { startIso: payload.start_iso ?? null, appointmentId: payload.appointment_id ?? null } };
+                    case FlowKind.LEAD:
+                        if (fs.state !== 'SUBMITTED') return null;
+                        return { type: 'LEAD', state: fs.state, at, meta: null };
+                    case FlowKind.HANDOFF:
+                        if (fs.state !== 'REQUESTED' && fs.state !== 'ASSIGNED') return null;
+                        return { type: 'HANDOFF', state: fs.state, at, meta: null };
+                    case FlowKind.FEEDBACK:
+                        if (fs.state !== 'SUBMITTED') return null;
+                        return { type: 'FEEDBACK', state: fs.state, at, meta: null };
+                    default:
+                        return null;
+                }
+            })
+            .filter(Boolean);
+
+        const geo = row.GeoLocation?.[0] ?? null;
+        const meta = {
+            id: row.id,
+            chatId: row.chatId,
+            botId: row.botId,
+            channel: row.channel,
+            chatStatus: row.chatStatus,
+            isLive: isLiveStatus(row.chatStatus),
+            unreadCount: isLiveStatus(row.chatStatus) ? row.agentUnreadCount ?? 0 : 0,
+            contactName: row.externalContactName ?? null,
+            contactId: row.externalContactId ?? null,
+            firstContactAt: row.createdAt.toISOString(),
+            lastMessageAt: row.CustomerChatDetails?.[0]?.createdAt?.toISOString() ?? null,
+            assignedAgentId: row.agentUserId ?? null,
+            assignedAgentName: row.agent?.name ?? null,
+            totalTokens: row.totalTokens ?? 0,
+            feedbackRating: row.feedbackRating ?? null,
+            feedbackComment: feedback?.comment ?? null,
+            geo: geo ? { country: geo.country, city: geo.city, region: geo.region } : null,
+        };
+
+        return { ...messages, meta, activity };
+    }
+
+    // ── Agent opened the conversation → clear its unread counter + fan out a
+    // read receipt so the agent's other devices update too. ──────────────────
+    async markConversationRead(teamId: string, chatId: string, userId: string) {
+        const row = await this.prisma.customerChats.findFirst({
+            where: { teamId, OR: [{ id: chatId }, { chatId: chatId }] },
+            select: { id: true },
+        });
+        if (!row) {
+            throw new NotFoundException('Chat not found');
+        }
+        await this.conversationBroadcast.markRead(row.id, userId);
+        return { success: true, unreadCount: 0 };
     }
 
     async getChatHistoryDetail(teamId: string, chatId: string) {
@@ -495,7 +751,7 @@ export class ReportService {
         }
 
         // Mesajı veritabanına kaydet
-        await this.prisma.customerChatDetails.create({
+        const agentDetail = await this.prisma.customerChatDetails.create({
             data: {
                 chatId: chat.id,
                 sender: 'agent',
@@ -504,9 +760,10 @@ export class ReportService {
             },
         });
 
+        // Agent replied — clear the unread counter for the whole team's inbox.
         await this.prisma.customerChats.update({
             where: { id: chat.id },
-            data: { updatedAt: new Date() },
+            data: { updatedAt: new Date(), agentUnreadCount: 0, agentLastReadAt: new Date() },
         });
 
         // Kanala göre yönlendir
@@ -538,6 +795,19 @@ export class ReportService {
             });
         }
 
+        // Birleşik inbox: agent mesajını + sıfırlanan unread'i takıma yayınla.
+        void this.conversationBroadcast.broadcast(chat.id, {
+            messages: [
+                {
+                    id: agentDetail.id,
+                    sender: 'agent',
+                    text: message,
+                    createdAt: agentDetail.createdAt,
+                    agentName,
+                },
+            ],
+        });
+
         return { success: true };
     }
 
@@ -557,7 +827,7 @@ export class ReportService {
 
         await this.prisma.customerChats.update({
             where: { id: chat.id },
-            data: { chatStatus: 'CLOSED', updatedAt: new Date() },
+            data: { chatStatus: 'CLOSED', updatedAt: new Date(), agentUnreadCount: 0 },
         });
 
         // Widget'a bilgi ver ki geri bildirim paneli açılabilsin. Widget hangi
@@ -568,6 +838,9 @@ export class ReportService {
         console.log('[closeChat] emitting chat_ended', { id: chat.id, chatId: chat.chatId });
         this.eventsGateway.notifyChatEnded(chat.id, { chatId: chat.id, reason: 'agent_closed' });
         this.eventsGateway.notifyChatEnded(chat.chatId, { chatId: chat.chatId, reason: 'agent_closed' });
+
+        // Birleşik inbox: konuşma kapalı grubuna insin, canlı ikon kalksın.
+        void this.conversationBroadcast.broadcast(chat.id, { reason: 'closed' });
 
         return { success: true };
     }

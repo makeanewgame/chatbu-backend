@@ -107,4 +107,24 @@ export class EventsGateway {
   async notifyAgentChatClosed(agentUserId: string, payload: any) {
     this.server.to(`agent-${agentUserId}`).emit('chat_closed', payload);
   }
+
+  // ─── Unified "Sohbetler" inbox events (web + mobile agent panels) ───────────
+  // Every message on every channel — bot replies included — fans out here so an
+  // open agent panel updates its conversation list live (card moves to top,
+  // unread badge bumps) without polling. `chat-*` rooms (the widget visitor)
+  // are intentionally NOT addressed: the widget keeps getting bot replies over
+  // its own HTTP/SSE response and agent replies over the legacy `agent_message`.
+
+  emitConversationMessage(teamId: string, payload: any) {
+    this.server.to(teamId).emit('conversation:message', payload);
+  }
+
+  emitConversationUpdated(teamId: string, payload: any) {
+    this.server.to(teamId).emit('conversation:updated', payload);
+  }
+
+  // Read-receipt fan-out so an agent's other devices clear the badge too.
+  emitConversationRead(teamId: string, payload: any) {
+    this.server.to(teamId).emit('conversation:read', payload);
+  }
 }

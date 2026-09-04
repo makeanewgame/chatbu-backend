@@ -109,6 +109,17 @@ spec:
               name: chatbu-config
               key: META_ECHO_TAKEOVER_ENABLED
               optional: true
+        # Bot-to-bot loop breaker (2026-09-04 incident: two Chatbu-
+        # botted IG accounts ping-ponged ~790 messages until the
+        # integration was manually disabled). INVERTED semantics vs the
+        # other flags: this is a protective control — a missing key
+        # means ON. Set the configmap key to "false" only to disable.
+        - name: META_LOOP_GUARD_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: META_LOOP_GUARD_ENABLED
+              optional: true
         resources:
           requests:
             memory: "1Gi"

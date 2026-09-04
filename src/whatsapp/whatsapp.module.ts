@@ -3,11 +3,12 @@ import { BotModule } from 'src/bot/bot.module';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { MetaChatCursorModule } from 'src/meta-chat-cursor/meta-chat-cursor.module';
 import { AudioTranscriptionModule } from 'src/audio-transcription/audio-transcription.module';
+import { MetaLoopGuardModule } from 'src/meta-loop-guard/meta-loop-guard.module';
 import { WhatsAppController } from './whatsapp.controller';
 import { WhatsAppService } from './whatsapp.service';
 
 @Module({
-    imports: [PrismaModule, BotModule, MetaChatCursorModule, AudioTranscriptionModule],
+    imports: [PrismaModule, BotModule, MetaChatCursorModule, AudioTranscriptionModule, MetaLoopGuardModule],
     controllers: [WhatsAppController],
     providers: [WhatsAppService],
 })

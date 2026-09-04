@@ -16,6 +16,7 @@ import { MailService } from '../mail/mail.service';
 import { LeadDestination } from '../bot/lead-destination.constants';
 import { LeadService } from '../lead/lead.service';
 import { EventsGateway } from '../events/events.gateway';
+import { ConversationBroadcastService } from '../events/conversation-broadcast.service';
 import { AppointmentAvailabilityService } from '../appointment/appointment-availability.service';
 import { ChatFlowService } from '../chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
@@ -39,6 +40,7 @@ export class WidgetService {
         private leadService: LeadService,
         private appointmentAvailabilityService: AppointmentAvailabilityService,
         private chatFlowService: ChatFlowService,
+        private conversationBroadcast: ConversationBroadcastService,
     ) { }
 
     /**
@@ -520,6 +522,7 @@ export class WidgetService {
         for (const chat of chatsToClose) {
             this.eventsGateway.notifyChatEnded(chat.id, { chatId: chat.id, reason: 'auto_closed_inactivity' });
             this.eventsGateway.notifyChatEnded(chat.chatId, { chatId: chat.chatId, reason: 'auto_closed_inactivity' });
+            void this.conversationBroadcast.broadcast(chat.id, { reason: 'closed' });
         }
     }
 
@@ -570,6 +573,7 @@ export class WidgetService {
                     reason: 'auto_closed_handoff_timeout',
                 });
             }
+            void this.conversationBroadcast.broadcast(chat.id, { reason: 'closed' });
         }
     }
 
@@ -653,10 +657,20 @@ export class WidgetService {
         // 3. Update the chat record — only if it belongs to the verified bot/team.
         // Any conversation that received feedback is considered concluded,
         // regardless of which trigger opened the feedback panel — mark it CLOSED.
-        await this.prisma.customerChats.updateMany({
+        const feedbackChats = await this.prisma.customerChats.findMany({
             where: { chatId, teamId, isDeleted: false },
-            data: { feedbackRating: resolvedRating, chatStatus: 'CLOSED' },
+            select: { id: true },
         });
+
+        if (feedbackChats.length > 0) {
+            await this.prisma.customerChats.updateMany({
+                where: { id: { in: feedbackChats.map((c) => c.id) } },
+                data: { feedbackRating: resolvedRating, chatStatus: 'CLOSED' },
+            });
+            for (const chat of feedbackChats) {
+                void this.conversationBroadcast.broadcast(chat.id, { reason: 'closed' });
+            }
+        }
 
         // P2 Faz 4: record the feedback submission in PerChatFlowState so
         // admin dashboards / analytics / cron have a SQL-queryable view of
