@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { EventsGateway } from 'src/events/events.gateway';
+import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
 import { MailService } from 'src/mail/mail.service';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
 import { HandoffNotificationService } from './handoff-notification.service';
@@ -31,6 +32,7 @@ describe('HandoffNotificationService.resolveAssigneeId', () => {
                 HandoffNotificationService,
                 { provide: PrismaService, useValue: prisma },
                 { provide: EventsGateway, useValue: {} },
+                { provide: ConversationBroadcastService, useValue: { broadcast: jest.fn() } },
                 { provide: MailService, useValue: {} },
                 { provide: PushNotificationService, useValue: {} },
                 { provide: WINSTON_MODULE_PROVIDER, useValue: { error: jest.fn() } },

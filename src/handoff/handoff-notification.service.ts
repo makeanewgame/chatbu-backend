@@ -3,6 +3,7 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { EventsGateway } from 'src/events/events.gateway';
+import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
 import { MailService } from 'src/mail/mail.service';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
 
@@ -37,6 +38,7 @@ export class HandoffNotificationService {
     constructor(
         private prisma: PrismaService,
         private eventsGateway: EventsGateway,
+        private conversationBroadcast: ConversationBroadcastService,
         private mailService: MailService,
         private pushNotificationService: PushNotificationService,
         @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
@@ -156,6 +158,10 @@ export class HandoffNotificationService {
                 chatId: chatRowId,
                 botName,
                 sessionLink,
+            });
+            // Birleşik inbox: konuşma "canlı" olarak en üste çıksın (tüm takım).
+            void this.conversationBroadcast.broadcast(chatRowId, {
+                reason: 'handoff_requested',
             });
         } catch (err) {
             this.logger.error(

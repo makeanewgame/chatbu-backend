@@ -28,6 +28,8 @@ import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { SystemLogService } from 'src/system-log/system-log.service';
 import { MixpanelService } from 'src/analytics/mixpanel.service';
 import { EventsGateway } from 'src/events/events.gateway';
+import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
+import { isLiveStatus } from 'src/events/conversation-card.util';
 import { DEFAULT_WORKING_HOURS } from 'src/appointment/appointment.constants';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
@@ -50,6 +52,7 @@ export class BotService {
     private chatFlowService: ChatFlowService,
     private pushNotificationService: PushNotificationService,
     private handoffNotificationService: HandoffNotificationService,
+    private conversationBroadcast: ConversationBroadcastService,
   ) { }
 
   async createBot(body: CreateBotRequest, userId?: string, userEmail?: string) {
@@ -665,7 +668,7 @@ export class BotService {
       // ── LLM Bypass: sohbet bir insan ajana aktarıldıysa bot cevap vermez ──
       if (activeChat && activeChat.chatStatus === 'HUMAN_ACTIVE') {
         // Kullanıcı mesajını kaydet
-        await this.prisma.customerChatDetails.create({
+        const detail = await this.prisma.customerChatDetails.create({
           data: {
             chatId: activeChat.id,
             sender: 'user',
@@ -676,17 +679,20 @@ export class BotService {
         });
         await this.prisma.customerChats.update({
           where: { id: activeChat.id },
-          data: { updatedAt: new Date() },
+          data: { updatedAt: new Date(), agentUnreadCount: { increment: 1 } },
         });
-        // Ajanı bilgilendir (WebSocket)
-        if (activeChat.agentUserId) {
-          this.eventsGateway.notifyAgent(activeChat.agentUserId, {
-            chatId: activeChat.id,
-            sender: 'user',
-            message: body.message,
-            createdAt: new Date().toISOString(),
-          });
-        }
+        // Ajan panellerine yayınla (birleşik inbox + legacy new_customer_message)
+        void this.conversationBroadcast.broadcast(activeChat.id, {
+          messages: [
+            {
+              id: detail.id,
+              sender: 'user',
+              text: body.message,
+              attachments: body.attachments ?? null,
+              createdAt: detail.createdAt,
+            },
+          ],
+        });
         return { agent_active: true, session_id: body.chatId };
       }
       // ───────────────────────────────────────────────────────────────
@@ -738,6 +744,39 @@ export class BotService {
         }
 
         throw new ForbiddenException(quotaCheck.message || 'Token quota exceeded');
+      }
+
+      // Bot-active, mevcut sohbet: kullanıcı mesajını LLM cevabını beklemeden
+      // hemen kaydet + "Sohbetler" ekranına yayınla. Aksi halde ziyaretçinin
+      // mesajı ancak bot cevabı döndüğünde (saniyeler sonra) panele düşüyordu.
+      // Yeni sohbette satır henüz yok — o durum aşağıda LLM sonrası ele alınır.
+      let earlyUserDetailId: string | null = null;
+      if (activeChat) {
+        const earlyUserDetail = await this.prisma.customerChatDetails.create({
+          data: {
+            chatId: activeChat.id,
+            sender: 'user',
+            message: body.message,
+            attachments: body.attachments ? (body.attachments as any) : undefined,
+            createdAt: new Date(body.date),
+          },
+        });
+        earlyUserDetailId = earlyUserDetail.id;
+        await this.prisma.customerChats.update({
+          where: { id: activeChat.id },
+          data: { updatedAt: new Date() },
+        });
+        void this.conversationBroadcast.broadcast(activeChat.id, {
+          messages: [
+            {
+              id: earlyUserDetail.id,
+              sender: 'user',
+              text: body.message,
+              attachments: body.attachments ?? null,
+              createdAt: earlyUserDetail.createdAt,
+            },
+          ],
+        });
       }
 
       // FastAPI'ye istek at - session_id FastAPI tarafından üretilir
@@ -888,25 +927,27 @@ export class BotService {
           chatChannel,
         );
       } else {
-        // Mevcut chat'e kullanıcı mesajını ve bot cevabını ekle
-        await this.prisma.customerChatDetails.createMany({
-          data: [
-            {
-              chatId: activeChat.id,
-              sender: 'user',
-              message: body.message,
-              attachments: body.attachments ? (body.attachments as any) : undefined,
-              createdAt: new Date(body.date),
-            },
-            {
-              chatId: activeChat.id,
-              sender: "bot",
-              message: data.content,
-              tokenDetails: data.tokens,
-              createdAt: new Date(),
-            }
-          ]
+        // Mevcut chat: bot cevabını ekle. Kullanıcı mesajı çoğunlukla yukarıda
+        // (LLM beklenmeden) kaydedildi; raced-chat kenar durumunda kaydedilmediyse
+        // burada birlikte ekle.
+        const detailsToCreate: any[] = [];
+        if (!earlyUserDetailId) {
+          detailsToCreate.push({
+            chatId: activeChat.id,
+            sender: 'user',
+            message: body.message,
+            attachments: body.attachments ? (body.attachments as any) : undefined,
+            createdAt: new Date(body.date),
+          });
+        }
+        detailsToCreate.push({
+          chatId: activeChat.id,
+          sender: "bot",
+          message: data.content,
+          tokenDetails: data.tokens,
+          createdAt: new Date(),
         });
+        await this.prisma.customerChatDetails.createMany({ data: detailsToCreate });
 
         await this.prisma.customerChats.update({
           where: {
@@ -920,6 +961,23 @@ export class BotService {
           }
         });
       }
+
+      // Birleşik "Sohbetler" inbox'ına yayınla — bot sohbetleri de dahil, her
+      // kanalda. Ajan paneli listeyi refetch'siz günceller. (Bot-active akış:
+      // unread artmaz; isLive=false.)
+      void this.conversationBroadcast.broadcast(activeChat.id, {
+        messages: earlyUserDetailId
+          ? [{ sender: 'bot', text: data.content, createdAt: new Date() }]
+          : [
+              {
+                sender: 'user',
+                text: body.message,
+                attachments: body.attachments ?? null,
+                createdAt: new Date(body.date),
+              },
+              { sender: 'bot', text: data.content, createdAt: new Date() },
+            ],
+      });
 
       console.log("return data", data)
 
@@ -1165,7 +1223,7 @@ export class BotService {
     // widget's existing `agent_active: true` handler catches this —
     // no protocol changes needed on the client for the takeover case.
     if (activeChat && activeChat.chatStatus === 'HUMAN_ACTIVE') {
-      await this.prisma.customerChatDetails.create({
+      const detail = await this.prisma.customerChatDetails.create({
         data: {
           chatId: activeChat.id,
           sender: 'user',
@@ -1176,16 +1234,19 @@ export class BotService {
       });
       await this.prisma.customerChats.update({
         where: { id: activeChat.id },
-        data: { updatedAt: new Date() },
+        data: { updatedAt: new Date(), agentUnreadCount: { increment: 1 } },
       });
-      if (activeChat.agentUserId) {
-        this.eventsGateway.notifyAgent(activeChat.agentUserId, {
-          chatId: activeChat.id,
-          sender: 'user',
-          message: body.message,
-          createdAt: new Date().toISOString(),
-        });
-      }
+      void this.conversationBroadcast.broadcast(activeChat.id, {
+        messages: [
+          {
+            id: detail.id,
+            sender: 'user',
+            text: body.message,
+            attachments: body.attachments ?? null,
+            createdAt: detail.createdAt,
+          },
+        ],
+      });
       res.status(200).json({ agent_active: true, session_id: body.chatId });
       // HUMAN_ACTIVE bypass: no tokens consumed against subscription
       // and no auto-handover check needed — the chat is already with
@@ -1508,6 +1569,19 @@ export class BotService {
           },
         });
       }
+
+      // Birleşik "Sohbetler" inbox'ına yayınla (streaming yol, bot-active).
+      void this.conversationBroadcast.broadcast(activeChat.id, {
+        messages: [
+          {
+            sender: 'user',
+            text: body.message,
+            attachments: body.attachments ?? null,
+            createdAt: new Date(body.date),
+          },
+          { sender: 'bot', text: contentBuf, createdAt: new Date() },
+        ],
+      });
 
       // Auto-handover — mirror of batch L737-822. Same P2 Faz 4 flow-
       // state transitions, same events gateway notifications, same

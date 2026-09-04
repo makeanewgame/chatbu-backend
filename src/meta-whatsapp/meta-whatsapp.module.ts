@@ -8,9 +8,10 @@ import { AudioTranscriptionModule } from 'src/audio-transcription/audio-transcri
 import { MetaLoopGuardModule } from 'src/meta-loop-guard/meta-loop-guard.module';
 import { MetaWhatsappController } from './meta-whatsapp.controller';
 import { MetaWhatsappService } from './meta-whatsapp.service';
+import { EventsModule } from 'src/events/events.module';
 
 @Module({
-    imports: [ConfigModule, IntegrationModule, BotModule, PrismaModule, MetaChatCursorModule, AudioTranscriptionModule, MetaLoopGuardModule],
+    imports: [ConfigModule, IntegrationModule, BotModule, PrismaModule, MetaChatCursorModule, AudioTranscriptionModule, MetaLoopGuardModule, EventsModule],
     controllers: [MetaWhatsappController],
     providers: [MetaWhatsappService],
     exports: [MetaWhatsappService],
