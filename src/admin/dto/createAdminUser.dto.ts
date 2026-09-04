@@ -12,10 +12,10 @@ export class CreateAdminUserDto {
     @IsEmail()
     email: string;
 
-    @ApiProperty({ description: 'Initial password (min 6 chars)' })
+    @ApiProperty({ description: 'Initial password (min 8 chars)' })
     @IsNotEmpty()
     @IsString()
-    @MinLength(6)
+    @MinLength(8)
     password: string;
 
     @ApiProperty({ required: false, description: 'Phone number' })

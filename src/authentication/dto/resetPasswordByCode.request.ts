@@ -1,8 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString } from '@nestjs/class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from '@nestjs/class-validator';
+import { NormalizeEmail } from 'src/util/normalize-email.util';
 
 export class ResetPasswordByCodeRequest {
-  @IsString()
+  @IsEmail()
   @IsNotEmpty()
+  @NormalizeEmail()
   email: string;
 
   @IsString()
@@ -11,10 +13,12 @@ export class ResetPasswordByCodeRequest {
 
   @IsString()
   @IsNotEmpty()
+  @MinLength(8)
   newPassword: string;
 
   @IsString()
   @IsNotEmpty()
+  @MinLength(8)
   confirmPassword: string;
 
   @IsString()

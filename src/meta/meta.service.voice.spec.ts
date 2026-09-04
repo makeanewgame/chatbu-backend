@@ -52,6 +52,7 @@ describe('MetaService voice-note handling', () => {
       metaChatCursor as any,
       audioTranscription as any,
       metaAudio as any,
+      { isOurs: jest.fn().mockResolvedValue(false), record: jest.fn() } as any, // sentRegistry
     );
     // sendMetaMessage does a real axios POST — stub it out.
     jest.spyOn(service as any, 'sendMetaMessage').mockResolvedValue(undefined);

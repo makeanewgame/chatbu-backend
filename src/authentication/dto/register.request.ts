@@ -1,16 +1,20 @@
-import { IsNotEmpty, IsString, IsOptional, IsBoolean } from "@nestjs/class-validator";
+import { IsNotEmpty, IsString, IsOptional, IsBoolean, IsEmail, MaxLength, MinLength } from "@nestjs/class-validator";
+import { NormalizeEmail } from "src/util/normalize-email.util";
 
 export class RegisterRequest {
     @IsString()
     @IsNotEmpty()
+    @MaxLength(120)
     name: string;
 
-    @IsString()
+    @IsEmail()
     @IsNotEmpty()
+    @NormalizeEmail()
     email: string;
 
     @IsString()
     @IsNotEmpty()
+    @MinLength(8)
     password: string;
 
     @IsString()

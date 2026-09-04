@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { QuotaService } from 'src/quota/quota.service';
-import { randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import appleSigninAuth from 'apple-signin-auth';
 import { SystemLogService } from 'src/system-log/system-log.service';
@@ -180,6 +180,10 @@ export class AuthenticationService {
     // Validate terms acceptance
     if (!user.termsAccepted) {
       throw new BadRequestException('You must accept the Terms of Service to register');
+    }
+
+    if (!user.password || user.password.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
     }
 
     // Check if user exists by email or phone number
@@ -565,6 +569,10 @@ export class AuthenticationService {
       return { success: false, message: 'Şifreler uyuşmuyor.' };
     }
 
+    if (!newPassword || newPassword.length < 8) {
+      return { success: false, message: 'Şifre en az 8 karakter olmalıdır.' };
+    }
+
     const findUser = await this.prisma.user.findFirst({ where: { email } });
 
     const registerFailedAttempt = async () => {
@@ -751,13 +759,67 @@ export class AuthenticationService {
     });
   }
 
-  async googleLogin(email: string, user: any, provider: 'google' | 'apple' = 'google') {
-    let findUser = await this.prisma.user.findFirst({
-      where: {
-        email: email,
-      },
-      select: { email: true, id: true, name: true, password: true, role: true },
-    });
+  async googleLogin(
+    email: string,
+    user: any,
+    provider: 'google' | 'apple' = 'google',
+    oauthId?: string,
+  ) {
+    // Every OAuth path (web redirect, Google mobile, Apple mobile) funnels
+    // through here, so normalize the provider-supplied email once so it matches
+    // rows created via the (now normalized) register/login DTOs.
+    email = typeof email === 'string' ? email.trim().toLowerCase() : email;
+
+    const userSelect = {
+      email: true,
+      id: true,
+      name: true,
+      password: true,
+      role: true,
+      googleId: true,
+      appleId: true,
+    } as const;
+
+    let findUser = null;
+
+    // 1. Match on the provider's stable subject id first. This is the durable
+    //    account key — it keeps working after the user changes their account
+    //    email, whereas an email lookup would then create a duplicate account.
+    if (oauthId) {
+      findUser = await this.prisma.user.findFirst({
+        where: provider === 'apple' ? { appleId: oauthId } : { googleId: oauthId },
+        select: userSelect,
+      });
+    }
+
+    // 2. Fall back to email for accounts created before we stored the id, or a
+    //    password account signing in socially for the first time. Backfill the
+    //    id so future logins match by it even if the email later changes.
+    if (!findUser) {
+      findUser = await this.prisma.user.findFirst({
+        where: { email: email },
+        select: userSelect,
+      });
+
+      if (findUser && oauthId) {
+        const idField = provider === 'apple' ? 'appleId' : 'googleId';
+        if (!findUser[idField]) {
+          try {
+            await this.prisma.user.update({
+              where: { id: findUser.id },
+              data:
+                provider === 'apple'
+                  ? { appleId: oauthId }
+                  : { googleId: oauthId, googleEmail: email },
+            });
+          } catch (e) {
+            // Unique collision: this provider id is already linked elsewhere.
+            // Fall through with the email-matched user rather than failing login.
+            this.logger.warn(`Could not backfill ${idField} for user ${findUser.id}`, e);
+          }
+        }
+      }
+    }
 
     let analyticsIsNewSignup = false;
     let analyticsTeamId: string | null = null;
@@ -784,6 +846,11 @@ export class AuthenticationService {
         refreshToken: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        ...(oauthId
+          ? provider === 'apple'
+            ? { appleId: oauthId }
+            : { googleId: oauthId, googleEmail: email }
+          : {}),
       };
 
       const createdUser = await this.prisma.user.create({
@@ -848,7 +915,7 @@ export class AuthenticationService {
         where: {
           email: email,
         },
-        select: { email: true, id: true, name: true, password: true, role: true },
+        select: userSelect,
       });
     }
 
@@ -939,7 +1006,12 @@ export class AuthenticationService {
       return { success: false, message: 'Google account could not be verified' };
     }
 
-    return this.googleLogin(payload.email, { displayName: payload.name });
+    return this.googleLogin(
+      payload.email,
+      { displayName: payload.name },
+      'google',
+      payload.sub,
+    );
   }
 
   // Same shape as googleMobileLogin: the app gets a signed identityToken
@@ -975,12 +1047,23 @@ export class AuthenticationService {
     // fallback so the account can still be resolved by email server-side.
     // Apple sometimes sends email_verified as the string 'false' rather than
     // a boolean, so it can't be compared with strict equality.
-    const email = payload.email ?? fallbackEmail;
+    let email = payload.email ?? fallbackEmail;
+
+    // Private-relay users get no email on repeat sign-ins. If we've seen this
+    // Apple id before, recover the account's stored email so login still works.
+    if (!email && payload.sub) {
+      const known = await this.prisma.user.findFirst({
+        where: { appleId: payload.sub },
+        select: { email: true },
+      });
+      email = known?.email;
+    }
+
     if (!email || String(payload.email_verified) === 'false') {
       return { success: false, message: 'Apple account could not be verified' };
     }
 
-    return this.googleLogin(email, { displayName: fullName }, 'apple');
+    return this.googleLogin(email, { displayName: fullName }, 'apple', payload.sub);
   }
 
   async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {
@@ -1146,6 +1229,10 @@ export class AuthenticationService {
       throw new Error('Şifreler uyuşmuyor.');
     }
 
+    if (!newPassword || newPassword.length < 8) {
+      throw new Error('Şifre en az 8 karakter olmalıdır.');
+    }
+
     // Token DB'den okunur — multi-pod ortamında in-memory cache güvenilmez
     const storedCode = findUser.resetCode;
     if (!storedCode) {
@@ -1231,6 +1318,9 @@ export class AuthenticationService {
           role: true,
           emailVerified: true,
           createdAt: true,
+          password: true,
+          pendingEmail: true,
+          pendingEmailCancelToken: true,
         },
       });
 
@@ -1253,6 +1343,12 @@ export class AuthenticationService {
           role: user.role,
           teamId: teamId,
           isEmailVerified: user.emailVerified,
+          // Frontend gates the email-change UI on these: OAuth-only accounts
+          // (no password) can't change email here, and a request in flight
+          // shows the "pending" state.
+          hasPassword: !!user.password,
+          pendingEmail: user.pendingEmail ?? null,
+          pendingEmailCancelToken: user.pendingEmailCancelToken ?? null,
         },
       };
     } catch (error) {
@@ -1264,14 +1360,17 @@ export class AuthenticationService {
     }
   }
 
+  // Email is NOT changed here anymore. It goes through the verified two-step
+  // flow (requestEmailChange / confirmEmailChange); `email` is stripped from
+  // UpdateProfileRequest by the whitelist pipe, so this only touches name/phone.
   async updateUserProfile(userId: string, data: any) {
     try {
-      const { name, email, phoneNumber } = data;
+      const { name, phoneNumber } = data;
 
-      if (!name || !email) {
+      if (!name) {
         return {
           success: false,
-          message: 'Name and email are required',
+          message: 'Name is required',
         };
       }
 
@@ -1286,55 +1385,13 @@ export class AuthenticationService {
         };
       }
 
-      let emailChanged = false;
-
-      // Email değişikliği kontrolü
-      if (email !== user.email) {
-        // Yeni email daha önce kullanılmış mı kontrol et
-        const existingUser = await this.prisma.user.findUnique({
-          where: { email: email },
-        });
-
-        if (existingUser) {
-          return {
-            success: false,
-            message: 'Email already exists',
-          };
-        }
-
-        emailChanged = true;
-
-        // Email doğrulama kodu oluştur
-        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-        // Kullanıcıyı güncelle
-        await this.prisma.user.update({
-          where: { id: userId },
-          data: {
-            name: name,
-            email: email,
-            phoneNumber: phoneNumber || null,
-            emailVerified: false,
-            activationCode: verificationCode,
-          },
-        });
-
-        // Doğrulama maili gönder
-        try {
-          await this.mail.sendEmailVerificationMail(email, verificationCode, 'en', name);
-        } catch (mailError) {
-          this.logger.error('Error sending verification email:', mailError);
-        }
-      } else {
-        // Email değişmemişse sadece diğer alanları güncelle
-        await this.prisma.user.update({
-          where: { id: userId },
-          data: {
-            name: name,
-            phoneNumber: phoneNumber || null,
-          },
-        });
-      }
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          name: name,
+          phoneNumber: phoneNumber || null,
+        },
+      });
 
       return {
         success: true,
@@ -1342,9 +1399,8 @@ export class AuthenticationService {
         data: {
           userId: userId,
           name: name,
-          email: email,
-          phoneNumber: phoneNumber,
-          emailChanged: emailChanged,
+          email: user.email,
+          phoneNumber: phoneNumber ?? null,
         },
       };
     } catch (error) {
@@ -1354,6 +1410,220 @@ export class AuthenticationService {
         message: 'Error updating profile',
       };
     }
+  }
+
+  // --- Verified two-step account email change ------------------------------
+
+  private readonly EMAIL_CHANGE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+  private async clearPendingEmail(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        pendingEmail: null,
+        pendingEmailCode: null,
+        pendingEmailExpiresAt: null,
+        pendingEmailCancelToken: null,
+      },
+    });
+  }
+
+  /**
+   * Step 1: the signed-in user asks to move to `newEmail`. Re-authenticates
+   * with the current password, parks the new address in `pendingEmail`, mails
+   * a code to it and a "you didn't request this?" notice to the current
+   * address. `user.email` is untouched until confirmEmailChange succeeds.
+   */
+  async requestEmailChange(
+    userId: string,
+    newEmail: string,
+    currentPassword: string,
+    lang: string = 'en',
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return { success: false, message: 'User not found' };
+    }
+
+    // OAuth-only accounts (Google / Apple) have no password to re-authenticate
+    // with, and their sign-in is keyed on the provider email — changing it here
+    // would lock them out of SSO. They must set a password first.
+    if (!user.password) {
+      return {
+        success: false,
+        code: 'NO_PASSWORD',
+        message:
+          'Your account signs in with Google or Apple. Set a password first, then you can change your email address.',
+      };
+    }
+
+    const bcrypt = require('bcrypt');
+    const passwordOk = await bcrypt.compare(currentPassword, user.password);
+    if (!passwordOk) {
+      return { success: false, message: 'Current password is incorrect' };
+    }
+
+    const normalized = newEmail.trim().toLowerCase();
+
+    if (normalized === user.email) {
+      return { success: false, message: 'This is already your email address' };
+    }
+
+    const existing = await this.prisma.user.findUnique({
+      where: { email: normalized },
+    });
+    if (existing) {
+      return { success: false, message: 'This email address is already in use' };
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const cancelToken = randomBytes(32).toString('hex');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        pendingEmail: normalized,
+        pendingEmailCode: code,
+        pendingEmailExpiresAt: new Date(Date.now() + this.EMAIL_CHANGE_TTL_MS),
+        pendingEmailCancelToken: cancelToken,
+      },
+    });
+
+    try {
+      await this.mail.sendEmailChangeCodeMail(normalized, code, user.name, lang);
+    } catch (e) {
+      this.logger.error('Error sending email-change code:', e);
+    }
+    try {
+      await this.mail.sendEmailChangeNoticeMail(
+        user.email,
+        normalized,
+        user.name,
+        cancelToken,
+        lang,
+      );
+    } catch (e) {
+      this.logger.error('Error sending email-change notice:', e);
+    }
+
+    return {
+      success: true,
+      message: 'A verification code has been sent to the new email address.',
+    };
+  }
+
+  /**
+   * Step 2: the user enters the code from the new address. On success the new
+   * address becomes `user.email`, every session is revoked (refreshToken
+   * cleared) and both addresses are notified.
+   */
+  async confirmEmailChange(userId: string, code: string, lang: string = 'en') {
+    const LOCK_KEY = `email_change_lock:${userId}`;
+    const ATTEMPTS_KEY = `email_change_attempts:${userId}`;
+    const MAX_ATTEMPTS = 5;
+    const LOCK_TTL_MS = 15 * 60 * 1000;
+
+    if (await this.cacheManager.get(LOCK_KEY)) {
+      return { success: false, locked: true, retryAfter: 900 };
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return { success: false, message: 'User not found' };
+    }
+
+    if (
+      !user.pendingEmail ||
+      !user.pendingEmailCode ||
+      !user.pendingEmailExpiresAt
+    ) {
+      return { success: false, message: 'There is no pending email change.' };
+    }
+
+    if (user.pendingEmailExpiresAt.getTime() < Date.now()) {
+      await this.clearPendingEmail(userId);
+      return {
+        success: false,
+        message: 'The verification code has expired. Please start again.',
+      };
+    }
+
+    if (user.pendingEmailCode !== code) {
+      const attempts =
+        ((await this.cacheManager.get<number>(ATTEMPTS_KEY)) || 0) + 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.cacheManager.set(LOCK_KEY, true, LOCK_TTL_MS);
+        await this.cacheManager.del(ATTEMPTS_KEY);
+        return { success: false, locked: true, retryAfter: 900 };
+      }
+      await this.cacheManager.set(ATTEMPTS_KEY, attempts, LOCK_TTL_MS);
+      return { success: false, message: 'Incorrect code.' };
+    }
+
+    await this.cacheManager.del(ATTEMPTS_KEY);
+    await this.cacheManager.del(LOCK_KEY);
+
+    const oldEmail = user.email;
+    const newEmail = user.pendingEmail;
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          email: newEmail,
+          emailVerified: true,
+          verifiedAt: new Date(),
+          refreshToken: null, // force re-login on every device
+          pendingEmail: null,
+          pendingEmailCode: null,
+          pendingEmailExpiresAt: null,
+          pendingEmailCancelToken: null,
+        },
+      });
+    } catch (e) {
+      // Another account claimed this address between request and confirm.
+      this.logger.error('Email change conflict:', e);
+      await this.clearPendingEmail(userId);
+      return {
+        success: false,
+        message: 'This email address is no longer available.',
+      };
+    }
+
+    try {
+      await this.mail.sendEmailChangedMail(oldEmail, newEmail, user.name, lang);
+    } catch (e) {
+      this.logger.error(e);
+    }
+    try {
+      await this.mail.sendEmailChangedMail(newEmail, newEmail, user.name, lang);
+    } catch (e) {
+      this.logger.error(e);
+    }
+
+    return {
+      success: true,
+      message: 'Your email address has been updated. Please sign in again.',
+    };
+  }
+
+  /**
+   * Abort a pending change via the opaque token from the notice mail. No auth:
+   * the rightful owner may not be able to sign in if their session was taken.
+   */
+  async cancelEmailChange(token: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { pendingEmailCancelToken: token },
+    });
+    if (!user) {
+      // Already consumed or never existed — nothing to undo.
+      return { success: true, message: 'There is no pending email change.' };
+    }
+    await this.clearPendingEmail(user.id);
+    return {
+      success: true,
+      message: 'The email change request has been cancelled.',
+    };
   }
 
   async resendEmailVerification(userId: string) {
@@ -1767,15 +2037,31 @@ export class AuthenticationService {
         };
       }
 
-      // Verify old password
       const bcrypt = require('bcrypt');
-      const isValidPassword = await bcrypt.compare(oldPassword, user.password);
 
-      if (!isValidPassword) {
-        return {
-          success: false,
-          message: 'Current password is incorrect',
-        };
+      // OAuth-only accounts (signed up with Google/Apple) have no password yet.
+      // They're already authenticated by their OAuth-issued JWT, so let them set
+      // an initial password without an "old password" — this converts them to a
+      // hybrid account and unlocks password-gated actions like email change.
+      const isSettingInitialPassword = !user.password;
+
+      if (!isSettingInitialPassword) {
+        const isValidPassword = await bcrypt.compare(oldPassword, user.password);
+
+        if (!isValidPassword) {
+          return {
+            success: false,
+            message: 'Current password is incorrect',
+          };
+        }
+
+        // Check if new password is same as old password
+        if (oldPassword === newPassword) {
+          return {
+            success: false,
+            message: 'New password must be different from current password',
+          };
+        }
       }
 
       // Check if new password and confirm password match
@@ -1786,11 +2072,10 @@ export class AuthenticationService {
         };
       }
 
-      // Check if new password is same as old password
-      if (oldPassword === newPassword) {
+      if (!newPassword || newPassword.length < 8) {
         return {
           success: false,
-          message: 'New password must be different from current password',
+          message: 'Password must be at least 8 characters',
         };
       }
 
@@ -1809,11 +2094,16 @@ export class AuthenticationService {
       // Send confirmation email
       await this.mail.sendPasswordChangedMail(user.email, '', lang);
 
-      this.logger.info(`Password changed successfully for user ${userId}`);
+      this.logger.info(
+        `Password ${isSettingInitialPassword ? 'set' : 'changed'} successfully for user ${userId}`,
+      );
 
       return {
         success: true,
-        message: 'Password changed successfully',
+        isInitial: isSettingInitialPassword,
+        message: isSettingInitialPassword
+          ? 'Password set successfully'
+          : 'Password changed successfully',
       };
     } catch (error) {
       this.logger.error('Error changing password:', error);

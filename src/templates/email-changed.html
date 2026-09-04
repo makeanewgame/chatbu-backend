@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Your account email was changed</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #333333; margin: 0; padding: 0; background-color: #f7f7f7; }
+      p { font-size: 16px; }
+      .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; }
+      .header { text-align: center; padding: 20px 0; border-bottom: 1px solid #eeeeee; }
+      .logo { max-height: 60px; margin-bottom: 10px; }
+      .content { padding: 30px 20px; text-align: center; }
+      .button { display: inline-block; padding: 12px 25px; background-color: #2b72e4; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: bold; margin-top: 20px; }
+      .footer { text-align: center; padding: 20px; color: #999999; font-size: 12px; border-top: 1px solid #eeeeee; }
+      .note { font-size: 14px; color: #777777; margin-top: 25px; }
+      @media only screen and (max-width: 600px) { .container { width: 100%; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <img src="https://app.chatbu.io/images/chatbu-logo.png" alt="Chatbu Logo" class="logo" />
+        <h2>Your account email was changed</h2>
+      </div>
+      <div class="content">
+        <p>Hi <b>{{fullname}}</b>,</p>
+        <p>
+          The email address for your Chatbu account is now
+          <b>{{new_email}}</b>. For security, you've been signed out on all
+          devices and will need to sign in again.
+        </p>
+        <p>
+          If you didn't make this change, contact our support team immediately.
+        </p>
+        <a href="{{support_url}}" class="button">Contact Support</a>
+      </div>
+      <div class="footer">
+        <p>&copy; 2025 {{company}}. All rights reserved.</p>
+        <p>
+          <a href="{{privacy_policy_url}}">Privacy Policy</a> |
+          <a href="{{support_url}}">Support</a>
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

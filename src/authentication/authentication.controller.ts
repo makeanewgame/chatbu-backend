@@ -24,6 +24,10 @@ import { Language } from 'src/lang';
 import { PasswordRequestChange } from './dto/passwordChangeRequest';
 import { ResetPasswordByCodeRequest } from './dto/resetPasswordByCode.request';
 import { ChangePasswordRequest } from './dto/change-password.request';
+import { UpdateProfileRequest } from './dto/update-profile.request';
+import { RequestEmailChangeRequest } from './dto/request-email-change.request';
+import { ConfirmEmailChangeRequest } from './dto/confirm-email-change.request';
+import { CancelEmailChangeRequest } from './dto/cancel-email-change.request';
 
 @Controller('auth')
 export class AuthenticationController {
@@ -111,6 +115,9 @@ export class AuthenticationController {
     const data = await this.authService.googleLogin(
       req.user.emails[0].value,
       req.user,
+      'google',
+      // passport-google-oauth20 Profile.id is the Google subject id (sub).
+      req.user?.id,
     );
     const frontendRedirectUri = this.resolveFrontendGoogleRedirectUri(req.query?.state);
     res.redirect(
@@ -297,8 +304,37 @@ export class AuthenticationController {
 
   @UseGuards(AccessTokenGuard)
   @Put('profile')
-  async updateProfile(@Req() req, @Body() body: any) {
+  async updateProfile(@Req() req, @Body() body: UpdateProfileRequest) {
     return await this.authService.updateUserProfile(req.user.sub, body);
+  }
+
+  // Verified two-step email change. `PUT /auth/profile` no longer touches email.
+  @UseGuards(AccessTokenGuard, NotImpersonatingGuard)
+  @Post('email-change/request')
+  async requestEmailChange(@Req() req, @Body() body: RequestEmailChangeRequest) {
+    return await this.authService.requestEmailChange(
+      req.user.sub,
+      body.newEmail,
+      body.currentPassword,
+      body.lang || 'en',
+    );
+  }
+
+  @UseGuards(AccessTokenGuard, NotImpersonatingGuard)
+  @Post('email-change/confirm')
+  async confirmEmailChange(@Req() req, @Body() body: ConfirmEmailChangeRequest) {
+    return await this.authService.confirmEmailChange(
+      req.user.sub,
+      body.code,
+      body.lang || 'en',
+    );
+  }
+
+  // No auth guard: the account owner may have lost their session to whoever
+  // triggered the change. The opaque token from the notice mail is the proof.
+  @Post('email-change/cancel')
+  async cancelEmailChange(@Body() body: CancelEmailChangeRequest) {
+    return await this.authService.cancelEmailChange(body.token);
   }
 
   @UseGuards(AccessTokenGuard)
