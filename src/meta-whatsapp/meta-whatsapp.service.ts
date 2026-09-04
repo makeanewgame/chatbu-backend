@@ -6,6 +6,7 @@ import { WhatsAppEmbeddedService } from 'src/integration/whatsapp-embedded/whats
 import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
 import { AudioTranscriptionService } from 'src/audio-transcription/audio-transcription.service';
 import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
+import { MetaLoopGuardService } from 'src/meta-loop-guard/meta-loop-guard.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -85,6 +86,7 @@ export class MetaWhatsappService {
         private readonly metaChatCursor: MetaChatCursorService,
         private readonly audioTranscription: AudioTranscriptionService,
         private readonly metaAudio: MetaAudioService,
+        private readonly loopGuard: MetaLoopGuardService,
     ) { }
 
     /**
@@ -284,6 +286,9 @@ export class MetaWhatsappService {
                         teamId: integration.teamId,
                     });
                     if (!text) continue;
+                    // Loop guard, layer 1: budget exhausted for this pair →
+                    // drop before the LLM call burns tokens.
+                    if (await this.loopGuard.shouldRateLimit(botId, senderId, 'whatsapp')) continue;
                     const chatId = await this.metaChatCursor.resolveChatId('wa', senderId);
 
                     try {
@@ -311,7 +316,11 @@ export class MetaWhatsappService {
                         } else {
                             const replyText = resolveMetaReplyText(response);
                             if (replyText) {
+                                // Loop guard, layer 2: byte-identical to a
+                                // recent reply → suppress the send.
+                                if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'whatsapp')) continue;
                                 await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                                await this.loopGuard.recordReply(botId, senderId, replyText);
                             } else {
                                 this.logger.warn(
                                     `[whatsapp-embedded] empty chat response for chatId=${chatId} — no reply sent`,
