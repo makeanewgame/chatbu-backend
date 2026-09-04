@@ -97,6 +97,18 @@ spec:
               name: chatbu-config
               key: VOICE_TRANSCRIBE_LANG_DEFAULT
               optional: true
+        # Owner-echo takeover on Messenger/Instagram (meta.service.ts
+        # handleOwnerEcho): when the owner replies from the IG/Messenger
+        # inbox app, flip the chat to HUMAN_ACTIVE so the bot yields.
+        # Same surgical configMapKeyRef pattern as VOICE_TRANSCRIBE_*
+        # above — the backend does not consume chatbu-config wholesale.
+        # Missing key/map ⇒ disabled (kill switch closed).
+        - name: META_ECHO_TAKEOVER_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: META_ECHO_TAKEOVER_ENABLED
+              optional: true
         resources:
           requests:
             memory: "1Gi"

@@ -7,6 +7,7 @@ import { MetaEmbeddedService } from 'src/integration/meta-embedded/meta-embedded
 import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
 import { AudioTranscriptionService, VoiceChannel } from 'src/audio-transcription/audio-transcription.service';
 import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
+import { MetaSentRegistryService } from 'src/meta-sent-registry/meta-sent-registry.service';
 import { resolveMetaReplyText } from './meta-reply.util';
 
 @Injectable()
@@ -21,7 +22,90 @@ export class MetaService {
         private metaChatCursor: MetaChatCursorService,
         private audioTranscription: AudioTranscriptionService,
         private metaAudio: MetaAudioService,
+        private sentRegistry: MetaSentRegistryService,
     ) { }
+
+    private echoTakeoverEnabled(): boolean {
+        return process.env.META_ECHO_TAKEOVER_ENABLED === 'true';
+    }
+
+    /**
+     * Owner-echo takeover (Messenger + Instagram DM). Echo webhooks
+     * fire for every page-sent message — our own bot/dashboard sends
+     * AND messages the owner types manually in the IG/Messenger inbox
+     * app. When it's the latter, the human has effectively taken the
+     * conversation over: mirror their message into the transcript and
+     * flip the chat to HUMAN_ACTIVE so the bot goes silent (same
+     * semantics as the WhatsApp Coexistence `smb_message_echoes`
+     * handler in meta-whatsapp.service.ts).
+     *
+     * Own-send detection, in order:
+     *  1. mid recorded by MetaSentRegistryService at send time (bot
+     *     replies + dashboard agent replies both record) → ours, skip.
+     *  2. Transcript dedupe: an identical `agent` line in the last
+     *     120s → ours (covers Redis misses/restarts), skip.
+     *  3. Otherwise → owner typed it in the app: mirror + HUMAN_ACTIVE.
+     *
+     * In an echo event `sender.id` is the PAGE/IG account and
+     * `recipient.id` is the visitor — the inverse of a normal inbound
+     * message.
+     */
+    private async handleOwnerEcho(
+        messagingEvent: any,
+        channel: 'META_MESSENGER' | 'INSTAGRAM',
+        botId: string,
+        teamId: string,
+    ): Promise<void> {
+        if (!this.echoTakeoverEnabled()) return;
+
+        const mid: string | undefined = messagingEvent.message?.mid;
+        if (await this.sentRegistry.isOurs(mid)) return;
+
+        const visitorId: string | undefined = messagingEvent.recipient?.id;
+        if (!visitorId) return;
+
+        const text: string =
+            messagingEvent.message?.text ??
+            (messagingEvent.message?.attachments?.length ? '[attachment]' : '');
+        if (!text) return;
+
+        const chat = await this.prisma.customerChats.findFirst({
+            where: {
+                botId,
+                teamId,
+                externalContactId: visitorId,
+                isDeleted: false,
+                chatStatus: { not: 'CLOSED' },
+            },
+            orderBy: { updatedAt: 'desc' },
+        });
+        if (!chat) {
+            this.logger.log(`[echo-takeover] no active ${channel} chat for visitor=${visitorId} — nothing to hand over`);
+            return;
+        }
+
+        // Guard 2: transcript dedupe for Redis misses. Same shape as the
+        // WhatsApp Coexistence handler's redelivery guard.
+        const recent = await this.prisma.customerChatDetails.findFirst({
+            where: { chatId: chat.id, sender: 'agent', message: text },
+            orderBy: { createdAt: 'desc' },
+        });
+        if (recent && Date.now() - recent.createdAt.getTime() < 120_000) return;
+
+        await this.prisma.customerChatDetails.create({
+            data: { chatId: chat.id, sender: 'agent', message: text, createdAt: new Date() },
+        });
+        await this.prisma.customerChats.update({
+            where: { id: chat.id },
+            data: { chatStatus: 'HUMAN_ACTIVE', updatedAt: new Date() },
+        });
+
+        if (chat.chatStatus !== 'HUMAN_ACTIVE') {
+            this.logger.log(
+                `[echo-takeover] chat ${chat.id} → HUMAN_ACTIVE (owner replied from the ${channel === 'INSTAGRAM' ? 'Instagram' : 'Messenger'} app)`,
+            );
+        }
+    }
 
     /**
      * Text of a Messenger/IG messaging event, transcribing a voice-note
@@ -132,9 +216,14 @@ export class MetaService {
 
             for (const messagingEvent of entry.messaging || []) {
                 if (!messagingEvent.message) continue;
-                // Echoes are our own bot's outbound messages reflected back by Meta —
-                // replying to them would create an infinite loop.
-                if (messagingEvent.message.is_echo) continue;
+                // Echo = a page-sent message reflected back by Meta. Never
+                // reply to one (infinite loop) — but DO check whether it was
+                // the owner typing in the Messenger inbox app, which means a
+                // human took the conversation over (see handleOwnerEcho).
+                if (messagingEvent.message.is_echo) {
+                    await this.handleOwnerEcho(messagingEvent, 'META_MESSENGER', botId, integration.teamId);
+                    continue;
+                }
 
                 const senderId = messagingEvent.sender.id;
                 // Voice notes arrive as audio attachments with no text — the
@@ -205,9 +294,12 @@ export class MetaService {
 
             for (const messagingEvent of entry.messaging || []) {
                 if (!messagingEvent.message) continue;
-                // Echoes are our own bot's outbound messages reflected back by Meta —
-                // replying to them would create an infinite loop.
-                if (messagingEvent.message.is_echo) continue;
+                // Same echo semantics as the Messenger loop above — owner
+                // typing in the Instagram app means a human takeover.
+                if (messagingEvent.message.is_echo) {
+                    await this.handleOwnerEcho(messagingEvent, 'INSTAGRAM', botId, integration.teamId);
+                    continue;
+                }
 
                 const senderId = messagingEvent.sender.id;
                 // Same voice-note handling as Messenger above.
@@ -255,7 +347,7 @@ export class MetaService {
      * and Page-linked Instagram (IGSID) recipients when given that Page's access token.
      */
     private async sendMetaMessage(recipientId: string, text: string, pageAccessToken: string): Promise<void> {
-        await axios.post(
+        const { data } = await axios.post(
             'https://graph.facebook.com/v23.0/me/messages',
             {
                 recipient: { id: recipientId },
@@ -263,6 +355,9 @@ export class MetaService {
             },
             { params: { access_token: pageAccessToken } },
         );
+        // Feed the echo-takeover handler's "is this ours?" check — the echo
+        // for this send arrives on the webhook within seconds.
+        await this.sentRegistry.record(data?.message_id);
     }
 
     /**
