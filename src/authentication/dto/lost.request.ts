@@ -1,8 +1,10 @@
-import { IsNotEmpty, IsOptional, IsString } from '@nestjs/class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from '@nestjs/class-validator';
+import { NormalizeEmail } from 'src/util/normalize-email.util';
 
 export class LostRequest {
-  @IsString()
+  @IsEmail()
   @IsNotEmpty()
+  @NormalizeEmail()
   email: string;
 
   @IsString()

@@ -166,6 +166,108 @@ export class MailService {
       console.error(error);
     }
   }
+
+  // --- Verified two-step account email change -------------------------------
+
+  private renderAccountMail(filename: string, context: Record<string, any>) {
+    const templatePath = path.join(process.cwd(), 'dist', 'templates', filename);
+    const templateSource = fs.readFileSync(templatePath, 'utf8');
+    return handlebars.compile(templateSource)({
+      company: 'Chatbu',
+      privacy_policy_url: process.env.FRONTEND_PRIVACY_POLICY_URL,
+      support_url: process.env.FRONTEND_SUPPORT_URL,
+      ...context,
+    });
+  }
+
+  /** Code sent to the NEW address the user wants to move to. */
+  async sendEmailChangeCodeMail(
+    newEmail: string,
+    code: string,
+    fullname: string,
+    lang: string = 'en',
+  ) {
+    lang = enOrTr(lang);
+    const html = this.renderAccountMail(
+      lang === 'tr' ? 'email-change-code_tr.html' : 'email-change-code.html',
+      { fullname, code, new_email: newEmail },
+    );
+    try {
+      await this.mailerService.sendMail({
+        from: process.env.ADMIN_EMAIL,
+        to: newEmail,
+        subject:
+          lang === 'tr'
+            ? 'Yeni e-posta adresinizi onaylayın'
+            : 'Confirm your new email address',
+        html,
+      });
+      this.logger.info(`Email-change code sent to ${newEmail}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
+
+  /** Heads-up sent to the CURRENT address so a hijacked session can't do this silently. */
+  async sendEmailChangeNoticeMail(
+    currentEmail: string,
+    newEmail: string,
+    fullname: string,
+    cancelToken: string,
+    lang: string = 'en',
+  ) {
+    lang = enOrTr(lang);
+    const cancelUrl = `${process.env.FRONTEND_URL}/cancel-email-change?token=${cancelToken}`;
+    const html = this.renderAccountMail(
+      lang === 'tr' ? 'email-change-notice_tr.html' : 'email-change-notice.html',
+      { fullname, new_email: newEmail, cancel_url: cancelUrl },
+    );
+    try {
+      await this.mailerService.sendMail({
+        from: process.env.ADMIN_EMAIL,
+        to: currentEmail,
+        subject:
+          lang === 'tr'
+            ? 'Hesabınızda e-posta değişikliği talebi'
+            : 'Email change requested on your account',
+        html,
+      });
+      this.logger.info(`Email-change notice sent to ${currentEmail}`);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  }
+
+  /** Confirmation sent to both old and new address after the change lands. */
+  async sendEmailChangedMail(
+    to: string,
+    newEmail: string,
+    fullname: string,
+    lang: string = 'en',
+  ) {
+    lang = enOrTr(lang);
+    const html = this.renderAccountMail(
+      lang === 'tr' ? 'email-changed_tr.html' : 'email-changed.html',
+      { fullname, new_email: newEmail },
+    );
+    try {
+      await this.mailerService.sendMail({
+        from: process.env.ADMIN_EMAIL,
+        to,
+        subject:
+          lang === 'tr'
+            ? 'Hesap e-posta adresiniz değiştirildi'
+            : 'Your account email was changed',
+        html,
+      });
+      this.logger.info(`Email-changed confirmation sent to ${to}`);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   async sendTeamInvitationMail(
     email: string,
     teamName: string,

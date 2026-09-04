@@ -21,12 +21,24 @@ model User {
   activationCode       String?
   verifiedAt           DateTime?
   resetCode            String?
+  // Verified two-step email change (see AuthenticationService.requestEmailChange).
+  // The new address is NOT written to `email` until the code sent to it is
+  // confirmed; `pendingEmailCancelToken` backs the "I didn't request this" link
+  // in the notice sent to the current address.
+  pendingEmail            String?
+  pendingEmailCode        String?
+  pendingEmailExpiresAt   DateTime?
+  pendingEmailCancelToken String?   @unique
   isDeleted            Boolean         @default(false)
   deletedAt            DateTime?
   deletionScheduledFor DateTime?
   role                 String          @default("USER")
   googleId             String?         @unique
   googleEmail          String?
+  // Apple's stable subject id (sub claim). Like googleId, this is the durable
+  // account key for Sign in with Apple — it survives an email change, whereas
+  // Apple private-relay emails can rotate.
+  appleId              String?         @unique
   accountBlocked       Boolean         @default(false)
   blockedAt            DateTime?
   blockedReason        String?

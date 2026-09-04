@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Yeni e-posta adresinizi onaylayın</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; line-height: 1.6; color: #333333; margin: 0; padding: 0; background-color: #f7f7f7; }
+      p { font-size: 16px; }
+      .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; }
+      .header { text-align: center; padding: 20px 0; border-bottom: 1px solid #eeeeee; }
+      .logo { max-height: 60px; margin-bottom: 10px; }
+      .content { padding: 30px 20px; text-align: center; }
+      .code { display: inline-block; font-size: 30px; letter-spacing: 6px; font-weight: bold; color: #2b72e4; margin: 20px 0; }
+      .footer { text-align: center; padding: 20px; color: #999999; font-size: 12px; border-top: 1px solid #eeeeee; }
+      .note { font-size: 14px; color: #777777; margin-top: 25px; }
+      @media only screen and (max-width: 600px) { .container { width: 100%; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <img src="https://app.chatbu.io/images/chatbu-logo.png" alt="Chatbu Logo" class="logo" />
+        <h2>Yeni e-posta adresinizi onaylayın</h2>
+      </div>
+      <div class="content">
+        <p>Merhaba <b>{{fullname}}</b>,</p>
+        <p>
+          Chatbu hesabınızın e-posta adresini <b>{{new_email}}</b> olarak
+          değiştirme talebi aldık. Bu adresi onaylamak için aşağıdaki kodu girin:
+        </p>
+        <div class="code">{{code}}</div>
+        <p class="note">
+          Bu kod 30 dakika içinde geçerliliğini yitirir. Kodu girene kadar hesap
+          e-postanız değişmez. Bu talebi siz yapmadıysanız bu mesajı yok
+          sayabilirsiniz &mdash; mevcut adresinizi de ayrıca uyardık.
+        </p>
+      </div>
+      <div class="footer">
+        <p>&copy; 2025 {{company}}. Tüm hakları saklıdır.</p>
+        <p>
+          <a href="{{privacy_policy_url}}">Gizlilik Politikası</a> |
+          <a href="{{support_url}}">Destek</a>
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

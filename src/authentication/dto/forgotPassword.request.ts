@@ -1,8 +1,10 @@
-import { IsNotEmpty, IsString } from '@nestjs/class-validator';
+import { IsEmail, IsNotEmpty } from '@nestjs/class-validator';
+import { NormalizeEmail } from 'src/util/normalize-email.util';
 
-export class RegisterRequest {
-  @IsString()
+export class ForgotPasswordRequest {
+  @IsEmail()
   @IsNotEmpty()
+  @NormalizeEmail()
   email: string;
 
   updated_at: string;
