@@ -134,6 +134,25 @@ export const chatbuVoiceMessageAudioDurationSeconds = makeHistogramProvider({
 });
 
 /**
+ * Bot-to-bot loop breaker on the Meta channels (2026-09-04 incident:
+ * two Chatbu-botted IG accounts ping-ponged ~790 messages / ~400 LLM
+ * calls in 24 minutes until the integration was manually disabled).
+ * Labels:
+ *   channel: messenger | instagram | whatsapp
+ *   action:  rate_limited          — pre-LLM breaker tripped, inbound
+ *                                    dropped without an LLM call
+ *            duplicate_suppressed  — post-LLM byte-identical reply
+ *                                    suppressed before the Graph send
+ * Sustained non-zero here = a loop (or a spam run) is being actively
+ * contained — worth a look, not a page.
+ */
+export const chatbuMetaLoopGuardTotal = makeCounterProvider({
+  name: 'chatbu_meta_loop_guard_total',
+  help: 'Meta-channel loop-guard interventions (rate breaker + duplicate reply suppressor)',
+  labelNames: ['channel', 'action'] as const,
+});
+
+/**
  * Pre-initialises every (channel, outcome) series for the voice
  * message counter at Nest startup, so `sum by (channel) (increase(
  * chatbu_voice_message_transcribe_total[24h]))` reports 0 the first
@@ -161,12 +180,19 @@ export class VoiceMessageMetricsPreinit implements OnModuleInit {
   constructor(
     @Inject(getToken('chatbu_voice_message_transcribe_total'))
     private readonly transcribeCounter: Counter<string>,
+    @Inject(getToken('chatbu_meta_loop_guard_total'))
+    private readonly loopGuardCounter: Counter<string>,
   ) {}
 
   onModuleInit(): void {
     for (const channel of VOICE_CHANNELS) {
       for (const outcome of VOICE_OUTCOMES) {
         this.transcribeCounter.labels(channel, outcome);
+      }
+    }
+    for (const channel of ['messenger', 'instagram', 'whatsapp'] as const) {
+      for (const action of ['rate_limited', 'duplicate_suppressed'] as const) {
+        this.loopGuardCounter.labels(channel, action);
       }
     }
   }

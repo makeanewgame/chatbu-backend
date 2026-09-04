@@ -8,6 +8,7 @@ import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.ser
 import { AudioTranscriptionService, VoiceChannel } from 'src/audio-transcription/audio-transcription.service';
 import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { MetaSentRegistryService } from 'src/meta-sent-registry/meta-sent-registry.service';
+import { MetaLoopGuardService } from 'src/meta-loop-guard/meta-loop-guard.service';
 import { resolveMetaReplyText } from './meta-reply.util';
 
 @Injectable()
@@ -23,6 +24,7 @@ export class MetaService {
         private audioTranscription: AudioTranscriptionService,
         private metaAudio: MetaAudioService,
         private sentRegistry: MetaSentRegistryService,
+        private loopGuard: MetaLoopGuardService,
     ) { }
 
     private echoTakeoverEnabled(): boolean {
@@ -235,6 +237,9 @@ export class MetaService {
                     { botId, teamId: integration.teamId, chatId: senderId },
                 );
                 if (!text) continue;
+                // Loop guard, layer 1: budget exhausted for this pair →
+                // drop before the LLM call burns tokens.
+                if (await this.loopGuard.shouldRateLimit(botId, senderId, 'messenger')) continue;
                 const chatId = await this.metaChatCursor.resolveChatId('fb', senderId);
 
                 try {
@@ -253,7 +258,12 @@ export class MetaService {
 
                     const replyText = resolveMetaReplyText(response);
                     if (replyText) {
+                        // Loop guard, layer 2: byte-identical to a recent
+                        // reply → suppress the send (kills bot-to-bot
+                        // ping-pong by its ~3rd repetition).
+                        if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'messenger')) continue;
                         await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                        await this.loopGuard.recordReply(botId, senderId, replyText);
                     } else {
                         this.logger.warn(
                             `[messenger] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,
@@ -309,6 +319,8 @@ export class MetaService {
                     { botId, teamId: integration.teamId, chatId: senderId },
                 );
                 if (!text) continue;
+                // Loop guard, layer 1 — see the Messenger loop above.
+                if (await this.loopGuard.shouldRateLimit(botId, senderId, 'instagram')) continue;
                 const contactName = await this.fetchInstagramContactName(senderId, pageAccessToken);
                 const chatId = await this.metaChatCursor.resolveChatId('ig', senderId);
 
@@ -329,7 +341,10 @@ export class MetaService {
 
                     const replyText = resolveMetaReplyText(response);
                     if (replyText) {
+                        // Loop guard, layer 2 — see the Messenger loop above.
+                        if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'instagram')) continue;
                         await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                        await this.loopGuard.recordReply(botId, senderId, replyText);
                     } else {
                         this.logger.warn(
                             `[instagram] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,

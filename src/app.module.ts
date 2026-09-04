@@ -41,6 +41,7 @@ import {
   chatbuHttpRequestsTotal,
   chatbuNetgsmSendTotal,
   chatbuSmsSendTotal,
+  chatbuMetaLoopGuardTotal,
   chatbuVoiceMessageAudioDurationSeconds,
   chatbuVoiceMessageTranscribeDurationSeconds,
   chatbuVoiceMessageTranscribeTotal,
@@ -138,6 +139,8 @@ import { AudioTranscriptionModule } from './audio-transcription/audio-transcript
     chatbuVoiceMessageTranscribeTotal,
     chatbuVoiceMessageTranscribeDurationSeconds,
     chatbuVoiceMessageAudioDurationSeconds,
+    // Meta-channel loop breaker (2026-09-04 bot-to-bot incident).
+    chatbuMetaLoopGuardTotal,
     VoiceMessageMetricsPreinit,
     {
       provide: APP_INTERCEPTOR,

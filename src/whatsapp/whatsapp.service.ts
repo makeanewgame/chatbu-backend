@@ -5,6 +5,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.service';
 import { AudioTranscriptionService } from 'src/audio-transcription/audio-transcription.service';
 import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
+import { MetaLoopGuardService } from 'src/meta-loop-guard/meta-loop-guard.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class WhatsAppService {
         private metaChatCursor: MetaChatCursorService,
         private audioTranscription: AudioTranscriptionService,
         private metaAudio: MetaAudioService,
+        private loopGuard: MetaLoopGuardService,
     ) { }
 
     /**
@@ -125,6 +127,8 @@ export class WhatsAppService {
                         teamId: integration.teamId,
                     });
                     if (!text) continue;
+                    // Loop guard, layer 1 — see meta.service.ts Messenger loop.
+                    if (await this.loopGuard.shouldRateLimit(botId, senderId, 'whatsapp')) continue;
                     const chatId = await this.metaChatCursor.resolveChatId('wa', senderId);
 
                     try {
@@ -143,7 +147,10 @@ export class WhatsAppService {
 
                         const replyText = resolveMetaReplyText(response);
                         if (replyText) {
+                            // Loop guard, layer 2 — see meta.service.ts.
+                            if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'whatsapp')) continue;
                             await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                            await this.loopGuard.recordReply(botId, senderId, replyText);
                         } else {
                             this.logger.warn(
                                 `[whatsapp-legacy] empty chat response for botId=${botId} chatId=${chatId} — no reply sent`,

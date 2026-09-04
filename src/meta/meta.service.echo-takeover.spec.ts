@@ -60,6 +60,7 @@ describe('MetaService owner-echo takeover', () => {
       { isEnabled: jest.fn().mockReturnValue(false), transcribe: jest.fn() } as any,
       { downloadMessengerAudio: jest.fn() } as any,
       sentRegistry as any,
+      { shouldRateLimit: jest.fn().mockResolvedValue(false), isDuplicateReply: jest.fn().mockResolvedValue(false), recordReply: jest.fn() } as any, // loopGuard
     );
     // sendMetaMessage does a real axios POST — stub it out.
     jest.spyOn(service as any, 'sendMetaMessage').mockResolvedValue(undefined);

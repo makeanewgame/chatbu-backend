@@ -53,6 +53,7 @@ describe('MetaService voice-note handling', () => {
       audioTranscription as any,
       metaAudio as any,
       { isOurs: jest.fn().mockResolvedValue(false), record: jest.fn() } as any, // sentRegistry
+      { shouldRateLimit: jest.fn().mockResolvedValue(false), isDuplicateReply: jest.fn().mockResolvedValue(false), recordReply: jest.fn() } as any, // loopGuard
     );
     // sendMetaMessage does a real axios POST — stub it out.
     jest.spyOn(service as any, 'sendMetaMessage').mockResolvedValue(undefined);
