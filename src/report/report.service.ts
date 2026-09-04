@@ -4,6 +4,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { MinioClientService } from 'src/minio-client/minio-client.service';
 import { EventsGateway } from 'src/events/events.gateway';
 import { HandoffNotificationService } from 'src/handoff/handoff-notification.service';
+import { MetaSentRegistryService } from 'src/meta-sent-registry/meta-sent-registry.service';
 import { collectConversationRowIds } from './conversation-merge.util';
 import { formatAgentPublicName } from 'src/util/agent-name.util';
 import axios from 'axios';
@@ -16,6 +17,7 @@ export class ReportService {
         private configService: ConfigService,
         private eventsGateway: EventsGateway,
         private handoffNotificationService: HandoffNotificationService,
+        private metaSentRegistry: MetaSentRegistryService,
     ) { }
 
     async getChatHistory(teamId: string) {
@@ -643,7 +645,7 @@ export class ReportService {
                 throw new BadRequestException(`Missing ${chat.channel} config or contact ID`);
             }
 
-            await axios.post(
+            const { data } = await axios.post(
                 `https://graph.facebook.com/v23.0/me/messages`,
                 {
                     recipient: { id: chat.externalContactId },
@@ -651,6 +653,12 @@ export class ReportService {
                 },
                 { params: { access_token: pageAccessToken } },
             );
+            // Dashboard agent sends echo back on the webhook like any
+            // page-sent message — record the mid so the owner-echo
+            // takeover handler (meta.service.handleOwnerEcho) doesn't
+            // mistake our own send for a manual owner reply and mirror
+            // it into the transcript a second time.
+            await this.metaSentRegistry.record(data?.message_id);
         }
     }
 }
