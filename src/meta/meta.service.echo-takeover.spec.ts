@@ -136,6 +136,22 @@ describe('MetaService owner-echo takeover', () => {
     });
   });
 
+  it('HUMAN_ACTIVE inbound: bot stays fully silent (no pending acknowledgment)', async () => {
+    botService.chat.mockResolvedValue({ agent_active: true, session_id: 'x' });
+    await service.handleWebhook({
+      object: 'page',
+      entry: [
+        {
+          id: 'page1',
+          messaging: [
+            { sender: { id: 'visitor1' }, message: { text: 'Selam oldu mu' } },
+          ],
+        },
+      ],
+    });
+    expect((service as any).sendMetaMessage).not.toHaveBeenCalled();
+  });
+
   it('normal inbound (non-echo) messages still reach the bot', async () => {
     botService.chat.mockResolvedValue({ content: 'cevap' });
     await service.handleWebhook({
