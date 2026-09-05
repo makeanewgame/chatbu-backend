@@ -173,6 +173,17 @@ spec:
               name: chatbu-config
               key: FRONTEND_SUPPORT_URL
               optional: true
+        # Legal Slice 2: deterministic privacy-consent gate in
+        # LeadService.submit — a lead write requires a LeadPrivacyConsent
+        # row for the chat session. Default OFF (missing key = gate
+        # closed = today's behaviour); dev overlay flips it on first,
+        # prod after canary. Same surgical pattern as above.
+        - name: LEAD_PRIVACY_CONSENT_GATE_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: LEAD_PRIVACY_CONSENT_GATE_ENABLED
+              optional: true
         resources:
           requests:
             memory: "1Gi"
