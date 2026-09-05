@@ -46,11 +46,23 @@ spec:
             # `TwilioSmsProvider` picks up its credentials from
             # `backend-secrets` (populated by the Twilio ExternalSecret
             # in fovi-longa-chat-be/k8s/secret-mirror-dev/external-
-            # secrets.yaml). Prod stays on the default `netgsm_only`
-            # (unset here → SmsService constructor default) until the
-            # Slice 4 prod-flip PR.
+            # secrets.yaml).
+            #
+            # Slice 4 prod flip (2026-09-05): the strategy moved to the
+            # BASE deployment as a configMapKeyRef on chatbu-config
+            # (missing key = code default netgsm_only). This patch
+            # entry pins dev with the SAME configMapKeyRef shape — a
+            # literal `value:` here would strategic-merge ON TOP of the
+            # base's `valueFrom` and produce an invalid env entry with
+            # both fields set. The dev overlay's chatbu-config carries
+            # SMS_PROVIDER_STRATEGY=route_by_country (fovi
+            # k8s/overlays/dev/configmap-patch.yaml).
             - name: SMS_PROVIDER_STRATEGY
-              value: "route_by_country"
+              valueFrom:
+                configMapKeyRef:
+                  name: chatbu-config
+                  key: SMS_PROVIDER_STRATEGY
+                  optional: true
             # Twilio dev escape hatch (mirror of NETGSM_MOCK). Leave
             # UNSET to hit the real Twilio API — user provisioned real
             # dev credentials in `chatbu/dev/twilio` (2026-08-13). Set
