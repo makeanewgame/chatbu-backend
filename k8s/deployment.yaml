@@ -135,6 +135,44 @@ spec:
               name: chatbu-config
               key: SMS_PROVIDER_STRATEGY
               optional: true
+        # Legal Slice 1 (2026-09-05): company identity single-sources
+        # from chatbu-config. Explicit env entries override the stale
+        # COMPANY_* copies arriving via the backend-secrets envFrom;
+        # `optional: true` means that until the configmap carries the
+        # keys, the entry is simply omitted and the secret value still
+        # applies — so this is safe to merge in either order. The
+        # legal entity is DATALONGA SOLUTIONS LTD; Chatbu is its
+        # trading name (see docs/legal-contracts-map.md).
+        - name: COMPANY_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: COMPANY_NAME
+              optional: true
+        - name: COMPANY_TRADING_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: COMPANY_TRADING_NAME
+              optional: true
+        - name: COMPANY_NUMBER
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: COMPANY_NUMBER
+              optional: true
+        - name: COMPANY_ADDRESS
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: COMPANY_ADDRESS
+              optional: true
+        - name: FRONTEND_SUPPORT_URL
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: FRONTEND_SUPPORT_URL
+              optional: true
         resources:
           requests:
             memory: "1Gi"

@@ -8,10 +8,14 @@
 // locale, but that's Slice 3D or later.
 //
 // The controller notice is templated — `{teamBusinessName}` is replaced
-// at request time from the bot's team record. Chatbu is UK-based; the
-// generic wording positions Chatbu Ltd (UK) as the processor acting on
-// behalf of the bot owner (data controller). Legal review is required
-// before prod ship, but the shape is compliant enough for dev canary.
+// at request time from the bot's team record. The legal entity is
+// DATALONGA SOLUTIONS LTD (Company No. 16372088, UK) — Chatbu is its
+// trading name, not a company. The notices position the entity as the
+// processor acting on behalf of the bot owner (data controller). Legal
+// review is required before final wording sign-off. Any text change to
+// a pack MUST bump that pack's `version` — the string is persisted on
+// every consent row (lead.service.ts) and is our audit trail of which
+// wording the visitor actually saw.
 
 export interface ConsentTextPack {
   jurisdiction: string;
@@ -39,7 +43,7 @@ const CHATBU_BASE = 'https://chatbu.io';
 const GDPR_EN: ConsentTextPack = {
   jurisdiction: 'gdpr',
   locale: 'en',
-  version: 'gdpr-en-v1',
+  version: 'gdpr-en-v2',
   title: 'Privacy Notice and Terms of Use',
   intro:
     'To send you a verification code and forward your enquiry to the business you are chatting with, we need to process your phone number and the message you write here. Your consent is the legal basis for this processing under the UK GDPR / GDPR.',
@@ -49,7 +53,7 @@ const GDPR_EN: ConsentTextPack = {
   acceptedLabel: 'Accepted',
   errorMessage: 'We could not save your consent. Please try again.',
   controllerNotice:
-    'Chatbu Ltd (United Kingdom, chatbu.io) is the processor. {teamBusinessName} is the data controller and receives your enquiry. You may withdraw consent at any time via the Privacy Notice.',
+    'DATALONGA SOLUTIONS LTD, trading as Chatbu (United Kingdom, chatbu.io), is the processor. {teamBusinessName} is the data controller and receives your enquiry. You may withdraw consent at any time via the Privacy Notice.',
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
@@ -58,7 +62,7 @@ const GDPR_EN: ConsentTextPack = {
 const GDPR_DE: ConsentTextPack = {
   jurisdiction: 'gdpr',
   locale: 'de',
-  version: 'gdpr-de-v1',
+  version: 'gdpr-de-v2',
   title: 'Datenschutzhinweis und Nutzungsbedingungen',
   intro:
     'Damit wir Ihnen einen Bestätigungscode senden und Ihre Anfrage an das Unternehmen weiterleiten können, mit dem Sie chatten, müssen wir Ihre Telefonnummer und die von Ihnen verfasste Nachricht verarbeiten. Rechtsgrundlage dieser Verarbeitung ist Ihre Einwilligung nach der DSGVO.',
@@ -69,7 +73,7 @@ const GDPR_DE: ConsentTextPack = {
   acceptedLabel: 'Akzeptiert',
   errorMessage: 'Ihre Einwilligung konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.',
   controllerNotice:
-    'Chatbu Ltd (Vereinigtes Königreich, chatbu.io) ist der Auftragsverarbeiter. {teamBusinessName} ist der Verantwortliche und empfängt Ihre Anfrage. Sie können Ihre Einwilligung jederzeit über den Datenschutzhinweis widerrufen.',
+    'DATALONGA SOLUTIONS LTD, handelnd unter dem Namen Chatbu (Vereinigtes Königreich, chatbu.io), ist der Auftragsverarbeiter. {teamBusinessName} ist der Verantwortliche und empfängt Ihre Anfrage. Sie können Ihre Einwilligung jederzeit über den Datenschutzhinweis widerrufen.',
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
@@ -79,7 +83,7 @@ const GDPR_DE: ConsentTextPack = {
 const KVKK_TR: ConsentTextPack = {
   jurisdiction: 'kvkk',
   locale: 'tr',
-  version: 'kvkk-tr-v1',
+  version: 'kvkk-tr-v2',
   title: 'Aydınlatma Metni ve Kullanım Şartları',
   intro:
     'Size doğrulama kodu göndermek ve talebinizi sohbet ettiğiniz işletmeye iletmek için telefon numaranızı ve buraya yazdığınız mesajı işlememiz gerekmektedir. Bu işleme, 6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında açık rızanıza dayanmaktadır.',
@@ -89,7 +93,7 @@ const KVKK_TR: ConsentTextPack = {
   acceptedLabel: 'Kabul edildi',
   errorMessage: 'Onayınızı kaydedemedik. Lütfen tekrar deneyin.',
   controllerNotice:
-    'Chatbu Ltd (Birleşik Krallık, chatbu.io) veri işleyendir. {teamBusinessName} veri sorumlusudur ve talebinizi alır. Açık rızanızı Aydınlatma Metni üzerinden her zaman geri çekebilirsiniz.',
+    'Chatbu ticari adıyla faaliyet gösteren DATALONGA SOLUTIONS LTD (Birleşik Krallık, chatbu.io) veri işleyendir. {teamBusinessName} veri sorumlusudur ve talebinizi alır. Açık rızanızı Aydınlatma Metni üzerinden her zaman geri çekebilirsiniz.',
   privacyPolicyUrl: `${CHATBU_BASE}/tr/gizlilik-politikasi`,
   termsOfUseUrl: `${CHATBU_BASE}/tr/kullanim-sartlari`,
 };
@@ -98,7 +102,7 @@ const KVKK_TR: ConsentTextPack = {
 const GDPR_FR: ConsentTextPack = {
   jurisdiction: 'gdpr',
   locale: 'fr',
-  version: 'gdpr-fr-v1',
+  version: 'gdpr-fr-v2',
   title: "Avis de confidentialité et conditions d'utilisation",
   intro:
     "Pour vous envoyer un code de vérification et transmettre votre demande à l'entreprise avec laquelle vous discutez, nous devons traiter votre numéro de téléphone et le message que vous rédigez ici. Votre consentement constitue la base légale de ce traitement au titre du RGPD.",
@@ -109,7 +113,7 @@ const GDPR_FR: ConsentTextPack = {
   acceptedLabel: 'Accepté',
   errorMessage: 'Nous n\'avons pas pu enregistrer votre consentement. Veuillez réessayer.',
   controllerNotice:
-    "Chatbu Ltd (Royaume-Uni, chatbu.io) est le sous-traitant. {teamBusinessName} est le responsable du traitement et reçoit votre demande. Vous pouvez retirer votre consentement à tout moment via l'Avis de confidentialité.",
+    "DATALONGA SOLUTIONS LTD, exerçant sous le nom commercial Chatbu (Royaume-Uni, chatbu.io), est le sous-traitant. {teamBusinessName} est le responsable du traitement et reçoit votre demande. Vous pouvez retirer votre consentement à tout moment via l'Avis de confidentialité.",
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
@@ -118,7 +122,7 @@ const GDPR_FR: ConsentTextPack = {
 const GDPR_IT: ConsentTextPack = {
   jurisdiction: 'gdpr',
   locale: 'it',
-  version: 'gdpr-it-v1',
+  version: 'gdpr-it-v2',
   title: 'Informativa sulla privacy e Termini di utilizzo',
   intro:
     "Per inviarti un codice di verifica e inoltrare la tua richiesta all'azienda con cui stai chattando, dobbiamo trattare il tuo numero di telefono e il messaggio che scrivi qui. Il tuo consenso costituisce la base giuridica di questo trattamento ai sensi del GDPR.",
@@ -129,7 +133,7 @@ const GDPR_IT: ConsentTextPack = {
   acceptedLabel: 'Accettato',
   errorMessage: 'Non è stato possibile registrare il consenso. Riprova.',
   controllerNotice:
-    "Chatbu Ltd (Regno Unito, chatbu.io) è il responsabile del trattamento (data processor). {teamBusinessName} è il titolare del trattamento e riceve la tua richiesta. Puoi revocare il consenso in qualsiasi momento tramite l'Informativa sulla privacy.",
+    "DATALONGA SOLUTIONS LTD, operante con il nome commerciale Chatbu (Regno Unito, chatbu.io), è il responsabile del trattamento (data processor). {teamBusinessName} è il titolare del trattamento e riceve la tua richiesta. Puoi revocare il consenso in qualsiasi momento tramite l'Informativa sulla privacy.",
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
@@ -138,7 +142,7 @@ const GDPR_IT: ConsentTextPack = {
 const GDPR_ES: ConsentTextPack = {
   jurisdiction: 'gdpr',
   locale: 'es',
-  version: 'gdpr-es-v1',
+  version: 'gdpr-es-v2',
   title: 'Aviso de privacidad y Condiciones de uso',
   intro:
     'Para enviarle un código de verificación y reenviar su consulta a la empresa con la que está chateando, necesitamos tratar su número de teléfono y el mensaje que escribe aquí. Su consentimiento es la base jurídica de este tratamiento en virtud del RGPD.',
@@ -148,7 +152,7 @@ const GDPR_ES: ConsentTextPack = {
   acceptedLabel: 'Aceptado',
   errorMessage: 'No pudimos guardar su consentimiento. Inténtelo de nuevo.',
   controllerNotice:
-    'Chatbu Ltd (Reino Unido, chatbu.io) es el encargado del tratamiento. {teamBusinessName} es el responsable del tratamiento y recibe su consulta. Puede retirar el consentimiento en cualquier momento a través del Aviso de privacidad.',
+    'DATALONGA SOLUTIONS LTD, que opera bajo el nombre comercial Chatbu (Reino Unido, chatbu.io), es el encargado del tratamiento. {teamBusinessName} es el responsable del tratamiento y recibe su consulta. Puede retirar el consentimiento en cualquier momento a través del Aviso de privacidad.',
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
@@ -158,7 +162,7 @@ const GDPR_ES: ConsentTextPack = {
 const CCPA_EN: ConsentTextPack = {
   jurisdiction: 'ccpa',
   locale: 'en',
-  version: 'ccpa-en-v1',
+  version: 'ccpa-en-v2',
   title: 'Privacy Notice and Terms of Use',
   intro:
     'To send you a verification code and forward your enquiry to the business you are chatting with, we need to collect your phone number and the message you write here. This is a collection of personal information as defined by the California Consumer Privacy Act (CCPA) and comparable US state privacy laws.',
@@ -168,7 +172,7 @@ const CCPA_EN: ConsentTextPack = {
   acceptedLabel: 'Accepted',
   errorMessage: 'We could not save your consent. Please try again.',
   controllerNotice:
-    'Chatbu Ltd (United Kingdom, chatbu.io) is the service provider. {teamBusinessName} is the business that collects the information and receives your enquiry. You may exercise your CCPA rights (know, delete, opt-out of sale, non-discrimination) via the Privacy Notice.',
+    'DATALONGA SOLUTIONS LTD, trading as Chatbu (United Kingdom, chatbu.io), is the service provider. {teamBusinessName} is the business that collects the information and receives your enquiry. You may exercise your CCPA rights (know, delete, opt-out of sale, non-discrimination) via the Privacy Notice.',
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
@@ -180,7 +184,7 @@ const CCPA_EN: ConsentTextPack = {
 const PDPL_EN: ConsentTextPack = {
   jurisdiction: 'pdpl',
   locale: 'en',
-  version: 'pdpl-en-v1',
+  version: 'pdpl-en-v2',
   title: 'Privacy Notice and Terms of Use',
   intro:
     'To send you a verification code and forward your enquiry to the business you are chatting with, we need to process your phone number and the message you write here. Your consent is the legal basis for this processing under the applicable Personal Data Protection Law (UAE PDPL / KSA PDPL / Bahrain PDPL / equivalent).',
@@ -190,7 +194,7 @@ const PDPL_EN: ConsentTextPack = {
   acceptedLabel: 'Accepted',
   errorMessage: 'We could not save your consent. Please try again.',
   controllerNotice:
-    'Chatbu Ltd (United Kingdom, chatbu.io) is the processor. {teamBusinessName} is the data controller and receives your enquiry. You may withdraw consent at any time via the Privacy Notice.',
+    'DATALONGA SOLUTIONS LTD, trading as Chatbu (United Kingdom, chatbu.io), is the processor. {teamBusinessName} is the data controller and receives your enquiry. You may withdraw consent at any time via the Privacy Notice.',
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
@@ -201,7 +205,7 @@ const PDPL_EN: ConsentTextPack = {
 const GENERIC_EN: ConsentTextPack = {
   jurisdiction: 'generic',
   locale: 'en',
-  version: 'generic-en-v1',
+  version: 'generic-en-v2',
   title: 'Privacy Notice and Terms of Use',
   intro:
     'To send you a verification code and forward your enquiry to the business you are chatting with, we need to process your phone number and the message you write here. Your consent is the legal basis for this processing under applicable local data protection law.',
@@ -211,7 +215,7 @@ const GENERIC_EN: ConsentTextPack = {
   acceptedLabel: 'Accepted',
   errorMessage: 'We could not save your consent. Please try again.',
   controllerNotice:
-    'Chatbu Ltd (United Kingdom, chatbu.io) is the processor. {teamBusinessName} is the data controller and receives your enquiry. You may withdraw consent at any time via the Privacy Notice.',
+    'DATALONGA SOLUTIONS LTD, trading as Chatbu (United Kingdom, chatbu.io), is the processor. {teamBusinessName} is the data controller and receives your enquiry. You may withdraw consent at any time via the Privacy Notice.',
   privacyPolicyUrl: `${CHATBU_BASE}/en/privacy-policy`,
   termsOfUseUrl: `${CHATBU_BASE}/en/terms-of-use`,
 };
