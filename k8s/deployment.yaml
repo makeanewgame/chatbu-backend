@@ -120,6 +120,21 @@ spec:
               name: chatbu-config
               key: META_LOOP_GUARD_ENABLED
               optional: true
+        # International SMS routing (Slice 4 prod flip, 2026-09-05).
+        # SmsService.pickProvider: route_by_country → TR stays on
+        # NETGSM, everything else goes to Twilio (creds arrive via
+        # backend-secrets envFrom once the twilio ExternalSecret
+        # lands). Missing key = code default netgsm_only, so this is
+        # safe in any namespace where the configmap key is absent.
+        # The k8s-dev overlay has pinned route_by_country via its own
+        # patch since 2026-08-20 and strategic-merge overrides this
+        # entry there.
+        - name: SMS_PROVIDER_STRATEGY
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: SMS_PROVIDER_STRATEGY
+              optional: true
         resources:
           requests:
             memory: "1Gi"
