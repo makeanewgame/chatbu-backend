@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { FlowKind } from '../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { SmsService } from 'src/sms/sms.service';
+import { SmsService, parsePhoneToE164 } from 'src/sms/sms.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import {
     ALLOWED_SLOT_MINUTES,
@@ -93,9 +93,13 @@ export class AppointmentService {
             summary,
             description = '',
             timezone,
-            lang = 'tr',
             chatId,
         } = payload;
+        // Confirmation-SMS language: explicit caller hint wins; otherwise
+        // derive from the phone's country (TR → tr, else en) — same rule
+        // as the OTP paths (Slice 5, international booking numbers).
+        const lang: 'tr' | 'en' =
+            payload.lang ?? (parsePhoneToE164(attendeePhone)?.country === 'TR' ? 'tr' : 'en');
 
         const startAt = new Date(startIso);
         const endAt = new Date(endIso);
