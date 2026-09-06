@@ -11,9 +11,11 @@ import { EventsModule } from 'src/events/events.module';
 import { ChatFlowModule } from 'src/chat-flow/chat-flow.module';
 import { PushNotificationModule } from 'src/push-notification/push-notification.module';
 import { HandoffModule } from 'src/handoff/handoff.module';
+import { LegalDocumentModule } from 'src/legal-document/legal-document.module';
 
 @Module({
-  imports: [PrismaModule, HttpModule, JwtModule, SubscriptionModule, MailModule, MinioClientModule, EventsModule, ChatFlowModule, PushNotificationModule, HandoffModule],
+  // LegalDocumentModule: new-bot DPA gate (legal Slice 7).
+  imports: [PrismaModule, HttpModule, JwtModule, SubscriptionModule, MailModule, MinioClientModule, EventsModule, ChatFlowModule, PushNotificationModule, HandoffModule, LegalDocumentModule],
   controllers: [BotController],
   providers: [BotService],
   exports: [BotService],

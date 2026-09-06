@@ -35,7 +35,9 @@ interface SeedDoc {
   slug: string;
   name: string;
   sourceLocale: string;
-  // First entry MUST be the source locale.
+  // First entry MUST be the source locale. An EMPTY array seeds the
+  // document row only (a "slot": visible in the admin UI, no draft) —
+  // used for documents whose text is counsel-blocked.
   locales: { locale: string; file: string; title: string }[];
 }
 
@@ -58,6 +60,24 @@ const SEED_DOCS: SeedDoc[] = [
       { locale: 'en', file: 'privacy-policy.en.md', title: 'Privacy Policy' },
     ],
   },
+  // ── Slice 7 (2026-09-06) ──
+  {
+    // Internal template (no lawyer needed to start, per legal-contracts-map
+    // §1.4): factual list of live providers. English-first document.
+    slug: 'sub-processors',
+    name: 'Sub-processors',
+    sourceLocale: 'en',
+    locales: [{ locale: 'en', file: 'sub-processors.en.md', title: 'Chatbu Sub-processors' }],
+  },
+  {
+    // Slot only — DPA body text is counsel-blocked. The whole DPA surface
+    // (dashboard banner, new-bot gate, /dpa page) stays inert until a
+    // version is authored and published here.
+    slug: 'dpa',
+    name: 'Data Processing Agreement',
+    sourceLocale: 'en',
+    locales: [],
+  },
 ];
 
 async function main() {
@@ -75,6 +95,11 @@ async function main() {
         // the seed's (all pre-Slice-6 documents were tr-source anyway).
         update: { sourceLocale: doc.sourceLocale },
       });
+
+      if (doc.locales.length === 0) {
+        console.log(`[seed-legal] ${doc.slug}: document slot ensured (no content to seed — text pending)`);
+        continue;
+      }
 
       const versionCount = await prisma.legalDocumentVersion.count({
         where: { documentId: document.id },
