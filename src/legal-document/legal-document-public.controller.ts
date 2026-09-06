@@ -33,6 +33,16 @@ function extractClientInfo(req: Request) {
 export class LegalDocumentPublicController {
   constructor(private legalDocumentService: LegalDocumentService) {}
 
+  // Slice 8: documents THIS user must re-accept (published with
+  // requiresReacceptance, effective, not yet accepted by them in any
+  // context). Declared before :slug so the literal path wins.
+  @Get('reacceptance/pending')
+  @UseGuards(AccessTokenGuard)
+  getPendingReacceptances(@Req() req: Request, @Query('locale') locale?: string) {
+    const user = (req as any).user ?? {};
+    return this.legalDocumentService.getPendingReacceptances(user.sub ?? user.id, locale);
+  }
+
   @Get(':slug')
   getPublished(@Param('slug') slug: string, @Query('locale') locale?: string) {
     return this.legalDocumentService.getPublished(slug, locale);

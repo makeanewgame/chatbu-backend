@@ -369,6 +369,99 @@ describe('LegalDocumentService', () => {
     });
   });
 
+  describe('re-acceptance (Slice 8)', () => {
+    it('publish stores the re-acceptance flags; a bare publish stays pre-Slice-8', async () => {
+      prisma.legalDocument.findUnique.mockResolvedValue(document);
+      prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+        id: 'v3',
+        documentId,
+        status: 'DRAFT',
+        contents: [{ locale: 'tr' }],
+      });
+      prisma.legalDocumentVersion.updateMany.mockResolvedValue({ count: 1 });
+      prisma.legalDocumentVersion.update.mockResolvedValue({ id: 'v3', status: 'PUBLISHED' });
+
+      await service.publishVersion('kvkk', 'v3', {
+        requiresReacceptance: true,
+        effectiveAt: '2026-10-01T00:00:00.000Z',
+        changelog: 'Updated data retention section.',
+      });
+      expect(prisma.legalDocumentVersion.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            requiresReacceptance: true,
+            effectiveAt: new Date('2026-10-01T00:00:00.000Z'),
+            changelog: 'Updated data retention section.',
+          }),
+        }),
+      );
+
+      await service.publishVersion('kvkk', 'v3');
+      expect(prisma.legalDocumentVersion.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            requiresReacceptance: false,
+            effectiveAt: null,
+            changelog: null,
+          }),
+        }),
+      );
+    });
+
+    describe('getPendingReacceptances', () => {
+      const publishedVersion = (over: Record<string, unknown> = {}) => ({
+        id: 'v2',
+        versionNumber: 2,
+        changelog: 'New governing law.',
+        effectiveAt: null,
+        document: { slug: 'terms-of-service', sourceLocale: 'tr' },
+        contents: [{ locale: 'tr', title: 'Hizmet Şartları', bodyMarkdown: '#', translationStatus: 'SOURCE' }],
+        ...over,
+      });
+
+      it('returns a doc the user has not accepted, filtered to effective flagged versions', async () => {
+        prisma.legalDocumentVersion.findMany.mockResolvedValue([publishedVersion()]);
+        (prisma.legalDocumentAcceptance as any).findFirst = jest.fn().mockResolvedValue(null);
+
+        const result = await service.getPendingReacceptances('user-1');
+
+        expect(prisma.legalDocumentVersion.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              status: 'PUBLISHED',
+              requiresReacceptance: true,
+              OR: [{ effectiveAt: null }, { effectiveAt: { lte: expect.any(Date) } }],
+            }),
+          }),
+        );
+        expect(result.items).toEqual([
+          expect.objectContaining({ slug: 'terms-of-service', versionId: 'v2', title: 'Hizmet Şartları' }),
+        ]);
+      });
+
+      it('skips versions the user already accepted in ANY context (e.g. SIGNUP)', async () => {
+        prisma.legalDocumentVersion.findMany.mockResolvedValue([publishedVersion()]);
+        (prisma.legalDocumentAcceptance as any).findFirst = jest.fn().mockResolvedValue({ id: 'acc-1' });
+
+        const result = await service.getPendingReacceptances('user-1');
+
+        expect(result.items).toEqual([]);
+      });
+
+      it('never surfaces team-level documents (dpa re-arms via Slice 7 status)', async () => {
+        prisma.legalDocumentVersion.findMany.mockResolvedValue([
+          publishedVersion({ document: { slug: 'dpa', sourceLocale: 'en' } }),
+        ]);
+        (prisma.legalDocumentAcceptance as any).findFirst = jest.fn().mockResolvedValue(null);
+
+        const result = await service.getPendingReacceptances('user-1');
+
+        expect(result.items).toEqual([]);
+        expect((prisma.legalDocumentAcceptance as any).findFirst).not.toHaveBeenCalled();
+      });
+    });
+  });
+
   describe('recordAcceptance', () => {
     const userActor = { subjectType: 'user', subjectId: 'user-1', teamId: 'team-1' };
 
