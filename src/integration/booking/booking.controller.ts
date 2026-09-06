@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { InternalApiKeyGuard } from '../google-calendar/internal-api-key.guard';
 import { BookingService } from './booking.service';
 
@@ -91,6 +91,17 @@ class RequestSmsVerificationDto {
     @IsString()
     @IsOptional()
     chatId?: string;
+
+    /**
+     * Conversation-language hint from the agent (2-letter, e.g. 'tr').
+     * Wins over the phone-country fallback for the OTP template language
+     * (resolveOtpLang) — a +49 diaspora visitor chatting in Turkish gets
+     * a Turkish SMS. Optional; sanitized in the service.
+     */
+    @IsString()
+    @IsOptional()
+    @MaxLength(8)
+    lang?: string;
 }
 
 class VerifySmsDto {
@@ -218,7 +229,7 @@ export class BookingController {
             throw new HttpException('phone and botCuid are required', HttpStatus.BAD_REQUEST);
         }
         try {
-            return await this.booking.requestSmsVerification(body.phone, body.botCuid, body.chatId);
+            return await this.booking.requestSmsVerification(body.phone, body.botCuid, body.chatId, body.lang);
         } catch (e) {
             if ((e as Error).message === 'TOO_MANY_REQUESTS') {
                 throw new HttpException('Too many code requests; try again later', HttpStatus.TOO_MANY_REQUESTS);

@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { FlowKind } from '../../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
-import { SmsService, parsePhoneToE164 } from 'src/sms/sms.service';
+import { SmsService, parsePhoneToE164, resolveOtpLang } from 'src/sms/sms.service';
 import { ChatFlowService, normalizePhoneForDedup } from 'src/chat-flow/chat-flow.service';
 
 const CODE_TTL_MINUTES = 10;
@@ -169,7 +169,7 @@ export class BookingService {
      * fires; caller (BookingController.request) translates that to
      * HTTP 429.
      */
-    async requestSmsVerification(phone: string, botCuid: string, chatId?: string) {
+    async requestSmsVerification(phone: string, botCuid: string, chatId?: string, lang?: string) {
         // Cross-flow SMS dedup: this phone may already have been
         // SMS-verified earlier in this same conversation, via booking OR
         // the generic lead-capture flow (PerChatFlowState.verifiedPhone,
@@ -237,15 +237,15 @@ export class BookingService {
             this.logger.warn(`Could not look up bot name for ${botCuid}: ${e}`);
         }
 
-        // OTP language derives from the phone's country (same rule as the
-        // lead flow, lead.service.ts): TR numbers get Turkish, everything
-        // else English. Deterministic — no content/language detection.
-        // Slice 5 (2026-09-06): with international booking numbers live,
-        // the previous hardcoded 'tr' would have texted a +31 visitor a
-        // Turkish OTP. Fail-open on SMS transport error: caller treats
-        // any throw as a 500 to the MCP, surfacing the usual sentinels.
+        // OTP language: conversation-language hint from the agent wins
+        // (a +49 diaspora visitor chatting in Turkish gets a Turkish
+        // SMS); phone-country fallback otherwise — same resolveOtpLang
+        // rule as the lead flow. Slice 5 (2026-09-06): the previous
+        // hardcoded 'tr' would have texted a +31 visitor a Turkish OTP.
+        // Fail-open on SMS transport error: caller treats any throw as a
+        // 500 to the MCP, surfacing the usual sentinels.
         const country = parsePhoneToE164(phone)?.country;
-        const smsLang: 'tr' | 'en' = country === 'TR' ? 'tr' : 'en';
+        const smsLang: 'tr' | 'en' = resolveOtpLang(lang, country);
         await this.sms.sendOtpSms(phone, code, botName, smsLang);
 
         // Enter BOOKING flow at OTP_SENT via SMS channel. `from: null` so
