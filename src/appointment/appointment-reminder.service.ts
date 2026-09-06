@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { SmsService } from 'src/sms/sms.service';
+import { SmsService, parsePhoneToE164 } from 'src/sms/sms.service';
 
 // Per-minute cron granularity. An offset target is treated as "due" if
 // the calculated target time is within ±30 seconds of `now`. Because the
@@ -128,11 +128,11 @@ export class AppointmentReminderService {
         offsetMinutes: number,
     ): Promise<ReminderState> {
         const botName = appt.bot?.botName ?? 'our team';
-        // Language selection here matches AppointmentService.createFromMcp
-        // (Faz D) — Turkish default, matching the vast majority of tenant
-        // traffic. Per-visitor language is not currently persisted on
-        // Appointment; that's a Faz F extension when we add multi-country
-        // support.
+        // Reminder language derives from the stored phone's country
+        // (TR → tr, else en) — same deterministic rule as the OTP and
+        // confirmation paths (Slice 5, international booking numbers).
+        const smsLang: 'tr' | 'en' =
+            parsePhoneToE164(appt.attendeePhone)?.country === 'TR' ? 'tr' : 'en';
         try {
             await this.sms.sendBookingReminderSms(
                 appt.attendeePhone,
@@ -140,7 +140,7 @@ export class AppointmentReminderService {
                 appt.startAt,
                 appt.summary,
                 offsetMinutes,
-                'tr',
+                smsLang,
                 appt.timezone,
             );
             return 'sent';

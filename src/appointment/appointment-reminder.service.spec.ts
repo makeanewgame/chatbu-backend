@@ -69,6 +69,17 @@ describe('AppointmentReminderService.dispatchDueReminders', () => {
     // Due-window arithmetic
     // -------------------------------------------------------------------
 
+    it('texts non-TR numbers in English (Slice 5 — lang by phone country)', async () => {
+        prisma.appointment.findMany.mockResolvedValue([
+            apptStartingIn(60, { attendeePhone: '+31612345678' }),
+        ]);
+
+        await service.dispatchDueReminders();
+
+        // 6th positional arg is `lang`.
+        expect(sms.sendBookingReminderSms.mock.calls[0][5]).toBe('en');
+    });
+
     it('fires the 60-minute reminder when startAt is 60 minutes from now', async () => {
         prisma.appointment.findMany.mockResolvedValue([apptStartingIn(60)]);
 
