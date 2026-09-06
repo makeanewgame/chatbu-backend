@@ -7,6 +7,7 @@ import { MetaChatCursorService } from 'src/meta-chat-cursor/meta-chat-cursor.ser
 import { AudioTranscriptionService } from 'src/audio-transcription/audio-transcription.service';
 import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { MetaLoopGuardService } from 'src/meta-loop-guard/meta-loop-guard.service';
+import { MetaAiDisclosureService } from 'src/meta-ai-disclosure/meta-ai-disclosure.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
@@ -89,6 +90,7 @@ export class MetaWhatsappService {
         private readonly metaAudio: MetaAudioService,
         private readonly loopGuard: MetaLoopGuardService,
         private readonly conversationBroadcast: ConversationBroadcastService,
+        private readonly aiDisclosure: MetaAiDisclosureService,
     ) { }
 
     /**
@@ -321,7 +323,14 @@ export class MetaWhatsappService {
                                 // Loop guard, layer 2: byte-identical to a
                                 // recent reply → suppress the send.
                                 if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'whatsapp')) continue;
-                                await this.sendWhatsAppMessage(senderId, replyText, phoneNumberId, accessToken);
+                                // AI disclosure (Legal Slice 4): first reply
+                                // of the session only; guard record stays raw.
+                                await this.sendWhatsAppMessage(
+                                    senderId,
+                                    await this.aiDisclosure.withDisclosure(botId, chatId, replyText),
+                                    phoneNumberId,
+                                    accessToken,
+                                );
                                 await this.loopGuard.recordReply(botId, senderId, replyText);
                             } else {
                                 this.logger.warn(

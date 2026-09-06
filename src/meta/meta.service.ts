@@ -9,6 +9,7 @@ import { AudioTranscriptionService, VoiceChannel } from 'src/audio-transcription
 import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { MetaSentRegistryService } from 'src/meta-sent-registry/meta-sent-registry.service';
 import { MetaLoopGuardService } from 'src/meta-loop-guard/meta-loop-guard.service';
+import { MetaAiDisclosureService } from 'src/meta-ai-disclosure/meta-ai-disclosure.service';
 import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
 import { resolveMetaReplyText } from './meta-reply.util';
 
@@ -27,6 +28,7 @@ export class MetaService {
         private sentRegistry: MetaSentRegistryService,
         private loopGuard: MetaLoopGuardService,
         private conversationBroadcast: ConversationBroadcastService,
+        private aiDisclosure: MetaAiDisclosureService,
     ) { }
 
     private echoTakeoverEnabled(): boolean {
@@ -278,7 +280,14 @@ export class MetaService {
                         // reply → suppress the send (kills bot-to-bot
                         // ping-pong by its ~3rd repetition).
                         if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'messenger')) continue;
-                        await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                        // AI disclosure (Legal Slice 4): prepended only on
+                        // the session's first reply; the loop-guard record
+                        // stays on the raw model output.
+                        await this.sendMetaMessage(
+                            senderId,
+                            await this.aiDisclosure.withDisclosure(botId, chatId, replyText),
+                            pageAccessToken,
+                        );
                         await this.loopGuard.recordReply(botId, senderId, replyText);
                     } else if ((response as any)?.agent_active) {
                         // A human owns this conversation — full bot silence,
@@ -365,7 +374,12 @@ export class MetaService {
                     if (replyText) {
                         // Loop guard, layer 2 — see the Messenger loop above.
                         if (await this.loopGuard.isDuplicateReply(botId, senderId, replyText, 'instagram')) continue;
-                        await this.sendMetaMessage(senderId, replyText, pageAccessToken);
+                        // AI disclosure (Legal Slice 4) — see the Messenger loop.
+                        await this.sendMetaMessage(
+                            senderId,
+                            await this.aiDisclosure.withDisclosure(botId, chatId, replyText),
+                            pageAccessToken,
+                        );
                         await this.loopGuard.recordReply(botId, senderId, replyText);
                     } else if ((response as any)?.agent_active) {
                         // A human owns this conversation — full bot silence.
@@ -500,8 +514,14 @@ export class MetaService {
         const replyText =
             resolveMetaReplyText(chatResponse) ?? 'Üzgünüm, şu an yanıt veremiyorum.';
 
-        // 3. Send bot reply via WhatsApp
-        const data = await this.sendWhatsAppMessage(to, replyText, phoneNumberId, accessToken);
+        // 3. Send bot reply via WhatsApp (AI disclosure on the session's
+        // first reply — Legal Slice 4, same as the real channel loops)
+        const data = await this.sendWhatsAppMessage(
+            to,
+            await this.aiDisclosure.withDisclosure(botId, chatId, replyText),
+            phoneNumberId,
+            accessToken,
+        );
 
         return {
             success: true,
