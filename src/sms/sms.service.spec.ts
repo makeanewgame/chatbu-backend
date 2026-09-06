@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { BadRequestException } from '@nestjs/common';
 
-import { SmsService, parsePhoneToE164 } from './sms.service';
+import { SmsService, parsePhoneToE164, resolveOtpLang } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
 
@@ -371,5 +371,34 @@ describe('SmsService (router)', () => {
         }),
       );
     });
+  });
+});
+
+describe('resolveOtpLang — SMS template language', () => {
+  it('conversation-language hint wins over phone country (diaspora case)', () => {
+    // +49/+31 visitor chatting in Turkish must get a Turkish SMS.
+    expect(resolveOtpLang('tr', 'DE')).toBe('tr');
+    expect(resolveOtpLang('tr', 'NL')).toBe('tr');
+  });
+
+  it('non-tr hints fall to English until more templates ship (backlog)', () => {
+    expect(resolveOtpLang('de', 'TR')).toBe('en');
+    expect(resolveOtpLang('fr', 'FR')).toBe('en');
+  });
+
+  it('falls back to phone country without a hint', () => {
+    expect(resolveOtpLang(undefined, 'TR')).toBe('tr');
+    expect(resolveOtpLang('', 'TR')).toBe('tr');
+    expect(resolveOtpLang(null, 'NL')).toBe('en');
+  });
+
+  it('defaults to English when neither signal exists', () => {
+    expect(resolveOtpLang(undefined, null)).toBe('en');
+  });
+
+  it('sanitizes sloppy hints (case, locale suffix, whitespace)', () => {
+    expect(resolveOtpLang(' TR ', 'DE')).toBe('tr');
+    expect(resolveOtpLang('tr-TR', 'DE')).toBe('tr');
+    expect(resolveOtpLang('TR-tr', 'DE')).toBe('tr');
   });
 });
