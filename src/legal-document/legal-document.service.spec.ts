@@ -22,7 +22,7 @@ describe('LegalDocumentService', () => {
   };
 
   const documentId = 'doc-1';
-  const document = { id: documentId, slug: 'kvkk', name: 'KVKK Aydınlatma Metni' };
+  const document = { id: documentId, slug: 'kvkk', name: 'KVKK Aydınlatma Metni', sourceLocale: 'tr' };
 
   beforeEach(async () => {
     prisma = {
@@ -146,8 +146,11 @@ describe('LegalDocumentService', () => {
   });
 
   describe('approveTranslation', () => {
-    it('refuses to approve the Turkish source locale', async () => {
+    it("refuses to approve the document's source locale", async () => {
+      // Source-locale check compares against the DOCUMENT's own
+      // sourceLocale since Slice 6, so the version lookup now precedes it.
       prisma.legalDocument.findUnique.mockResolvedValue(document);
+      prisma.legalDocumentVersion.findUnique.mockResolvedValue({ id: 'v1', documentId, status: 'DRAFT' });
 
       await expect(service.approveTranslation('kvkk', 'v1', 'tr', 'admin-1')).rejects.toThrow(
         BadRequestException,
@@ -318,6 +321,51 @@ describe('LegalDocumentService', () => {
       prisma.legalDocument.findUnique.mockResolvedValue(null);
 
       await expect(service.deleteDocument('unknown')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('per-slug source locale (Slice 6)', () => {
+    const enSourceDoc = { id: 'doc-en', slug: 'privacy-gdpr', name: 'GDPR Privacy', sourceLocale: 'en' };
+
+    it('creates the draft source content in the document sourceLocale, not Turkish', async () => {
+      prisma.legalDocument.findUnique.mockResolvedValue(enSourceDoc);
+      prisma.legalDocumentVersion.findFirst.mockResolvedValue(null);
+      prisma.legalDocumentVersion.create.mockResolvedValue({ id: 'v1', versionNumber: 1 });
+
+      await service.createDraftVersion('privacy-gdpr', { title: 'Privacy', bodyMarkdown: '# text' }, 'admin-1');
+
+      expect(prisma.legalDocumentVersion.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contents: {
+              create: expect.objectContaining({ locale: 'en', translationStatus: 'SOURCE' }),
+            },
+          }),
+        }),
+      );
+    });
+
+    it('getPublished falls back to the en source (and refuses to approve it as a translation)', async () => {
+      prisma.legalDocument.findUnique.mockResolvedValue(enSourceDoc);
+      prisma.legalDocumentVersion.findFirst.mockResolvedValue({
+        id: 'v1',
+        versionNumber: 1,
+        publishedAt: new Date(),
+        contents: [
+          { locale: 'en', title: 'Privacy', bodyMarkdown: '# en', translationStatus: 'SOURCE' },
+          { locale: 'de', title: 'Datenschutz', bodyMarkdown: '# de', translationStatus: 'TRANSLATED' },
+        ],
+      });
+
+      // de exists but is not APPROVED → falls back to the en SOURCE.
+      const result = await service.getPublished('privacy-gdpr', 'de');
+      expect(result.locale).toBe('en');
+      expect(result.sourceLocale).toBe('en');
+
+      prisma.legalDocumentVersion.findUnique.mockResolvedValue({ id: 'v1', documentId: 'doc-en', status: 'DRAFT' });
+      await expect(service.approveTranslation('privacy-gdpr', 'v1', 'en', 'admin-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

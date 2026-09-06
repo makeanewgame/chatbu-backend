@@ -780,6 +780,12 @@ model LegalDocument {
   id        String   @id @default(cuid())
   slug      String   @unique
   name      String
+  // Slice 6 (2026-09-06): authoring locale of this document's source
+  // content. Pre-Slice-6 the whole CMS was Turkish-source-locked; now
+  // each slug declares its own source (e.g. an English-first GDPR pack)
+  // and every other locale is a translation of THAT locale. Existing
+  // rows default to 'tr' — exactly the behaviour they had.
+  sourceLocale String @default("tr")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

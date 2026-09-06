@@ -3,7 +3,10 @@ import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export const SUPPORTED_LOCALES = ['tr', 'en', 'de', 'fr', 'it', 'ru', 'ar', 'es'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
-// Turkish is always authored first; every other locale is a translation of it.
+// Default source locale for documents that don't declare one — kept 'tr'
+// because every document created before Slice 6 (2026-09-06) was authored
+// Turkish-first. New documents can pick any supported locale as source
+// via CreateLegalDocumentDto.sourceLocale.
 export const SOURCE_LOCALE: SupportedLocale = 'tr';
 
 export const ACCEPTANCE_CONTEXTS = ['PURCHASE', 'SIGNUP', 'OTHER'] as const;
@@ -17,6 +20,12 @@ export class CreateLegalDocumentDto {
   @IsString()
   @IsNotEmpty()
   name: string;
+
+  // Slice 6: authoring locale of this document's source content.
+  // Omitted → 'tr' (the pre-Slice-6 behaviour for every existing row).
+  @IsOptional()
+  @IsIn(SUPPORTED_LOCALES)
+  sourceLocale?: SupportedLocale;
 }
 
 export class CreateLegalDocumentVersionDto {
