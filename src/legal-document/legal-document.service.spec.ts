@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { LegalDocumentService } from './legal-document.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -441,6 +441,105 @@ describe('LegalDocumentService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('DPA (Slice 7)', () => {
+    beforeEach(() => {
+      (prisma as any).teamMember = { findFirst: jest.fn() };
+    });
+
+    it('records a DPA acceptance when the acting user is an active TEAM_OWNER', async () => {
+      prisma.legalDocument.findUnique.mockResolvedValue(document);
+      prisma.legalDocumentVersion.findUnique.mockResolvedValue({ id: 'v2', documentId, status: 'PUBLISHED' });
+      (prisma as any).teamMember.findFirst.mockResolvedValue({ id: 'tm-1', role: 'TEAM_OWNER' });
+      prisma.legalDocumentAcceptance.create.mockResolvedValue({ id: 'acc-dpa' });
+
+      await service.recordAcceptance(
+        'kvkk',
+        { versionId: 'v2', locale: 'en', context: 'DPA' },
+        { subjectType: 'user', subjectId: 'user-1', teamId: 'team-1' },
+        '1.1.1.1',
+        'jest',
+      );
+
+      expect((prisma as any).teamMember.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { teamId: 'team-1', userId: 'user-1', role: 'TEAM_OWNER', status: 'active' },
+        }),
+      );
+      expect(prisma.legalDocumentAcceptance.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ context: 'DPA', teamId: 'team-1', subjectId: 'user-1' }),
+        }),
+      );
+    });
+
+    it('refuses DPA acceptance from a non-owner member', async () => {
+      prisma.legalDocument.findUnique.mockResolvedValue(document);
+      prisma.legalDocumentVersion.findUnique.mockResolvedValue({ id: 'v2', documentId, status: 'PUBLISHED' });
+      (prisma as any).teamMember.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.recordAcceptance(
+          'kvkk',
+          { versionId: 'v2', locale: 'en', context: 'DPA' },
+          { subjectType: 'user', subjectId: 'user-2', teamId: 'team-1' },
+          '1.1.1.1',
+          'jest',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.legalDocumentAcceptance.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses DPA acceptance without team context (visitor shape)', async () => {
+      prisma.legalDocument.findUnique.mockResolvedValue(document);
+      prisma.legalDocumentVersion.findUnique.mockResolvedValue({ id: 'v2', documentId, status: 'PUBLISHED' });
+
+      await expect(
+        service.recordAcceptance(
+          'kvkk',
+          { versionId: 'v2', locale: 'en', context: 'DPA' },
+          { subjectType: 'visitor', subjectId: null, teamId: null },
+          '1.1.1.1',
+          'jest',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    describe('getTeamAcceptanceStatus', () => {
+      it('reports published=false when the document or a published version is missing (inert surface)', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(null);
+        expect(await service.getTeamAcceptanceStatus('dpa', 'team-1')).toEqual({
+          slug: 'dpa',
+          published: false,
+          accepted: false,
+        });
+
+        prisma.legalDocument.findUnique.mockResolvedValue(document);
+        prisma.legalDocumentVersion.findFirst.mockResolvedValue(null);
+        expect((await service.getTeamAcceptanceStatus('dpa', 'team-1')).published).toBe(false);
+      });
+
+      it('reports accepted=true only when the team accepted the CURRENT published version', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(document);
+        prisma.legalDocumentVersion.findFirst.mockResolvedValue({
+          id: 'v2',
+          versionNumber: 2,
+          publishedAt: new Date(),
+        });
+        prisma.legalDocumentAcceptance.findMany = prisma.legalDocumentAcceptance.findMany ?? jest.fn();
+        (prisma.legalDocumentAcceptance as any).findFirst = jest
+          .fn()
+          .mockResolvedValueOnce({ id: 'acc-1', acceptedAt: new Date() })
+          .mockResolvedValueOnce(null);
+
+        const yes = await service.getTeamAcceptanceStatus('dpa', 'team-1');
+        expect(yes).toMatchObject({ published: true, versionId: 'v2', accepted: true });
+
+        const no = await service.getTeamAcceptanceStatus('dpa', 'team-1');
+        expect(no).toMatchObject({ published: true, accepted: false });
+      });
     });
   });
 

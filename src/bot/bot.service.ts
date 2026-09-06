@@ -35,6 +35,7 @@ import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { FlowKind } from '../../generated/prisma/client';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
 import { HandoffNotificationService } from 'src/handoff/handoff-notification.service';
+import { LegalDocumentService } from 'src/legal-document/legal-document.service';
 
 @Injectable()
 export class BotService {
@@ -53,6 +54,7 @@ export class BotService {
     private pushNotificationService: PushNotificationService,
     private handoffNotificationService: HandoffNotificationService,
     private conversationBroadcast: ConversationBroadcastService,
+    private legalDocumentService: LegalDocumentService,
   ) { }
 
   async createBot(body: CreateBotRequest, userId?: string, userEmail?: string) {
@@ -64,6 +66,23 @@ export class BotService {
 
     if (!user) {
       throw new Error('Error acuring user');
+    }
+
+    // New-bot DPA gate (legal Slice 7): once a Data Processing Agreement is
+    // PUBLISHED in the legal CMS, a team must have accepted its current
+    // version before creating NEW bots. Deliberately NOT retroactive —
+    // existing bots and their status toggles are untouched. Inert today:
+    // the `dpa` document ships as an empty slot until counsel-approved
+    // text is published. Fail-open on lookup errors (a legal-CMS hiccup
+    // must not take down bot creation) with a warn log.
+    try {
+      const dpaStatus = await this.legalDocumentService.getTeamAcceptanceStatus('dpa', body.user);
+      if (dpaStatus.published && !dpaStatus.accepted) {
+        throw new ForbiddenException({ code: 'DPA_ACCEPTANCE_REQUIRED' });
+      }
+    } catch (err) {
+      if (err instanceof ForbiddenException) throw err;
+      console.warn('[bot-service] DPA gate lookup failed — allowing bot creation:', err);
     }
 
     //bot quota for user
