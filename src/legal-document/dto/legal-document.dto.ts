@@ -39,6 +39,11 @@ export class UpdateLegalDocumentContentDto {
   bodyMarkdown: string;
 }
 
+// Slice 5 (2026-09-06): subjectType/subjectId/teamId removed from the
+// client payload — the authenticated accept route derives all three from
+// the verified JWT and the public route pins them to the visitor shape,
+// so a forged body can no longer attribute an acceptance to an arbitrary
+// user or team.
 export class RecordLegalAcceptanceDto {
   @IsString()
   @IsNotEmpty()
@@ -49,10 +54,28 @@ export class RecordLegalAcceptanceDto {
 
   @IsIn(ACCEPTANCE_CONTEXTS)
   context: LegalAcceptanceContext;
+}
 
+// Public (unauthenticated) acceptance: visitor context only. No context
+// choice either — everything a visitor can accept is logged as OTHER;
+// SIGNUP/PURCHASE are reserved for the authenticated route.
+export class RecordPublicLegalAcceptanceDto {
   @IsString()
   @IsNotEmpty()
-  subjectType: string;
+  versionId: string;
+
+  @IsIn(SUPPORTED_LOCALES)
+  locale: SupportedLocale;
+}
+
+export class ListLegalAcceptancesQueryDto {
+  @IsOptional()
+  @IsString()
+  slug?: string;
+
+  @IsOptional()
+  @IsIn(ACCEPTANCE_CONTEXTS)
+  context?: LegalAcceptanceContext;
 
   @IsOptional()
   @IsString()
@@ -61,4 +84,12 @@ export class RecordLegalAcceptanceDto {
   @IsOptional()
   @IsString()
   teamId?: string;
+
+  @IsOptional()
+  @IsString()
+  take?: string;
+
+  @IsOptional()
+  @IsString()
+  skip?: string;
 }

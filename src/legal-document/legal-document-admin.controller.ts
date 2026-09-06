@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Post, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { AdminGuard } from 'src/admin/guards/admin.guard';
 import { LegalDocumentService } from './legal-document.service';
 import {
   CreateLegalDocumentDto,
   CreateLegalDocumentVersionDto,
+  ListLegalAcceptancesQueryDto,
   UpdateLegalDocumentContentDto,
 } from './dto/legal-document.dto';
 
@@ -16,6 +17,13 @@ export class LegalDocumentAdminController {
   @Get()
   listDocuments() {
     return this.legalDocumentService.listDocuments();
+  }
+
+  // Acceptance audit read (Slice 5). Filterable by slug / context /
+  // subjectId / teamId, newest first, paged via take (max 200) + skip.
+  @Get('acceptances')
+  listAcceptances(@Query() query: ListLegalAcceptancesQueryDto) {
+    return this.legalDocumentService.listAcceptances(query);
   }
 
   @Post()
