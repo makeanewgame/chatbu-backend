@@ -137,6 +137,22 @@ describe('BookingService — SMS flow', () => {
     expect(createArgs.data.expiresAt).toBeInstanceOf(Date);
   });
 
+  it('requestSmsVerification honors the conversation-language hint over phone country (diaspora case)', async () => {
+    prisma.bookingSmsVerification.count.mockResolvedValue(0);
+    prisma.bookingSmsVerification.create.mockResolvedValue({ id: 'rec-1' });
+    prisma.customerBots.findUnique.mockResolvedValue({ botName: 'TestBot' });
+
+    // +31 phone but the visitor is chatting in Turkish — SMS must be Turkish.
+    await service.requestSmsVerification('+31612345678', 'bot-1', undefined, 'tr');
+
+    expect(sms.sendOtpSms).toHaveBeenCalledWith(
+      '+31612345678',
+      expect.stringMatching(/^\d{6}$/),
+      'TestBot',
+      'tr',
+    );
+  });
+
   it('requestSmsVerification texts non-TR numbers in English (Slice 5 — lang by phone country)', async () => {
     prisma.bookingSmsVerification.count.mockResolvedValue(0);
     prisma.bookingSmsVerification.create.mockResolvedValue({ id: 'rec-1' });

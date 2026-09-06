@@ -47,6 +47,25 @@ export function parsePhoneToE164(
   return { e164: parsed.number, country: parsed.country };
 }
 
+/**
+ * OTP/booking SMS template language. Priority:
+ *   1. Conversation-language hint from the agent (the visitor's actual
+ *      chat language — a +49 diaspora visitor chatting in Turkish gets
+ *      a Turkish SMS, which the phone country alone would get wrong).
+ *   2. Phone-country fallback: TR → Turkish, else English.
+ * Templates exist only in tr/en today — a non-tr hint (de/fr/…) lands
+ * on English until more locales ship (backlog: SMS template languages).
+ */
+export function resolveOtpLang(
+  langHint: string | null | undefined,
+  country: string | null | undefined,
+): 'tr' | 'en' {
+  const hint = (langHint ?? '').trim().toLowerCase().slice(0, 2);
+  if (hint === 'tr') return 'tr';
+  if (hint) return 'en';
+  return country === 'TR' ? 'tr' : 'en';
+}
+
 @Injectable()
 export class SmsService {
   private readonly strategy: SmsProviderStrategy;

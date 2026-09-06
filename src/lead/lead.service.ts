@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
-import { SmsService, parsePhoneToE164 } from 'src/sms/sms.service';
+import { SmsService, parsePhoneToE164, resolveOtpLang } from 'src/sms/sms.service';
 import { SubmitLeadDto } from './dto/submit-lead.dto';
 import { ListLeadsDto } from './dto/list-leads.dto';
 import { MarkLeadStatusDto } from './dto/mark-lead-status.dto';
@@ -1019,15 +1019,11 @@ export class LeadService {
       data: { botId: dto.botId, phone: dto.phone, codeHash, expiresAt, country },
     });
 
-    // Country → OTP body language. TR bots get the Turkish body; every
-    // other country gets the English fallback. This is the minimal
-    // Slice 2 shape — full i18n (per-visitor language, more locales)
-    // ships in Slice 3 alongside the KVKK card i18n. Deliberately no
-    // per-bot language override yet: bot owners today can't set a
-    // "preferred SMS language" and every existing TR bot with an
-    // international visitor is better served by an English body than
-    // by Turkish they can't read.
-    const smsLang: 'tr' | 'en' = country === 'TR' ? 'tr' : 'en';
+    // OTP body language: conversation-language hint from the agent wins
+    // (a +49 diaspora visitor chatting in Turkish gets a Turkish SMS);
+    // phone-country fallback otherwise. See resolveOtpLang. More locales
+    // than tr/en are backlog (SMS template languages).
+    const smsLang: 'tr' | 'en' = resolveOtpLang(dto.lang, country);
     await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang);
 
     // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK
