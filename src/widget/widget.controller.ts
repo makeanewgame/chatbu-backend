@@ -144,10 +144,10 @@ export class WidgetController {
      *
      * Slice 3 (2026-08-20): canonical route is `/lead/privacy-consent`,
      * and the widget sends jurisdiction + locale in the body so the
-     * persisted row reflects exactly what was shown. The legacy
-     * `/lead/kvkk-consent` route below is a 30-day back-compat wrapper
-     * that resolves jurisdiction server-side from Accept-Language + bot
-     * default.
+     * persisted row reflects exactly what was shown. Slice 5
+     * (2026-09-06): the legacy `/lead/kvkk-consent` wrapper was removed
+     * after the widget bundle switched to the canonical URL (bundle
+     * cache is 5 min — see the frontend Dockerfile nginx config).
      */
     /**
      * Serve the consent-card text pack (title, intro, controller notice,
@@ -185,34 +185,6 @@ export class WidgetController {
     @Post('lead/privacy-consent')
     @Throttle({ default: { ttl: 60000, limit: 10 } })
     async recordPrivacyConsent(@Body() body: any, @Req() req: Request) {
-        const ip =
-            ((req.headers['x-forwarded-for'] as string) ?? '')
-                .split(',')[0]
-                .trim() || req.socket?.remoteAddress || '127.0.0.1';
-
-        return this.widgetService.recordKvkkConsent(
-            body.botId,
-            body.chatId,
-            ip,
-            (req.headers['user-agent'] as string) ?? '',
-            body.locale,
-            body.jurisdiction,
-            (req.headers['accept-language'] as string) ?? undefined,
-        );
-    }
-
-    /**
-     * Deprecated 2026-08-20 (Slice 3) — kept for widget bundles shipped
-     * before the rename. Delete after all live widgets have picked up
-     * the `/lead/privacy-consent` canonical URL (~30 days). Same
-     * behaviour as the canonical route; server-side jurisdiction
-     * resolution kicks in because the legacy widget does not send
-     * `locale` / `jurisdiction`.
-     */
-    @ApiOperation({ summary: '[DEPRECATED] Legacy KVKK consent route — use /lead/privacy-consent' })
-    @Post('lead/kvkk-consent')
-    @Throttle({ default: { ttl: 60000, limit: 10 } })
-    async recordKvkkConsent(@Body() body: any, @Req() req: Request) {
         const ip =
             ((req.headers['x-forwarded-for'] as string) ?? '')
                 .split(',')[0]

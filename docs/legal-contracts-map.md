@@ -157,11 +157,24 @@ rewrite) are counsel-blocked — the product ships slots and plumbing now.
 
 | Slice | Scope | Status |
 |-------|-------|--------|
-| 1 | Entity identity single-source (configmap + consent packs + ToS interim governing-law/contact fix) | **In progress 2026-09-05** |
-| 2 | Lead-capture consent gate decoupled from `smsVerificationRequired` | Pending |
-| 3 | Cookie consent banner + gated trackers | Pending |
-| 4 | AI disclosure (widget + off-platform channels) | Pending |
-| 5 | Acceptance auditability (SIGNUP context) + endpoint hardening | Pending |
+| 1 | Entity identity single-source (configmap + consent packs + ToS interim governing-law/contact fix) | **Prod live 2026-09-05** |
+| 2 | Lead-capture consent gate decoupled from `smsVerificationRequired` | **Prod live 2026-09-06** |
+| 3 | Cookie consent banner + gated trackers | **Prod live 2026-09-06** |
+| 4 | AI disclosure (widget + off-platform channels) | **Prod live 2026-09-06** |
+| 5 | Acceptance auditability (SIGNUP context) + endpoint hardening | **In progress 2026-09-06** |
+
+### Slice 5 cutover note (2026-09-06)
+
+Accounts registered on or after 2026-09-06 get versioned
+`LegalDocumentAcceptance` rows (context=SIGNUP, one per
+`SIGNUP_ACCEPTANCE_SLUGS` entry — `terms-of-service`, `privacy-policy` —
+that has a PUBLISHED CMS version; unseeded slugs are skipped, never block
+signup). Accounts created before that date carry only the
+`User.termsAccepted` boolean; there is deliberately **no backfill** — a
+synthesized acceptance row without a real shown-text version would be
+worthless as evidence. The boolean remains load-bearing for both cohorts.
+The audit trail becomes complete once Slice 6 seeds the two slugs from the
+current hardcoded page texts.
 | 6 | Content consolidation into CMS | Next wave |
 | 7 | DPA surface (slug + team-level acceptance + sub-processor page) | Next wave |
 | 8 | Versioning / re-acceptance mechanics | Next wave |

@@ -1,8 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
+import { AccessTokenGuard } from 'src/authentication/utils/accesstoken.guard';
 import { LegalDocumentService } from './legal-document.service';
-import { RecordLegalAcceptanceDto } from './dto/legal-document.dto';
+import {
+  RecordLegalAcceptanceDto,
+  RecordPublicLegalAcceptanceDto,
+} from './dto/legal-document.dto';
 
 function extractClientInfo(req: Request) {
   const ip =
@@ -14,8 +18,17 @@ function extractClientInfo(req: Request) {
 }
 
 // Public: legal document text is meant to be publicly readable (same as any
-// hosted privacy policy page), so these routes carry no auth guard. Only
-// admin mutation routes (legal-document-admin.controller.ts) are protected.
+// hosted privacy policy page), so the read routes carry no auth guard.
+//
+// The accept surface is split (Slice 5, 2026-09-06):
+//   POST :slug/accept        — authenticated; subject identity comes from
+//                              the verified JWT, never the body, so an
+//                              acceptance can't be forged onto another
+//                              user or team.
+//   POST :slug/accept-public — unauthenticated visitor surface; the row is
+//                              pinned to subjectType='visitor' with no
+//                              subjectId/teamId, context OTHER.
+// Admin mutation + audit-read routes live in legal-document-admin.controller.ts.
 @Controller('legal-documents')
 export class LegalDocumentPublicController {
   constructor(private legalDocumentService: LegalDocumentService) {}
@@ -35,6 +48,7 @@ export class LegalDocumentPublicController {
   }
 
   @Post(':slug/accept')
+  @UseGuards(AccessTokenGuard)
   @Throttle({ default: { ttl: 60000, limit: 20 } })
   recordAcceptance(
     @Param('slug') slug: string,
@@ -42,6 +56,34 @@ export class LegalDocumentPublicController {
     @Req() req: Request,
   ) {
     const { ip, userAgent } = extractClientInfo(req);
-    return this.legalDocumentService.recordAcceptance(slug, dto, ip, userAgent);
+    const user = (req as any).user ?? {};
+    return this.legalDocumentService.recordAcceptance(
+      slug,
+      dto,
+      {
+        subjectType: 'user',
+        subjectId: user.sub ?? user.id ?? null,
+        teamId: user.teamId ?? null,
+      },
+      ip,
+      userAgent,
+    );
+  }
+
+  @Post(':slug/accept-public')
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  recordPublicAcceptance(
+    @Param('slug') slug: string,
+    @Body() dto: RecordPublicLegalAcceptanceDto,
+    @Req() req: Request,
+  ) {
+    const { ip, userAgent } = extractClientInfo(req);
+    return this.legalDocumentService.recordAcceptance(
+      slug,
+      { ...dto, context: 'OTHER' },
+      { subjectType: 'visitor', subjectId: null, teamId: null },
+      ip,
+      userAgent,
+    );
   }
 }

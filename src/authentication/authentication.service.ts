@@ -14,6 +14,15 @@ import { OAuth2Client, TokenPayload } from 'google-auth-library';
 import appleSigninAuth from 'apple-signin-auth';
 import { SystemLogService } from 'src/system-log/system-log.service';
 import { MixpanelService } from 'src/analytics/mixpanel.service';
+import { LegalDocumentService } from 'src/legal-document/legal-document.service';
+
+// IP / user agent / Accept-Language captured at the HTTP edge, threaded
+// into signup-acceptance audit rows (legal Slice 5, 2026-09-06).
+export interface SignupClientInfo {
+  ip?: string | null;
+  userAgent?: string | null;
+  acceptLanguage?: string | null;
+}
 
 @Injectable()
 export class AuthenticationService {
@@ -27,7 +36,41 @@ export class AuthenticationService {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     private systemLogService: SystemLogService,
     private mixpanel: MixpanelService,
+    private legalDocumentService: LegalDocumentService,
   ) { }
+
+  /**
+   * Best-effort SIGNUP acceptance audit rows (legal Slice 5, cutover
+   * 2026-09-06). The User.termsAccepted boolean stays the load-bearing
+   * gate; this adds the versioned audit trail on top and must never fail
+   * the signup path, so every error is swallowed with a warn log. Slugs
+   * without a published CMS version are silently skipped inside
+   * recordSignupAcceptances (unseeded environments).
+   */
+  private async writeSignupAcceptances(
+    userId: string,
+    teamId: string | null,
+    clientInfo?: SignupClientInfo,
+  ): Promise<void> {
+    try {
+      const { recordedSlugs } = await this.legalDocumentService.recordSignupAcceptances(
+        userId,
+        teamId,
+        {
+          locale: clientInfo?.acceptLanguage,
+          ipAddress: clientInfo?.ip,
+          userAgent: clientInfo?.userAgent,
+        },
+      );
+      if (recordedSlugs.length > 0) {
+        this.logger.info(
+          `Signup acceptance rows recorded for user ${userId}: ${recordedSlugs.join(', ')}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(`Signup acceptance logging failed for user ${userId}`, error);
+    }
+  }
 
   /** FREE plan's lifetime token grant — the Chatbu "trial" allowance. */
   private get freeTokenAllowance(): number {
@@ -173,7 +216,7 @@ export class AuthenticationService {
     }
   }
 
-  async register(user: any, lang: string) {
+  async register(user: any, lang: string, clientInfo?: SignupClientInfo) {
     user.refreshToken = '';
     user.updatedAt = new Date().toISOString();
 
@@ -342,6 +385,8 @@ export class AuthenticationService {
         isNewTeam: analyticsIsNewTeam,
         createdAt: createdUser.createdAt,
       });
+
+      await this.writeSignupAcceptances(createdUser.id, analyticsTeamId, clientInfo);
 
       const activationUrl =
         process.env.FRONTEND_URL + '/activate-registration?email=' + user.email;
@@ -1066,7 +1111,12 @@ export class AuthenticationService {
     return this.googleLogin(email, { displayName: fullName }, 'apple', payload.sub);
   }
 
-  async acceptTerms(userId: string, phoneNumber?: string): Promise<void> {
+  async acceptTerms(
+    userId: string,
+    phoneNumber?: string,
+    teamId?: string | null,
+    clientInfo?: SignupClientInfo,
+  ): Promise<void> {
     const sanitizedPhoneNumber = phoneNumber?.trim();
 
     const updateData: { termsAccepted: boolean; termsAcceptedAt: Date; phoneNumber?: string } = {
@@ -1108,11 +1158,16 @@ export class AuthenticationService {
             termsAcceptedAt: new Date(),
           },
         });
+        await this.writeSignupAcceptances(userId, teamId ?? null, clientInfo);
         return;
       }
 
       throw error;
     }
+
+    // OAuth signups reach terms acceptance here (register() never runs
+    // for them), so this is their SIGNUP audit write.
+    await this.writeSignupAcceptances(userId, teamId ?? null, clientInfo);
   }
 
   async logout(email: string) {
