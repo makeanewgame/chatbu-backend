@@ -47,6 +47,19 @@ export class LegalDocumentPublicController {
     return this.legalDocumentService.getVersionByNumber(slug, Number(versionNumber), locale);
   }
 
+  // "Has MY team accepted the current published version?" — drives the
+  // dashboard DPA banner (Slice 7). Authenticated: team comes from the JWT.
+  @Get(':slug/acceptance-status')
+  @UseGuards(AccessTokenGuard)
+  getAcceptanceStatus(@Param('slug') slug: string, @Req() req: Request) {
+    const user = (req as any).user ?? {};
+    return this.legalDocumentService.getTeamAcceptanceStatus(
+      slug,
+      user.teamId ?? null,
+      user.sub ?? user.id ?? null,
+    );
+  }
+
   @Post(':slug/accept')
   @UseGuards(AccessTokenGuard)
   @Throttle({ default: { ttl: 60000, limit: 20 } })

@@ -773,6 +773,10 @@ enum TranslationStatus {
 enum LegalAcceptanceContext {
   PURCHASE
   SIGNUP
+  // Slice 7 (2026-09-06): team-level Data Processing Agreement acceptance.
+  // Row carries BOTH teamId (the accepting team) and subjectId (the acting
+  // team owner); only TEAM_OWNER members may record it.
+  DPA
   OTHER
 }
 

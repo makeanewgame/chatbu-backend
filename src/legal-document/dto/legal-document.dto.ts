@@ -9,7 +9,9 @@ export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 // via CreateLegalDocumentDto.sourceLocale.
 export const SOURCE_LOCALE: SupportedLocale = 'tr';
 
-export const ACCEPTANCE_CONTEXTS = ['PURCHASE', 'SIGNUP', 'OTHER'] as const;
+// DPA (Slice 7): team-level Data Processing Agreement acceptance — only a
+// TEAM_OWNER may record it, enforced in LegalDocumentService.recordAcceptance.
+export const ACCEPTANCE_CONTEXTS = ['PURCHASE', 'SIGNUP', 'DPA', 'OTHER'] as const;
 export type LegalAcceptanceContext = (typeof ACCEPTANCE_CONTEXTS)[number];
 
 export class CreateLegalDocumentDto {

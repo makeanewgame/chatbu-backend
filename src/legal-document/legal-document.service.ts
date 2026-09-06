@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   CreateLegalDocumentDto,
@@ -347,6 +347,26 @@ export class LegalDocumentService {
       throw new BadRequestException({ code: 'INVALID_VERSION_FOR_ACCEPTANCE' });
     }
 
+    // DPA acceptance binds the whole TEAM, so it takes more than being
+    // logged in: the acting user must be an active TEAM_OWNER of the
+    // JWT's team (Slice 7).
+    if (dto.context === 'DPA') {
+      if (!actor.teamId || !actor.subjectId) {
+        throw new ForbiddenException({ code: 'DPA_TEAM_CONTEXT_REQUIRED' });
+      }
+      const owner = await this.prisma.teamMember.findFirst({
+        where: {
+          teamId: actor.teamId,
+          userId: actor.subjectId,
+          role: 'TEAM_OWNER',
+          status: 'active',
+        },
+      });
+      if (!owner) {
+        throw new ForbiddenException({ code: 'DPA_OWNER_REQUIRED' });
+      }
+    }
+
     return this.prisma.legalDocumentAcceptance.create({
       data: {
         documentId: document.id,
@@ -360,6 +380,54 @@ export class LegalDocumentService {
         userAgent: userAgent ?? null,
       },
     });
+  }
+
+  // ─── Team acceptance status (Slice 7) ──────────────────────────────────
+  // Answers "has this team accepted the CURRENT published version of this
+  // document?". Drives the dashboard DPA banner and the new-bot gate.
+  // A document with no published version (or no document at all) reports
+  // published=false — every consumer treats that as "nothing to accept",
+  // which keeps the whole surface inert until counsel-approved text ships.
+  async getTeamAcceptanceStatus(slug: string, teamId: string | null, userId?: string | null) {
+    const document = await this.prisma.legalDocument.findUnique({ where: { slug } });
+    if (!document) return { slug, published: false as const, accepted: false, canAccept: false };
+
+    const version = await this.prisma.legalDocumentVersion.findFirst({
+      where: { documentId: document.id, status: 'PUBLISHED' },
+    });
+    if (!version) return { slug, published: false as const, accepted: false, canAccept: false };
+
+    const acceptance = teamId
+      ? await this.prisma.legalDocumentAcceptance.findFirst({
+          where: { versionId: version.id, teamId },
+          orderBy: { acceptedAt: 'desc' },
+        })
+      : null;
+
+    // canAccept mirrors the recordAcceptance DPA owner-gate exactly, so
+    // the frontend never has to derive "am I the team owner" from the
+    // auth slice's role field — that field conflates platform role
+    // (ADMIN) with team role and reports the raw User.role on the
+    // email/password login path (found 2026-09-06 during Slice 7 canary).
+    const canAccept =
+      teamId && userId
+        ? Boolean(
+            await this.prisma.teamMember.findFirst({
+              where: { teamId, userId, role: 'TEAM_OWNER', status: 'active' },
+            }),
+          )
+        : false;
+
+    return {
+      slug,
+      published: true as const,
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+      publishedAt: version.publishedAt,
+      accepted: Boolean(acceptance),
+      acceptedAt: acceptance?.acceptedAt ?? null,
+      canAccept,
+    };
   }
 
   // ─── Signup acceptance (called from AuthenticationService) ─────────────
