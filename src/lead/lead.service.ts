@@ -733,8 +733,21 @@ export class LeadService {
       const published = await this.legalDocumentService.getPublished(slug, locale);
       legalDocumentVersionId = published.versionId;
       privacyVersion = `v${published.versionNumber}`;
-    } catch {
-      // No published version yet — hardcoded pack version is authoritative.
+    } catch (err) {
+      // Missing document / no published version is an EXPECTED state (the
+      // per-jurisdiction CMS slugs are seeded incrementally) — the
+      // hardcoded pack version stays authoritative. Anything else (DB
+      // permission, connectivity) must be visible: this exact catch
+      // silently ate a Postgres 42501 for weeks in dev (found 2026-09-06,
+      // legal Slice 5 canary).
+      if (err instanceof NotFoundException) {
+        // expected: fall through to pack version, no log noise
+      } else {
+        console.warn(
+          `[lead-service] legal-doc lookup failed for jurisdiction=${jurisdiction} locale=${locale} — falling back to pack version:`,
+          err,
+        );
+      }
     }
 
     const consent = await this.prisma.leadPrivacyConsent.create({

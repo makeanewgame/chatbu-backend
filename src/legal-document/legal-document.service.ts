@@ -32,12 +32,21 @@ export interface AcceptanceActor {
 export class LegalDocumentService {
   constructor(private prisma: PrismaService) {}
 
-  private normalizeLocale(locale?: string): SupportedLocale {
-    if (!locale) return SOURCE_LOCALE;
+  // Validates an explicit locale string (URL param / query) BEFORE any
+  // DB access — a bad locale is a cheap 400, not a query.
+  private assertSupportedLocale(locale: string): SupportedLocale {
     if (!(SUPPORTED_LOCALES as readonly string[]).includes(locale)) {
       throw new BadRequestException({ code: 'UNSUPPORTED_LOCALE', locale });
     }
     return locale as SupportedLocale;
+  }
+
+  // Slice 6: the "no locale given" fallback is the DOCUMENT's own source
+  // locale (per-slug since 2026-09-06), so the fallback argument is
+  // resolved by the caller after the document row is loaded.
+  private normalizeLocale(locale: string | undefined, fallback: string): SupportedLocale {
+    if (!locale) return fallback as SupportedLocale;
+    return this.assertSupportedLocale(locale);
   }
 
   private async getDocumentOrThrow(slug: string) {
@@ -51,16 +60,28 @@ export class LegalDocumentService {
   // ─── Admin: document types ─────────────────────────────────────────────
 
   async createDocument(dto: CreateLegalDocumentDto) {
-    return this.prisma.legalDocument.create({ data: { slug: dto.slug, name: dto.name } });
+    return this.prisma.legalDocument.create({
+      data: {
+        slug: dto.slug,
+        name: dto.name,
+        // Per-slug source locale (Slice 6). Omitted → Turkish, matching
+        // every document created before the column existed.
+        sourceLocale: dto.sourceLocale ?? SOURCE_LOCALE,
+      },
+    });
   }
 
   async listDocuments() {
+    // Contents can no longer be filtered to the source locale inside the
+    // query (source locale is per-row since Slice 6); return the published
+    // version's contents for all locales — the admin list only reads
+    // titles, and per-locale bodies exist once per published version.
     return this.prisma.legalDocument.findMany({
       orderBy: { name: 'asc' },
       include: {
         versions: {
           where: { status: 'PUBLISHED' },
-          include: { contents: { where: { locale: SOURCE_LOCALE } } },
+          include: { contents: true },
         },
       },
     });
@@ -87,11 +108,18 @@ export class LegalDocumentService {
 
   async listVersions(slug: string) {
     const document = await this.getDocumentOrThrow(slug);
-    return this.prisma.legalDocumentVersion.findMany({
+    const versions = await this.prisma.legalDocumentVersion.findMany({
       where: { documentId: document.id },
       orderBy: { versionNumber: 'desc' },
       include: { contents: true },
     });
+    // Wrapped shape since Slice 6 so the admin detail page knows the
+    // document's source locale without a second request. The frontend
+    // tolerates both the old bare-array and this wrapped shape.
+    return {
+      document: { slug: document.slug, name: document.name, sourceLocale: document.sourceLocale },
+      versions,
+    };
   }
 
   async createDraftVersion(slug: string, dto: CreateLegalDocumentVersionDto, adminId: string | undefined) {
@@ -111,7 +139,7 @@ export class LegalDocumentService {
         createdByAdminId: adminId ?? null,
         contents: {
           create: {
-            locale: SOURCE_LOCALE,
+            locale: document.sourceLocale,
             title: dto.title,
             bodyMarkdown: dto.bodyMarkdown,
             translationStatus: 'SOURCE',
@@ -136,7 +164,7 @@ export class LegalDocumentService {
     if (version.status === 'ARCHIVED') {
       throw new BadRequestException({ code: 'VERSION_ARCHIVED' });
     }
-    return version;
+    return { document, version };
   }
 
   async updateContent(
@@ -145,10 +173,11 @@ export class LegalDocumentService {
     locale: string,
     dto: UpdateLegalDocumentContentDto,
   ) {
-    const normalizedLocale = this.normalizeLocale(locale);
-    const version = await this.getEditableVersionOrThrow(slug, versionId);
-    if (normalizedLocale === SOURCE_LOCALE && version.status !== 'DRAFT') {
-      // The published Turkish text is the legally-reviewed source of truth;
+    const normalizedLocale = this.assertSupportedLocale(locale);
+    const { document, version } = await this.getEditableVersionOrThrow(slug, versionId);
+    const isSource = normalizedLocale === document.sourceLocale;
+    if (isSource && version.status !== 'DRAFT') {
+      // The published source text is the legally-reviewed source of truth;
       // changing it must go through a new version, not an in-place edit.
       throw new BadRequestException({ code: 'SOURCE_LOCKED_AFTER_PUBLISH' });
     }
@@ -160,27 +189,27 @@ export class LegalDocumentService {
         locale: normalizedLocale,
         title: dto.title,
         bodyMarkdown: dto.bodyMarkdown,
-        translationStatus: normalizedLocale === SOURCE_LOCALE ? 'SOURCE' : 'TRANSLATED',
-        translatedAt: normalizedLocale === SOURCE_LOCALE ? null : new Date(),
+        translationStatus: isSource ? 'SOURCE' : 'TRANSLATED',
+        translatedAt: isSource ? null : new Date(),
       },
       update: {
         title: dto.title,
         bodyMarkdown: dto.bodyMarkdown,
         // Re-editing an already-approved translation demotes it back to
         // TRANSLATED so a human has to re-approve the new wording.
-        translationStatus: normalizedLocale === SOURCE_LOCALE ? 'SOURCE' : 'TRANSLATED',
-        translatedAt: normalizedLocale === SOURCE_LOCALE ? null : new Date(),
-        approvedAt: normalizedLocale === SOURCE_LOCALE ? null : undefined,
+        translationStatus: isSource ? 'SOURCE' : 'TRANSLATED',
+        translatedAt: isSource ? null : new Date(),
+        approvedAt: isSource ? null : undefined,
       },
     });
   }
 
   async approveTranslation(slug: string, versionId: string, locale: string, adminId: string | undefined) {
-    const normalizedLocale = this.normalizeLocale(locale);
-    if (normalizedLocale === SOURCE_LOCALE) {
+    const normalizedLocale = this.assertSupportedLocale(locale);
+    const { document } = await this.getEditableVersionOrThrow(slug, versionId);
+    if (normalizedLocale === document.sourceLocale) {
       throw new BadRequestException({ code: 'SOURCE_LOCALE_NOT_TRANSLATABLE' });
     }
-    await this.getEditableVersionOrThrow(slug, versionId);
 
     const content = await this.prisma.legalDocumentContent.findUnique({
       where: { versionId_locale: { versionId, locale: normalizedLocale } },
@@ -207,7 +236,7 @@ export class LegalDocumentService {
     if (version.status !== 'DRAFT') {
       throw new BadRequestException({ code: 'VERSION_NOT_DRAFT', status: version.status });
     }
-    if (!version.contents.some((c) => c.locale === SOURCE_LOCALE)) {
+    if (!version.contents.some((c) => c.locale === document.sourceLocale)) {
       throw new BadRequestException({ code: 'SOURCE_CONTENT_REQUIRED' });
     }
 
@@ -230,8 +259,8 @@ export class LegalDocumentService {
   // ─── Public: read ───────────────────────────────────────────────────────
 
   async getPublished(slug: string, locale?: string) {
-    const normalizedLocale = this.normalizeLocale(locale);
     const document = await this.getDocumentOrThrow(slug);
+    const normalizedLocale = this.normalizeLocale(locale, document.sourceLocale);
     const version = await this.prisma.legalDocumentVersion.findFirst({
       where: { documentId: document.id, status: 'PUBLISHED' },
       include: { contents: true },
@@ -240,10 +269,11 @@ export class LegalDocumentService {
       throw new NotFoundException({ code: 'NO_PUBLISHED_VERSION', slug });
     }
 
-    const content = this.resolveContent(version.contents, normalizedLocale);
+    const content = this.resolveContent(version.contents, normalizedLocale, document.sourceLocale);
 
     return {
       slug: document.slug,
+      sourceLocale: document.sourceLocale,
       versionId: version.id,
       versionNumber: version.versionNumber,
       publishedAt: version.publishedAt,
@@ -255,8 +285,8 @@ export class LegalDocumentService {
   }
 
   async getVersionByNumber(slug: string, versionNumber: number, locale?: string) {
-    const normalizedLocale = this.normalizeLocale(locale);
     const document = await this.getDocumentOrThrow(slug);
+    const normalizedLocale = this.normalizeLocale(locale, document.sourceLocale);
     const version = await this.prisma.legalDocumentVersion.findUnique({
       where: { documentId_versionNumber: { documentId: document.id, versionNumber } },
       include: { contents: true },
@@ -265,10 +295,11 @@ export class LegalDocumentService {
       throw new NotFoundException({ code: 'LEGAL_DOCUMENT_VERSION_NOT_FOUND' });
     }
 
-    const content = this.resolveContent(version.contents, normalizedLocale);
+    const content = this.resolveContent(version.contents, normalizedLocale, document.sourceLocale);
 
     return {
       slug: document.slug,
+      sourceLocale: document.sourceLocale,
       versionId: version.id,
       versionNumber: version.versionNumber,
       status: version.status,
@@ -279,18 +310,20 @@ export class LegalDocumentService {
     };
   }
 
-  // Falls back to the Turkish source when the requested locale has no
-  // approved translation yet, rather than mixing in a stale locale from a
-  // different version — see LeadPrivacyConsent / LegalDocumentAcceptance
-  // split note in schema.prisma for why version identity must stay exact.
+  // Falls back to the document's source-locale content when the requested
+  // locale has no approved translation yet, rather than mixing in a stale
+  // locale from a different version — see LeadPrivacyConsent /
+  // LegalDocumentAcceptance split note in schema.prisma for why version
+  // identity must stay exact.
   private resolveContent(
     contents: { locale: string; title: string; bodyMarkdown: string; translationStatus: string }[],
     locale: SupportedLocale,
+    sourceLocale: string,
   ) {
     const approved = contents.find((c) => c.locale === locale && c.translationStatus === 'APPROVED');
     if (approved) return approved;
 
-    const source = contents.find((c) => c.locale === SOURCE_LOCALE);
+    const source = contents.find((c) => c.locale === sourceLocale);
     if (!source) {
       throw new NotFoundException({ code: 'SOURCE_CONTENT_MISSING' });
     }

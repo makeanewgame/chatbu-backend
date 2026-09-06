@@ -161,7 +161,7 @@ rewrite) are counsel-blocked — the product ships slots and plumbing now.
 | 2 | Lead-capture consent gate decoupled from `smsVerificationRequired` | **Prod live 2026-09-06** |
 | 3 | Cookie consent banner + gated trackers | **Prod live 2026-09-06** |
 | 4 | AI disclosure (widget + off-platform channels) | **Prod live 2026-09-06** |
-| 5 | Acceptance auditability (SIGNUP context) + endpoint hardening | **In progress 2026-09-06** |
+| 5 | Acceptance auditability (SIGNUP context) + endpoint hardening | **Prod live 2026-09-06** |
 
 ### Slice 5 cutover note (2026-09-06)
 
@@ -175,7 +175,7 @@ synthesized acceptance row without a real shown-text version would be
 worthless as evidence. The boolean remains load-bearing for both cohorts.
 The audit trail becomes complete once Slice 6 seeds the two slugs from the
 current hardcoded page texts.
-| 6 | Content consolidation into CMS | Next wave |
+| 6 | Content consolidation into CMS (per-slug source locale, CMS-served ToS/Privacy pages, app-hosted legal links, pack-rendering consent card, seeder) | **In progress 2026-09-06** — consent packs THEMSELVES stay hardcoded (their structured fields don't fit title+body CMS rows); lifting them into the CMS is a later slice |
 | 7 | DPA surface (slug + team-level acceptance + sub-processor page) | Next wave |
 | 8 | Versioning / re-acceptance mechanics | Next wave |
 | 9–11 | Team legal identity, retention alignment, cleanup slots | Later |
