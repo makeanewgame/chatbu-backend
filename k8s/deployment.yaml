@@ -184,6 +184,17 @@ spec:
               name: chatbu-config
               key: LEAD_PRIVACY_CONSENT_GATE_ENABLED
               optional: true
+        # Legal Slice 4: AI-transparency disclosure on the first bot
+        # reply of every Meta-channel conversation (EU AI Act Art. 50).
+        # INVERTED semantics like META_LOOP_GUARD_ENABLED — this is a
+        # compliance control, so a missing key means ON. Set the
+        # configmap key to "false" only to disable.
+        - name: META_AI_DISCLOSURE_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: META_AI_DISCLOSURE_ENABLED
+              optional: true
         resources:
           requests:
             memory: "1Gi"
