@@ -157,14 +157,34 @@ export class AuthenticationController {
   @UseGuards(AccessTokenGuard)
   async acceptTerms(@Req() req, @Body() body: { phoneNumber?: string }) {
     const userId = req.user?.sub || req.user?.id;
-    await this.authService.acceptTerms(userId, body.phoneNumber);
+    await this.authService.acceptTerms(
+      userId,
+      body.phoneNumber,
+      req.user?.teamId ?? null,
+      this.extractSignupClientInfo(req),
+    );
     return { success: true };
+  }
+
+  // IP/UA/Accept-Language for the SIGNUP acceptance audit rows (legal
+  // Slice 5). Same x-forwarded-for-first extraction as the legal-document
+  // public controller.
+  private extractSignupClientInfo(req: any) {
+    const ip =
+      ((req.headers?.['x-forwarded-for'] as string) ?? '').split(',')[0].trim() ||
+      req.socket?.remoteAddress ||
+      null;
+    return {
+      ip,
+      userAgent: (req.headers?.['user-agent'] as string) ?? null,
+      acceptLanguage: (req.headers?.['accept-language'] as string) ?? null,
+    };
   }
 
   @Post('register')
   async register(@Body() body: RegisterRequest, @Req() req, @Res() res) {
     await this.authService
-      .register(body, req.header['Language'])
+      .register(body, req.header['Language'], this.extractSignupClientInfo(req))
       .then((result) => {
         if (result) {
           return res.json({

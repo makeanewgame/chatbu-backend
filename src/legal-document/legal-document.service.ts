@@ -3,12 +3,30 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import {
   CreateLegalDocumentDto,
   CreateLegalDocumentVersionDto,
+  ListLegalAcceptancesQueryDto,
   RecordLegalAcceptanceDto,
   SOURCE_LOCALE,
   SUPPORTED_LOCALES,
   SupportedLocale,
   UpdateLegalDocumentContentDto,
 } from './dto/legal-document.dto';
+
+// Documents every new account accepts at registration. Rows are written
+// best-effort: a slug with no published version is skipped (the CMS may
+// not be seeded yet in an environment), never blocks the signup.
+// Cutover 2026-09-06 (legal Slice 5) — accounts created before this date
+// have only the User.termsAccepted boolean, no backfill (documented in
+// docs/legal-contracts-map.md).
+export const SIGNUP_ACCEPTANCE_SLUGS = ['terms-of-service', 'privacy-policy'] as const;
+
+// The subject of an acceptance row, derived SERVER-SIDE (JWT for the
+// authenticated route, fixed visitor shape for the public route) — never
+// from the request body. See Slice 5 note in legal-document.dto.ts.
+export interface AcceptanceActor {
+  subjectType: string;
+  subjectId: string | null;
+  teamId: string | null;
+}
 
 @Injectable()
 export class LegalDocumentService {
@@ -285,7 +303,8 @@ export class LegalDocumentService {
 
   async recordAcceptance(
     slug: string,
-    dto: RecordLegalAcceptanceDto,
+    dto: Pick<RecordLegalAcceptanceDto, 'versionId' | 'locale' | 'context'>,
+    actor: AcceptanceActor,
     ipAddress: string | null,
     userAgent: string | null,
   ) {
@@ -301,12 +320,104 @@ export class LegalDocumentService {
         versionId: version.id,
         locale: dto.locale,
         context: dto.context,
-        subjectType: dto.subjectType,
-        subjectId: dto.subjectId ?? null,
-        teamId: dto.teamId ?? null,
+        subjectType: actor.subjectType,
+        subjectId: actor.subjectId,
+        teamId: actor.teamId,
         ipAddress: ipAddress ?? null,
         userAgent: userAgent ?? null,
       },
     });
+  }
+
+  // ─── Signup acceptance (called from AuthenticationService) ─────────────
+  // Writes one SIGNUP acceptance row per SIGNUP_ACCEPTANCE_SLUGS entry
+  // that has a PUBLISHED version. Throw-free by design: registration must
+  // never fail (or even slow down observably) because the legal CMS is
+  // unseeded or unreachable — the User.termsAccepted boolean remains the
+  // load-bearing gate, this is the audit trail on top.
+  async recordSignupAcceptances(
+    userId: string,
+    teamId: string | null,
+    opts: { locale?: string | null; ipAddress?: string | null; userAgent?: string | null },
+  ): Promise<{ recordedSlugs: string[] }> {
+    const locale = this.normalizeAcceptanceLocale(opts.locale);
+    const recordedSlugs: string[] = [];
+
+    for (const slug of SIGNUP_ACCEPTANCE_SLUGS) {
+      try {
+        const document = await this.prisma.legalDocument.findUnique({ where: { slug } });
+        if (!document) continue;
+        const version = await this.prisma.legalDocumentVersion.findFirst({
+          where: { documentId: document.id, status: 'PUBLISHED' },
+        });
+        if (!version) continue;
+
+        await this.prisma.legalDocumentAcceptance.create({
+          data: {
+            documentId: document.id,
+            versionId: version.id,
+            locale,
+            context: 'SIGNUP',
+            subjectType: 'user',
+            subjectId: userId,
+            teamId,
+            ipAddress: opts.ipAddress ?? null,
+            userAgent: opts.userAgent ?? null,
+          },
+        });
+        recordedSlugs.push(slug);
+      } catch {
+        // Per-slug swallow: one failed row must not stop the next slug,
+        // and the caller logs the aggregate outcome.
+      }
+    }
+
+    return { recordedSlugs };
+  }
+
+  // Accept-Language style input ("tr-TR,tr;q=0.9") → supported locale,
+  // falling back to 'en' instead of throwing (unlike normalizeLocale,
+  // which guards explicit user input on read routes).
+  private normalizeAcceptanceLocale(raw?: string | null): SupportedLocale {
+    const two = (raw ?? '').trim().toLowerCase().slice(0, 2);
+    return (SUPPORTED_LOCALES as readonly string[]).includes(two)
+      ? (two as SupportedLocale)
+      : 'en';
+  }
+
+  // ─── Admin: acceptance audit read ──────────────────────────────────────
+
+  async listAcceptances(query: ListLegalAcceptancesQueryDto) {
+    const take = Math.min(Math.max(parseInt(query.take ?? '50', 10) || 50, 1), 200);
+    const skip = Math.max(parseInt(query.skip ?? '0', 10) || 0, 0);
+
+    const where: Record<string, unknown> = {};
+    if (query.slug) {
+      const document = await this.getDocumentOrThrow(query.slug);
+      where.documentId = document.id;
+    }
+    if (query.context) where.context = query.context;
+    if (query.subjectId) where.subjectId = query.subjectId;
+    if (query.teamId) where.teamId = query.teamId;
+
+    const [total, items] = await this.prisma.$transaction([
+      this.prisma.legalDocumentAcceptance.count({ where }),
+      this.prisma.legalDocumentAcceptance.findMany({
+        where,
+        orderBy: { acceptedAt: 'desc' },
+        take,
+        skip,
+        include: {
+          version: {
+            select: {
+              versionNumber: true,
+              document: { select: { slug: true, name: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return { total, take, skip, items };
   }
 }

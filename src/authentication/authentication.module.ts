@@ -13,11 +13,15 @@ import { MailService } from 'src/mail/mail.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { QuotaService } from 'src/quota/quota.service';
 import { AccountCleanupService } from './account-cleanup.service';
+import { LegalDocumentModule } from 'src/legal-document/legal-document.module';
 
 @Module({
   imports: [
     PrismaModule,
     JwtModule.register({}),
+    // Slice 5 (2026-09-06): registration + accept-terms write SIGNUP
+    // acceptance audit rows through LegalDocumentService.
+    LegalDocumentModule,
     PassportModule.register({
       defaultStrategy: 'jwt',
       session: false,
