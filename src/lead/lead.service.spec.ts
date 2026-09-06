@@ -491,3 +491,135 @@ describe('LeadService — hasFreshKvkkConsent (gateway pre-agent probe)', () => 
     expect(leadPrivacyConsent.findFirst).not.toHaveBeenCalled();
   });
 });
+
+describe('LeadService — submit privacy-consent gate (Legal Slice 2)', () => {
+  let service: LeadService;
+  let prisma: {
+    customerBots: { findUnique: jest.Mock };
+    botLeads: { create: jest.Mock };
+    teamMember: { findFirst: jest.Mock };
+    leadPrivacyConsent: { findFirst: jest.Mock; update: jest.Mock };
+  };
+  let mail: { sendLeadNotification: jest.Mock };
+
+  const botId = 'bot-1';
+  const leadData = { name: 'Visitor', email: 'visitor@example.com' };
+
+  // A bot with NO verification flags — before this gate, such a bot
+  // captured PII with zero consent record (the Slice 2 gap).
+  const plainBot = {
+    id: botId,
+    botName: 'Test Bot',
+    teamId: 'team-1',
+    leadDestinations: [{ channel: 'email', target: 'owner@example.com', enabled: true }],
+    leadVerificationRequired: false,
+    smsVerificationRequired: false,
+    primaryLanguage: 'en',
+  };
+
+  beforeEach(async () => {
+    process.env.LEAD_PRIVACY_CONSENT_GATE_ENABLED = 'true';
+    prisma = {
+      customerBots: { findUnique: jest.fn().mockResolvedValue(plainBot) },
+      botLeads: { create: jest.fn().mockResolvedValue({ id: 'lead-1' }) },
+      teamMember: { findFirst: jest.fn() },
+      leadPrivacyConsent: { findFirst: jest.fn(), update: jest.fn() },
+    };
+    mail = { sendLeadNotification: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LeadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: mail },
+        { provide: JwtService, useValue: { signAsync: jest.fn(), verifyAsync: jest.fn() } },
+        { provide: SmsService, useValue: { sendOtpSms: jest.fn() } },
+        { provide: LegalDocumentService, useValue: {} },
+        {
+          provide: ChatFlowService,
+          useValue: { transition: jest.fn().mockResolvedValue(undefined) },
+        },
+        { provide: PushNotificationService, useValue: { sendToUsers: jest.fn() } },
+        { provide: MixpanelService, useValue: mixpanelStub },
+      ],
+    }).compile();
+    service = module.get(LeadService);
+  });
+
+  afterEach(() => {
+    delete process.env.LEAD_PRIVACY_CONSENT_GATE_ENABLED;
+  });
+
+  it('rejects a no-verification bot when the chat has no consent row, and audits the rejection', async () => {
+    prisma.leadPrivacyConsent.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.submit({ botId, chatId: 'chat-1', leadData }),
+    ).rejects.toMatchObject({ response: { code: 'PRIVACY_CONSENT_REQUIRED' } });
+
+    // Audit invariant: the rejected attempt is still visible in the inbox.
+    expect(prisma.botLeads.create).toHaveBeenCalledTimes(1);
+    const created = prisma.botLeads.create.mock.calls[0][0].data;
+    expect(created.deliveryErrors).toEqual([
+      { channel: 'none', error: 'privacy_consent_required' },
+    ]);
+    // No delivery was attempted for the rejected lead.
+    expect(mail.sendLeadNotification).not.toHaveBeenCalled();
+  });
+
+  it('rejects when chatId is missing entirely (consent cannot be verified without a session)', async () => {
+    await expect(
+      service.submit({ botId, chatId: null, leadData }),
+    ).rejects.toMatchObject({ response: { code: 'PRIVACY_CONSENT_REQUIRED' } });
+    expect(prisma.leadPrivacyConsent.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('gates BEFORE the email-verification check so the consent card comes first', async () => {
+    prisma.customerBots.findUnique.mockResolvedValue({
+      ...plainBot,
+      leadVerificationRequired: true,
+    });
+    prisma.leadPrivacyConsent.findFirst.mockResolvedValue(null);
+
+    // No verificationToken given — without the gate this bot would have
+    // thrown VERIFICATION_REQUIRED; consent must win the ordering.
+    await expect(
+      service.submit({ botId, chatId: 'chat-1', leadData }),
+    ).rejects.toMatchObject({ response: { code: 'PRIVACY_CONSENT_REQUIRED' } });
+  });
+
+  it('writes the lead and links the consent row when consent exists', async () => {
+    prisma.leadPrivacyConsent.findFirst.mockResolvedValue({ id: 'consent-1' });
+
+    const result = await service.submit({ botId, chatId: 'chat-1', leadData });
+
+    expect(result.status).toBe('delivered');
+    const created = prisma.botLeads.create.mock.calls[0][0].data;
+    expect(created.privacyConsentId).toBe('consent-1');
+    expect(prisma.leadPrivacyConsent.update).toHaveBeenCalledWith({
+      where: { id: 'consent-1' },
+      data: { leadId: 'lead-1' },
+    });
+  });
+
+  it('bypasses the gate for calendar-booking lead notifications (fire-and-forget after commit)', async () => {
+    prisma.leadPrivacyConsent.findFirst.mockResolvedValue(null);
+
+    const result = await service.submit({
+      botId,
+      chatId: 'chat-1',
+      leadData: { ...leadData, source_bot: 'create_appointment' },
+    });
+
+    expect(result.status).toBe('delivered');
+  });
+
+  it('is a no-op when the flag is off (rollout safety: default behaviour unchanged)', async () => {
+    delete process.env.LEAD_PRIVACY_CONSENT_GATE_ENABLED;
+
+    const result = await service.submit({ botId, chatId: 'chat-1', leadData });
+
+    expect(result.status).toBe('delivered');
+    expect(prisma.leadPrivacyConsent.findFirst).not.toHaveBeenCalled();
+  });
+});

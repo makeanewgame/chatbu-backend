@@ -179,6 +179,47 @@ export class LeadService {
     // by a bot owner 2026-08-26.
     const isCalendarBookingSource = cleanLeadData.source_bot === 'create_appointment';
 
+    // Legal Slice 2 (2026-09-05): deterministic privacy-consent gate.
+    // A lead row IS collected PII, so a LeadPrivacyConsent row for this
+    // chat session must exist BEFORE we persist anything — regardless of
+    // whether the bot uses SMS/email OTP. Until now only the SMS flow
+    // enforced consent; email-OTP and no-verification bots captured PII
+    // with zero consent record. Placed BEFORE the verification gates so
+    // the visitor sees the consent card first, then any OTP round-trip.
+    //
+    // Deliberately independent of `CustomerBots.kvkkConsentRequired` —
+    // that flag governs the pre-agent consent wall (UX preference); this
+    // gate is the platform-level floor for writing PII.
+    //
+    // Scoped to the chat session (no freshness TTL — unlike the 60-min
+    // `hasFreshKvkkConsent` card-UX window): one accepted card per chat
+    // is enough to write leads in that chat. No chatId ⇒ no way to
+    // verify consent ⇒ rejected (every real capture path carries one).
+    //
+    // Calendar bookings bypass (same reason as the verification gates
+    // above): the lead-notify bridge fires AFTER the booking committed,
+    // and the booking flow runs its own consent probe up front.
+    //
+    // Rollout flag: default OFF; enabled via chatbu-config
+    // LEAD_PRIVACY_CONSENT_GATE_ENABLED (configMapKeyRef in
+    // k8s/deployment.yaml). MCP capture_lead maps the 400 code to a
+    // sentinel that renders the consent card and retries after accept.
+    const consentGateEnabled = process.env.LEAD_PRIVACY_CONSENT_GATE_ENABLED === 'true';
+    let gateConsentId: string | null = null;
+    if (consentGateEnabled && !isCalendarBookingSource) {
+      if (chatId) {
+        const consentRow = await this.prisma.leadPrivacyConsent.findFirst({
+          where: { botId, chatId },
+          orderBy: { createdAt: 'desc' },
+        });
+        gateConsentId = consentRow?.id ?? null;
+      }
+      if (!gateConsentId) {
+        await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'privacy_consent_required');
+        throw new BadRequestException({ code: 'PRIVACY_CONSENT_REQUIRED' });
+      }
+    }
+
     // Slice 6 of backlog #23: sourceChannel is still forwarded (used
     // below for the audit-trail lead source label), but it NO LONGER
     // bypasses the verification gates. Reason: platform identity (WA/
@@ -263,6 +304,13 @@ export class LeadService {
         orderBy: { createdAt: 'desc' },
       });
       privacyConsentId = consent?.id ?? null;
+    }
+
+    // Legal Slice 2: non-SMS paths link the gate's consent row so every
+    // lead carries its consent reference, not just SMS-verified ones.
+    // The SMS branch's otpVerified row (above) still wins when present.
+    if (!privacyConsentId && gateConsentId) {
+      privacyConsentId = gateConsentId;
     }
 
     let destinations = ((bot.leadDestinations as unknown as LeadDestination[]) || []).filter(
@@ -447,7 +495,8 @@ export class LeadService {
       | 'verification_required'
       | 'verification_invalid'
       | 'sms_verification_required'
-      | 'sms_verification_invalid',
+      | 'sms_verification_invalid'
+      | 'privacy_consent_required',
   ) {
     await this.prisma.botLeads.create({
       data: {
