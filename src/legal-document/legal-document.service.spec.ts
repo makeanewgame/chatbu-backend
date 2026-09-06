@@ -514,6 +514,7 @@ describe('LegalDocumentService', () => {
           slug: 'dpa',
           published: false,
           accepted: false,
+          canAccept: false,
         });
 
         prisma.legalDocument.findUnique.mockResolvedValue(document);
@@ -539,6 +540,24 @@ describe('LegalDocumentService', () => {
 
         const no = await service.getTeamAcceptanceStatus('dpa', 'team-1');
         expect(no).toMatchObject({ published: true, accepted: false });
+      });
+
+      it('canAccept comes from the server-side TEAM_OWNER check, mirroring the accept gate', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(document);
+        prisma.legalDocumentVersion.findFirst.mockResolvedValue({ id: 'v2', versionNumber: 2, publishedAt: new Date() });
+        (prisma.legalDocumentAcceptance as any).findFirst = jest.fn().mockResolvedValue(null);
+
+        (prisma as any).teamMember.findFirst.mockResolvedValueOnce({ id: 'tm-1', role: 'TEAM_OWNER' });
+        const owner = await service.getTeamAcceptanceStatus('dpa', 'team-1', 'user-1');
+        expect(owner.canAccept).toBe(true);
+
+        (prisma as any).teamMember.findFirst.mockResolvedValueOnce(null);
+        const member = await service.getTeamAcceptanceStatus('dpa', 'team-1', 'user-2');
+        expect(member.canAccept).toBe(false);
+
+        // No userId (or no team) → never accepting from this session.
+        const anonymous = await service.getTeamAcceptanceStatus('dpa', 'team-1');
+        expect(anonymous.canAccept).toBe(false);
       });
     });
   });

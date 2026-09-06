@@ -388,14 +388,14 @@ export class LegalDocumentService {
   // A document with no published version (or no document at all) reports
   // published=false — every consumer treats that as "nothing to accept",
   // which keeps the whole surface inert until counsel-approved text ships.
-  async getTeamAcceptanceStatus(slug: string, teamId: string | null) {
+  async getTeamAcceptanceStatus(slug: string, teamId: string | null, userId?: string | null) {
     const document = await this.prisma.legalDocument.findUnique({ where: { slug } });
-    if (!document) return { slug, published: false as const, accepted: false };
+    if (!document) return { slug, published: false as const, accepted: false, canAccept: false };
 
     const version = await this.prisma.legalDocumentVersion.findFirst({
       where: { documentId: document.id, status: 'PUBLISHED' },
     });
-    if (!version) return { slug, published: false as const, accepted: false };
+    if (!version) return { slug, published: false as const, accepted: false, canAccept: false };
 
     const acceptance = teamId
       ? await this.prisma.legalDocumentAcceptance.findFirst({
@@ -403,6 +403,20 @@ export class LegalDocumentService {
           orderBy: { acceptedAt: 'desc' },
         })
       : null;
+
+    // canAccept mirrors the recordAcceptance DPA owner-gate exactly, so
+    // the frontend never has to derive "am I the team owner" from the
+    // auth slice's role field — that field conflates platform role
+    // (ADMIN) with team role and reports the raw User.role on the
+    // email/password login path (found 2026-09-06 during Slice 7 canary).
+    const canAccept =
+      teamId && userId
+        ? Boolean(
+            await this.prisma.teamMember.findFirst({
+              where: { teamId, userId, role: 'TEAM_OWNER', status: 'active' },
+            }),
+          )
+        : false;
 
     return {
       slug,
@@ -412,6 +426,7 @@ export class LegalDocumentService {
       publishedAt: version.publishedAt,
       accepted: Boolean(acceptance),
       acceptedAt: acceptance?.acceptedAt ?? null,
+      canAccept,
     };
   }
 

@@ -53,7 +53,11 @@ export class LegalDocumentPublicController {
   @UseGuards(AccessTokenGuard)
   getAcceptanceStatus(@Param('slug') slug: string, @Req() req: Request) {
     const user = (req as any).user ?? {};
-    return this.legalDocumentService.getTeamAcceptanceStatus(slug, user.teamId ?? null);
+    return this.legalDocumentService.getTeamAcceptanceStatus(
+      slug,
+      user.teamId ?? null,
+      user.sub ?? user.id ?? null,
+    );
   }
 
   @Post(':slug/accept')
