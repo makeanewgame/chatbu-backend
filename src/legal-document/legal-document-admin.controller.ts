@@ -6,6 +6,7 @@ import {
   CreateLegalDocumentDto,
   CreateLegalDocumentVersionDto,
   ListLegalAcceptancesQueryDto,
+  PublishLegalDocumentVersionDto,
   UpdateLegalDocumentContentDto,
 } from './dto/legal-document.dto';
 
@@ -73,7 +74,11 @@ export class LegalDocumentAdminController {
   }
 
   @Post(':slug/versions/:versionId/publish')
-  publishVersion(@Param('slug') slug: string, @Param('versionId') versionId: string) {
-    return this.legalDocumentService.publishVersion(slug, versionId);
+  publishVersion(
+    @Param('slug') slug: string,
+    @Param('versionId') versionId: string,
+    @Body() dto: PublishLegalDocumentVersionDto,
+  ) {
+    return this.legalDocumentService.publishVersion(slug, versionId, dto);
   }
 }

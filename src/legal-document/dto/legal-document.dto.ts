@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export const SUPPORTED_LOCALES = ['tr', 'en', 'de', 'fr', 'it', 'ru', 'ar', 'es'] as const;
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
@@ -11,7 +11,9 @@ export const SOURCE_LOCALE: SupportedLocale = 'tr';
 
 // DPA (Slice 7): team-level Data Processing Agreement acceptance — only a
 // TEAM_OWNER may record it, enforced in LegalDocumentService.recordAcceptance.
-export const ACCEPTANCE_CONTEXTS = ['PURCHASE', 'SIGNUP', 'DPA', 'OTHER'] as const;
+// REACCEPTANCE (Slice 8): recorded via the blocking interstitial after a
+// version published with requiresReacceptance=true.
+export const ACCEPTANCE_CONTEXTS = ['PURCHASE', 'SIGNUP', 'DPA', 'REACCEPTANCE', 'OTHER'] as const;
 export type LegalAcceptanceContext = (typeof ACCEPTANCE_CONTEXTS)[number];
 
 export class CreateLegalDocumentDto {
@@ -48,6 +50,25 @@ export class UpdateLegalDocumentContentDto {
   @IsString()
   @IsNotEmpty()
   bodyMarkdown: string;
+}
+
+// Slice 8: publish-time options. All optional — a bare publish behaves
+// exactly as before (no re-acceptance, effective immediately, no notes).
+export class PublishLegalDocumentVersionDto {
+  @IsOptional()
+  @IsBoolean()
+  requiresReacceptance?: boolean;
+
+  // ISO date string; interstitial only fires once this passes. Omitted →
+  // effective immediately.
+  @IsOptional()
+  @IsDateString()
+  effectiveAt?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  changelog?: string;
 }
 
 // Slice 5 (2026-09-06): subjectType/subjectId/teamId removed from the
