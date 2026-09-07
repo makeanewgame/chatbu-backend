@@ -19,6 +19,11 @@ import {
 // docs/legal-contracts-map.md).
 export const SIGNUP_ACCEPTANCE_SLUGS = ['terms-of-service', 'privacy-policy'] as const;
 
+// Slugs whose acceptance binds a TEAM (Slice 7 banner/gate mechanics),
+// not individual users — excluded from the Slice 8 user-level
+// re-acceptance interstitial even if an admin flags their publish.
+export const TEAM_LEVEL_SLUGS = ['dpa'];
+
 // The subject of an acceptance row, derived SERVER-SIDE (JWT for the
 // authenticated route, fixed visitor shape for the public route) — never
 // from the request body. See Slice 5 note in legal-document.dto.ts.
@@ -224,7 +229,11 @@ export class LegalDocumentService {
     });
   }
 
-  async publishVersion(slug: string, versionId: string) {
+  async publishVersion(
+    slug: string,
+    versionId: string,
+    opts?: { requiresReacceptance?: boolean; effectiveAt?: string; changelog?: string },
+  ) {
     const document = await this.getDocumentOrThrow(slug);
     const version = await this.prisma.legalDocumentVersion.findUnique({
       where: { id: versionId },
@@ -248,7 +257,15 @@ export class LegalDocumentService {
       }),
       this.prisma.legalDocumentVersion.update({
         where: { id: versionId },
-        data: { status: 'PUBLISHED', publishedAt: now },
+        data: {
+          status: 'PUBLISHED',
+          publishedAt: now,
+          // Slice 8 publish-time options (default: behave exactly as a
+          // pre-Slice-8 publish).
+          requiresReacceptance: opts?.requiresReacceptance ?? false,
+          effectiveAt: opts?.effectiveAt ? new Date(opts.effectiveAt) : null,
+          changelog: opts?.changelog?.trim() || null,
+        },
         include: { contents: true },
       }),
     ]);
@@ -380,6 +397,70 @@ export class LegalDocumentService {
         userAgent: userAgent ?? null,
       },
     });
+  }
+
+  // ─── Pending re-acceptances (Slice 8) ──────────────────────────────────
+  // Documents whose CURRENT published version was published with
+  // requiresReacceptance=true, is effective (effectiveAt passed or unset),
+  // and has no acceptance row from THIS user for THAT version — in ANY
+  // context, so someone who signed up after the version published (SIGNUP
+  // row) or accepted at checkout is never re-prompted. Drives the blocking
+  // interstitial; empty array = nothing to do (the overwhelmingly common
+  // case, so the query is one indexed findMany over published versions).
+  async getPendingReacceptances(userId: string, locale?: string) {
+    const now = new Date();
+    const versions = await this.prisma.legalDocumentVersion.findMany({
+      where: {
+        status: 'PUBLISHED',
+        requiresReacceptance: true,
+        OR: [{ effectiveAt: null }, { effectiveAt: { lte: now } }],
+      },
+      include: { document: true, contents: true },
+    });
+
+    const pending = [] as {
+      slug: string;
+      versionId: string;
+      versionNumber: number;
+      title: string;
+      locale: string;
+      changelog: string | null;
+      effectiveAt: Date | null;
+    }[];
+
+    for (const version of versions) {
+      // Team-level documents re-arm through getTeamAcceptanceStatus
+      // (Slice 7 banner/gate) — the USER interstitial must not block
+      // every member of a team over them.
+      if (TEAM_LEVEL_SLUGS.includes(version.document.slug)) continue;
+
+      const accepted = await this.prisma.legalDocumentAcceptance.findFirst({
+        where: { versionId: version.id, subjectId: userId },
+        select: { id: true },
+      });
+      if (accepted) continue;
+
+      const content = this.resolveContent(
+        version.contents,
+        this.normalizeLocale(
+          locale && (SUPPORTED_LOCALES as readonly string[]).includes(locale) ? locale : undefined,
+          version.document.sourceLocale,
+        ),
+        version.document.sourceLocale,
+      );
+
+      pending.push({
+        slug: version.document.slug,
+        versionId: version.id,
+        versionNumber: version.versionNumber,
+        title: content.title,
+        locale: content.locale,
+        changelog: version.changelog,
+        effectiveAt: version.effectiveAt,
+      });
+    }
+
+    return { items: pending };
   }
 
   // ─── Team acceptance status (Slice 7) ──────────────────────────────────

@@ -777,6 +777,10 @@ enum LegalAcceptanceContext {
   // Row carries BOTH teamId (the accepting team) and subjectId (the acting
   // team owner); only TEAM_OWNER members may record it.
   DPA
+  // Slice 8 (2026-09-06): acceptance recorded through the blocking
+  // re-acceptance interstitial after a version published with
+  // requiresReacceptance=true.
+  REACCEPTANCE
   OTHER
 }
 
@@ -804,6 +808,14 @@ model LegalDocumentVersion {
   createdByAdminId String?
   publishedAt      DateTime?
   archivedAt       DateTime?
+  // Slice 8 (2026-09-06): re-acceptance mechanics, set at publish time.
+  // requiresReacceptance → authenticated users who haven't accepted THIS
+  // version get a blocking interstitial (user-level docs; team-level DPA
+  // re-arms via Slice 7's acceptance-status instead). effectiveAt delays
+  // the interstitial until the date passes; changelog is shown on it.
+  requiresReacceptance Boolean  @default(false)
+  effectiveAt          DateTime?
+  changelog            String?
   createdAt        DateTime                   @default(now())
   updatedAt        DateTime                   @updatedAt
 
