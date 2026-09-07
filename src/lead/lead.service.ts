@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService, parsePhoneToE164, resolveOtpLang } from 'src/sms/sms.service';
+import { OtpChannelPreferenceService } from 'src/sms/otp-channel-preference.service';
 import { SubmitLeadDto } from './dto/submit-lead.dto';
 import { ListLeadsDto } from './dto/list-leads.dto';
 import { MarkLeadStatusDto } from './dto/mark-lead-status.dto';
@@ -68,6 +69,7 @@ export class LeadService {
     private prisma: PrismaService,
     private mailService: MailService,
     private smsService: SmsService,
+    private otpChannelPreference: OtpChannelPreferenceService,
     private jwt: JwtService,
     private legalDocumentService: LegalDocumentService,
     private chatFlowService: ChatFlowService,
@@ -1092,7 +1094,13 @@ export class LeadService {
     // phone-country fallback otherwise. See resolveOtpLang. More locales
     // than tr/en are backlog (SMS template languages).
     const smsLang: 'tr' | 'en' = resolveOtpLang(dto.lang, country);
-    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang);
+
+    // Transport the VISITOR picked on the contact form, read out-of-band
+    // (OtpChannelPreferenceService) rather than passed down through the
+    // agent. Defaults to 'sms' whenever no choice was made, which is
+    // every conversation on a bot where the WhatsApp option is off.
+    const channel = await this.otpChannelPreference.get(dto.chatId);
+    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang, channel);
 
     // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK
     // — if the state isn't there yet (backfill hasn't seen this
@@ -1101,7 +1109,7 @@ export class LeadService {
     await this.safeTransition(dto.botId, dto.chatId, FlowKind.LEAD, {
       from: 'CONSENT_OK',
       to: 'OTP_SENT',
-      payload: { phone: dto.phone, code_sent_at: new Date().toISOString() },
+      payload: { phone: dto.phone, code_sent_at: new Date().toISOString(), channel },
     });
 
     return { status: 'sent' as const, expiresAt: expiresAt.toISOString() };

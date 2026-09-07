@@ -6,6 +6,7 @@ import { LeadService } from './lead.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/sms/sms.service';
+import { OtpChannelPreferenceService } from 'src/sms/otp-channel-preference.service';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
@@ -59,6 +60,7 @@ describe('LeadService — lead verification', () => {
         { provide: MailService, useValue: mail },
         { provide: JwtService, useValue: jwt },
         { provide: SmsService, useValue: { sendOtpSms: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
         {
           provide: LegalDocumentService,
           useValue: { getPublished: jest.fn().mockRejectedValue(new Error('no published version in tests')) },
@@ -439,6 +441,7 @@ describe('LeadService — hasFreshKvkkConsent (gateway pre-agent probe)', () => 
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: {} },
         { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
+        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: {} },
         { provide: ChatFlowService, useValue: {} },
         { provide: PushNotificationService, useValue: {} },
@@ -534,6 +537,7 @@ describe('LeadService — submit privacy-consent gate (Legal Slice 2)', () => {
         { provide: MailService, useValue: mail },
         { provide: JwtService, useValue: { signAsync: jest.fn(), verifyAsync: jest.fn() } },
         { provide: SmsService, useValue: { sendOtpSms: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: {} },
         {
           provide: ChatFlowService,
@@ -647,6 +651,7 @@ describe('LeadService — getConsentText (consent notice CMS-first)', () => {
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: {} },
         { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
+        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: { getConsentNotice } },
         { provide: ChatFlowService, useValue: {} },
         { provide: PushNotificationService, useValue: {} },
@@ -807,6 +812,7 @@ describe('LeadService — recordPrivacyConsent (audit version)', () => {
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: {} },
         { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
+        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: { getConsentNotice } },
         { provide: ChatFlowService, useValue: { transition: jest.fn() } },
         { provide: PushNotificationService, useValue: {} },

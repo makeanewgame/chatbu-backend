@@ -4,6 +4,7 @@ import { FlowKind } from '../../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService, parsePhoneToE164, resolveOtpLang } from 'src/sms/sms.service';
+import { OtpChannelPreferenceService } from 'src/sms/otp-channel-preference.service';
 import { ChatFlowService, normalizePhoneForDedup } from 'src/chat-flow/chat-flow.service';
 
 const CODE_TTL_MINUTES = 10;
@@ -25,6 +26,7 @@ export class BookingService {
         private readonly prisma: PrismaService,
         private readonly mail: MailService,
         private readonly sms: SmsService,
+        private readonly otpChannelPreference: OtpChannelPreferenceService,
         private readonly jwt: JwtService,
         private readonly chatFlow: ChatFlowService,
     ) { }
@@ -246,14 +248,22 @@ export class BookingService {
         // 500 to the MCP, surfacing the usual sentinels.
         const country = parsePhoneToE164(phone)?.country;
         const smsLang: 'tr' | 'en' = resolveOtpLang(lang, country);
-        await this.sms.sendOtpSms(phone, code, botName, smsLang);
 
-        // Enter BOOKING flow at OTP_SENT via SMS channel. `from: null` so
-        // any prior BOOKING row in the same chat is overwritten (visitor
-        // may have started an email-then-SMS retry).
+        // Transport the VISITOR picked on the contact form, read
+        // out-of-band (OtpChannelPreferenceService) rather than passed
+        // down through the agent. Defaults to 'sms' whenever no choice
+        // was made — i.e. every conversation today, until the widget
+        // starts offering the option.
+        const channel = await this.otpChannelPreference.get(chatId);
+        await this.sms.sendOtpSms(phone, code, botName, smsLang, channel);
+
+        // Enter BOOKING flow at OTP_SENT. `from: null` so any prior
+        // BOOKING row in the same chat is overwritten (visitor may have
+        // started an email-then-SMS retry). The payload records the
+        // transport actually used, not a hardcoded 'sms'.
         await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
             to: 'OTP_SENT',
-            payload: { source: 'booking_sms_request', verification_id: record.id, channel: 'sms' },
+            payload: { source: 'booking_sms_request', verification_id: record.id, channel },
         }, 'booking:requestSmsVerification');
 
         return {
