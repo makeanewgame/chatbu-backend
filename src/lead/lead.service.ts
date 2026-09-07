@@ -829,23 +829,70 @@ export class LeadService {
       browserLocale: input.acceptLanguage ?? null,
     });
 
-    const pack = getConsentPack(jurisdiction, locale);
     // Prefer businessName (customer-set brand) → team.name (fallback) →
     // empty (renderControllerNotice substitutes a neutral phrase).
     const controllerName = team?.businessName?.trim() || team?.name?.trim() || '';
-    const controllerNotice = renderControllerNotice(pack, controllerName);
 
-    // Return the resolved pack — jurisdiction/locale echoed so the widget
+    // Slice 6b (2026-09-07): the LEGAL half of the notice comes from the CMS
+    // when a `privacy-notice-<jurisdiction>` document is published, so
+    // counsel edits ship through the admin UI instead of a deploy. The
+    // hardcoded pack remains the fallback for every environment/jurisdiction
+    // that hasn't been seeded and published yet.
+    //
+    // Fallback is WHOLESALE, never per field: a half-CMS/half-pack notice
+    // would show one text while the consent row recorded the other version
+    // string, which is precisely the divergence Slice 6 closed.
+    const notice = await this.legalDocumentService
+      .getConsentNotice(jurisdiction, locale)
+      .catch((err) => {
+        // A CMS lookup failure must never take down the consent card —
+        // the widget's whole lead flow is gated behind it. Log loudly
+        // (an unexpected error here is a real defect) and serve the pack.
+        console.warn('[lead-service] consent-notice CMS lookup failed:', err);
+        return null;
+      });
+
+    // Chrome follows the locale that was actually SERVED, not the one that
+    // was requested. The CMS applies its own locale fallback (an unapproved
+    // translation falls back to the document's source locale), so resolving
+    // the pack against the requested locale could pair German buttons with
+    // an English notice. With no CMS notice, servedLocale === locale and
+    // this is byte-for-byte the pre-Slice-9 resolution.
+    const servedLocale = notice?.locale ?? locale;
+    const pack = getConsentPack(jurisdiction, servedLocale);
+
+    // UI chrome (buttons, status labels, error copy) and the legal-page URLs
+    // stay pack-owned: they are not legal text, and the URLs are
+    // environment-derived (FRONTEND_URL), not authorable.
+    const source = notice
+      ? {
+          locale: notice.locale,
+          version: `${notice.slug}-v${notice.versionNumber}`,
+          title: notice.title,
+          intro: notice.intro,
+          controllerNotice: notice.controllerNotice,
+          checkboxLabel: notice.checkboxLabel,
+        }
+      : {
+          locale: pack.locale,
+          version: pack.version,
+          title: pack.title,
+          intro: pack.intro,
+          controllerNotice: pack.controllerNotice,
+          checkboxLabel: pack.checkboxLabel,
+        };
+
+    // Return the resolved notice — jurisdiction/locale echoed so the widget
     // can persist exactly what it rendered on the follow-up POST.
     return {
       botId,
       jurisdiction: pack.jurisdiction,
-      locale: pack.locale,
-      version: pack.version,
-      title: pack.title,
-      intro: pack.intro,
-      controllerNotice,
-      checkboxLabel: pack.checkboxLabel,
+      locale: source.locale,
+      version: source.version,
+      title: source.title,
+      intro: source.intro,
+      controllerNotice: renderControllerNotice(source.controllerNotice, controllerName),
+      checkboxLabel: source.checkboxLabel,
       continueButton: pack.continueButton,
       submitting: pack.submitting,
       acceptedLabel: pack.acceptedLabel,

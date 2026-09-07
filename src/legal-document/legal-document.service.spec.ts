@@ -462,6 +462,179 @@ describe('LegalDocumentService', () => {
     });
   });
 
+  describe('consent notices (Slice 6b)', () => {
+    const noticeDoc = {
+      id: 'notice-1',
+      slug: 'privacy-notice-gdpr',
+      name: 'Privacy Notice — GDPR',
+      sourceLocale: 'en',
+    };
+    const validBody = [
+      '## Intro',
+      '',
+      'We process your phone number to send a verification code.',
+      '',
+      '## Controller',
+      '',
+      'DATALONGA SOLUTIONS LTD is the processor. {teamBusinessName} is the controller.',
+      '',
+      '## Consent',
+      '',
+      'I have read and accept the Privacy Notice.',
+    ].join('\n');
+
+    describe('publish validation', () => {
+      it('refuses a consent-notice version whose source body breaks the section contract', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          documentId: noticeDoc.id,
+          status: 'DRAFT',
+          contents: [
+            { locale: 'en', translationStatus: 'SOURCE', bodyMarkdown: 'Free-form text, no sections.' },
+          ],
+        });
+
+        await expect(
+          service.publishVersion('privacy-notice-gdpr', 'v1'),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.legalDocumentVersion.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses when an APPROVED translation breaks the contract, even if the source is fine', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          documentId: noticeDoc.id,
+          status: 'DRAFT',
+          contents: [
+            { locale: 'en', translationStatus: 'SOURCE', bodyMarkdown: validBody },
+            { locale: 'de', translationStatus: 'APPROVED', bodyMarkdown: '## Intro\nNur ein Abschnitt.' },
+          ],
+        });
+
+        await expect(
+          service.publishVersion('privacy-notice-gdpr', 'v1'),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('ignores unapproved translations — they are never served', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          documentId: noticeDoc.id,
+          status: 'DRAFT',
+          contents: [
+            { locale: 'en', translationStatus: 'SOURCE', bodyMarkdown: validBody },
+            { locale: 'fr', translationStatus: 'NEEDS_TRANSLATION', bodyMarkdown: 'todo' },
+          ],
+        });
+        prisma.legalDocumentVersion.updateMany.mockResolvedValue({ count: 0 });
+        prisma.legalDocumentVersion.update.mockResolvedValue({ id: 'v1', status: 'PUBLISHED' });
+
+        await expect(service.publishVersion('privacy-notice-gdpr', 'v1')).resolves.toBeDefined();
+      });
+
+      it('leaves ordinary legal documents unvalidated', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(document);
+        prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+          id: 'v2',
+          documentId,
+          status: 'DRAFT',
+          contents: [{ locale: 'tr', translationStatus: 'SOURCE', bodyMarkdown: 'Any prose at all.' }],
+        });
+        prisma.legalDocumentVersion.updateMany.mockResolvedValue({ count: 0 });
+        prisma.legalDocumentVersion.update.mockResolvedValue({ id: 'v2', status: 'PUBLISHED' });
+
+        await expect(service.publishVersion('kvkk', 'v2')).resolves.toBeDefined();
+      });
+    });
+
+    describe('getConsentNotice', () => {
+      it('returns the parsed fields and the version number for the audit string', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findFirst.mockResolvedValue({
+          id: 'v4',
+          versionNumber: 4,
+          status: 'PUBLISHED',
+          contents: [
+            {
+              locale: 'en',
+              title: 'Privacy Notice and Terms of Use',
+              bodyMarkdown: validBody,
+              translationStatus: 'SOURCE',
+            },
+          ],
+        });
+
+        const notice = await service.getConsentNotice('gdpr', 'en');
+
+        expect(notice).toMatchObject({
+          slug: 'privacy-notice-gdpr',
+          versionNumber: 4,
+          locale: 'en',
+          title: 'Privacy Notice and Terms of Use',
+          checkboxLabel: 'I have read and accept the Privacy Notice.',
+        });
+        expect(notice?.controllerNotice).toContain('{teamBusinessName}');
+      });
+
+      it('returns null (not a throw) when the document has never been seeded', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(null);
+
+        await expect(service.getConsentNotice('pdpl', 'en')).resolves.toBeNull();
+      });
+
+      it('returns null when the document exists but nothing is published', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findFirst.mockResolvedValue(null);
+
+        await expect(service.getConsentNotice('gdpr', 'en')).resolves.toBeNull();
+      });
+
+      it('returns null when the published body no longer satisfies the contract', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findFirst.mockResolvedValue({
+          id: 'v5',
+          versionNumber: 5,
+          status: 'PUBLISHED',
+          contents: [
+            {
+              locale: 'en',
+              title: 'Privacy Notice',
+              bodyMarkdown: 'Someone rewrote this as plain prose.',
+              translationStatus: 'SOURCE',
+            },
+          ],
+        });
+
+        await expect(service.getConsentNotice('gdpr', 'en')).resolves.toBeNull();
+      });
+
+      it('falls back to the source locale when the requested translation is not approved', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findFirst.mockResolvedValue({
+          id: 'v6',
+          versionNumber: 6,
+          status: 'PUBLISHED',
+          contents: [
+            { locale: 'en', title: 'EN', bodyMarkdown: validBody, translationStatus: 'SOURCE' },
+            {
+              locale: 'de',
+              title: 'DE',
+              bodyMarkdown: validBody,
+              translationStatus: 'NEEDS_TRANSLATION',
+            },
+          ],
+        });
+
+        const notice = await service.getConsentNotice('gdpr', 'de');
+
+        expect(notice?.locale).toBe('en');
+      });
+    });
+  });
+
   describe('recordAcceptance', () => {
     const userActor = { subjectType: 'user', subjectId: 'user-1', teamId: 'team-1' };
 

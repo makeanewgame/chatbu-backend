@@ -623,3 +623,138 @@ describe('LeadService — submit privacy-consent gate (Legal Slice 2)', () => {
     expect(prisma.leadPrivacyConsent.findFirst).not.toHaveBeenCalled();
   });
 });
+
+// ─── Legal Slice 6b (2026-09-07) ────────────────────────────────────────────
+// The consent card's legal copy is CMS-first with a wholesale fallback to
+// the hardcoded pack. These tests pin the two halves that matter for the
+// audit trail: which text the visitor sees, and which version string the
+// consent row will record — they must always come from the same source.
+describe('LeadService — getConsentText (consent notice CMS-first)', () => {
+  let service: LeadService;
+  let getConsentNotice: jest.Mock;
+
+  const build = async () => {
+    const prisma: any = {
+      customerBots: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'bot-1', teamId: 'team-1', settings: {} }),
+      },
+      team: { findUnique: jest.fn().mockResolvedValue({ businessName: 'Acme Ltd', name: 'Acme' }) },
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LeadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: {} },
+        { provide: JwtService, useValue: {} },
+        { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
+        { provide: LegalDocumentService, useValue: { getConsentNotice } },
+        { provide: ChatFlowService, useValue: {} },
+        { provide: PushNotificationService, useValue: {} },
+        { provide: MixpanelService, useValue: mixpanelStub },
+      ],
+    }).compile();
+    return module.get(LeadService);
+  };
+
+  beforeEach(() => {
+    getConsentNotice = jest.fn().mockResolvedValue(null);
+  });
+
+  it('serves the hardcoded pack when no consent notice is published', async () => {
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'gdpr', explicitLocale: 'en' });
+
+    expect(result.version).toBe('gdpr-en-v3');
+    expect(result.intro).toContain('verification code');
+  });
+
+  it('serves the CMS notice and a version string derived from the published version', async () => {
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-gdpr',
+      versionNumber: 2,
+      locale: 'en',
+      title: 'Updated Privacy Notice',
+      intro: 'Counsel-approved intro.',
+      controllerNotice: 'Processor line for {teamBusinessName}.',
+      checkboxLabel: 'I accept.',
+    });
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'gdpr', explicitLocale: 'en' });
+
+    expect(result.version).toBe('privacy-notice-gdpr-v2');
+    expect(result.title).toBe('Updated Privacy Notice');
+    expect(result.intro).toBe('Counsel-approved intro.');
+    expect(result.checkboxLabel).toBe('I accept.');
+  });
+
+  it('interpolates the team business name into a CMS-authored controller notice', async () => {
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-gdpr',
+      versionNumber: 1,
+      locale: 'en',
+      title: 'Notice',
+      intro: 'Intro.',
+      controllerNotice: '{teamBusinessName} is the data controller.',
+      checkboxLabel: 'I accept.',
+    });
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'gdpr', explicitLocale: 'en' });
+
+    expect(result.controllerNotice).toBe('Acme Ltd is the data controller.');
+  });
+
+  it('keeps UI chrome and legal URLs pack-owned even when the CMS serves the text', async () => {
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-gdpr',
+      versionNumber: 1,
+      locale: 'en',
+      title: 'Notice',
+      intro: 'Intro.',
+      controllerNotice: 'Processor.',
+      checkboxLabel: 'I accept.',
+    });
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'gdpr', explicitLocale: 'en' });
+
+    expect(result.continueButton).toBe('Accept and continue');
+    expect(result.privacyPolicyUrl).toContain('/privacy-policy');
+    expect(result.termsOfUseUrl).toContain('/terms-of-service');
+  });
+
+  it('resolves UI chrome against the SERVED locale, not the requested one', async () => {
+    // Requested 'de', but the CMS has no approved German translation and
+    // falls back to its English source — the buttons must follow the text.
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-gdpr',
+      versionNumber: 3,
+      locale: 'en',
+      title: 'Notice',
+      intro: 'Intro.',
+      controllerNotice: 'Processor.',
+      checkboxLabel: 'I accept.',
+    });
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'gdpr', explicitLocale: 'de' });
+
+    expect(result.locale).toBe('en');
+    expect(result.continueButton).toBe('Accept and continue');
+  });
+
+  it('falls back to the pack — text AND version together — when the CMS lookup throws', async () => {
+    getConsentNotice.mockRejectedValue(new Error('db down'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'kvkk', explicitLocale: 'tr' });
+
+    expect(result.version).toBe('kvkk-tr-v3');
+    expect(result.title).toBe('Aydınlatma Metni ve Kullanım Şartları');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
