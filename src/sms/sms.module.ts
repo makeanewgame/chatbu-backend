@@ -3,6 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { SmsService } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
+import { TwilioWhatsAppProvider } from './providers/twilio-whatsapp.provider';
 import {
   chatbuNetgsmSendTotal,
   chatbuSmsSendTotal,
@@ -26,6 +27,7 @@ import {
   providers: [
     NetgsmSmsProvider,
     TwilioSmsProvider,
+    TwilioWhatsAppProvider,
     SmsService,
     chatbuNetgsmSendTotal,
     chatbuSmsSendTotal,
