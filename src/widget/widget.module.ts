@@ -8,11 +8,12 @@ import { EventsModule } from '../events/events.module';
 import { LeadModule } from '../lead/lead.module';
 import { AppointmentModule } from '../appointment/appointment.module';
 import { ChatFlowModule } from '../chat-flow/chat-flow.module';
+import { SmsModule } from '../sms/sms.module';
 import { WidgetController } from './widget.controller';
 import { WidgetService } from './widget.service';
 
 @Module({
-    imports: [PrismaModule, JwtModule, BotModule, MinioClientModule, MailModule, EventsModule, LeadModule, AppointmentModule, ChatFlowModule],
+    imports: [PrismaModule, JwtModule, BotModule, MinioClientModule, MailModule, EventsModule, LeadModule, AppointmentModule, ChatFlowModule, SmsModule],
     controllers: [WidgetController],
     providers: [WidgetService],
 })

@@ -19,6 +19,8 @@ import { EventsGateway } from '../events/events.gateway';
 import { ConversationBroadcastService } from '../events/conversation-broadcast.service';
 import { AppointmentAvailabilityService } from '../appointment/appointment-availability.service';
 import { ChatFlowService } from '../chat-flow/chat-flow.service';
+import { OtpChannel, SmsService } from '../sms/sms.service';
+import { OtpChannelPreferenceService } from '../sms/otp-channel-preference.service';
 import { FlowKind } from '../../generated/prisma/client';
 
 const FEEDBACK_ANSWER_TO_RATING: Record<'yes' | 'partial' | 'no', number> = {
@@ -41,6 +43,8 @@ export class WidgetService {
         private appointmentAvailabilityService: AppointmentAvailabilityService,
         private chatFlowService: ChatFlowService,
         private conversationBroadcast: ConversationBroadcastService,
+        private smsService: SmsService,
+        private otpChannelPreference: OtpChannelPreferenceService,
     ) { }
 
     /**
@@ -113,6 +117,47 @@ export class WidgetService {
             explicitJurisdiction: (input.explicitJurisdiction as any) ?? null,
             acceptLanguage: input.acceptLanguage ?? null,
         });
+    }
+
+    /**
+     * Transports the widget may offer for the one-time code.
+     *
+     * `sms` is always in the list — it is the platform's baseline and the
+     * only channel with no external approval dependency. `whatsapp` joins
+     * it only when the flag, the sender, and at least one approved
+     * template are all in place (`SmsService.whatsappOtpAvailable`);
+     * offering a channel and then failing to deliver on it is worse than
+     * never offering it.
+     *
+     * Deliberately NOT narrowed by whether this particular bot will
+     * actually send a code: the contact form is the phone-entry surface
+     * for BOTH the lead flow (gated on `smsVerificationRequired`) and the
+     * booking flow (always verifies), and the widget can't tell which one
+     * the form was opened for. A preference recorded on a bot that never
+     * sends a code is inert — nothing was promised to the visitor beyond
+     * how a code would arrive if one did.
+     */
+    async getOtpChannels(): Promise<{ channels: OtpChannel[] }> {
+        const channels: OtpChannel[] = ['sms'];
+        if (this.smsService.whatsappOtpAvailable()) channels.push('whatsapp');
+        return { channels };
+    }
+
+    /**
+     * Record the visitor's transport choice for this conversation, to be
+     * picked up server-side when the code is actually sent (see
+     * `OtpChannelPreferenceService` for why it travels out-of-band).
+     *
+     * Unrecognised channels fall back to `sms` rather than erroring: this
+     * is a delivery preference, and rejecting the form submit over it
+     * would cost the visitor their lead for no safety gain.
+     */
+    async setOtpChannel(chatId: string, channel: string): Promise<{ channel: OtpChannel }> {
+        if (!chatId) throw new BadRequestException('chatId is required');
+        const requested: OtpChannel =
+            channel === 'whatsapp' && this.smsService.whatsappOtpAvailable() ? 'whatsapp' : 'sms';
+        await this.otpChannelPreference.set(chatId, requested);
+        return { channel: requested };
     }
 
     // ---------------------------------------------------------------------------
