@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
@@ -8,6 +13,7 @@ import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { SmsProvider } from './providers/sms-provider.interface';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
+import { TwilioWhatsAppProvider } from './providers/twilio-whatsapp.provider';
 
 // Router strategy — read once at boot for hot-path efficiency. Flip via
 // ConfigMap + Reloader restart:
@@ -18,6 +24,16 @@ import { TwilioSmsProvider } from './providers/twilio.provider';
 // working transport). See `.claude/plans/this-is-a-example-ticklish-
 // dove.md` Slice 2 for the dev-first rollout of `route_by_country`.
 type SmsProviderStrategy = 'netgsm_only' | 'route_by_country';
+
+/**
+ * Transport a one-time code goes out over.
+ *
+ * `sms` stays the default for every caller and every bot — WhatsApp is an
+ * opt-in second channel the VISITOR picks, not a platform-wide flip. The
+ * trigger was one traveller whose SIM is switched off abroad, and one
+ * report is not evidence that SMS is failing for everyone.
+ */
+export type OtpChannel = 'sms' | 'whatsapp';
 
 /**
  * Convert an arbitrary user-typed phone string into an
@@ -73,6 +89,7 @@ export class SmsService {
   constructor(
     private readonly netgsmProvider: NetgsmSmsProvider,
     private readonly twilioProvider: TwilioSmsProvider,
+    private readonly whatsappProvider: TwilioWhatsAppProvider,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     // New provider-agnostic counter. Populated on every send AFTER the
     // provider's own retry envelope resolves. The provider's own more
@@ -188,12 +205,106 @@ export class SmsService {
     code: string,
     botName: string,
     lang: 'tr' | 'en' = 'tr',
+    channel: OtpChannel = 'sms',
   ): Promise<void> {
+    if (channel === 'whatsapp') {
+      await this.sendOtpWhatsApp(phone, code, lang);
+      return;
+    }
     const message =
       lang === 'en'
         ? `Your ${botName} verification code: ${code}. Valid for 5 minutes.`
         : `${botName} doğrulama kodunuz: ${code}. Kod 5 dakika geçerlidir.`;
     await this.sendSms(phone, message, 'otp');
+  }
+
+  /**
+   * True when the WhatsApp OTP channel may be offered at all: the flag is
+   * on, a sender is configured, and at least one approved template SID
+   * exists. Callers use this to decide whether to show the visitor a
+   * channel choice — offering WhatsApp and then failing to deliver is
+   * worse than never offering it.
+   */
+  whatsappOtpAvailable(): boolean {
+    if (process.env.WHATSAPP_OTP_ENABLED?.toLowerCase() !== 'true') return false;
+    if (!process.env.TWILIO_WHATSAPP_FROM) return false;
+    return Boolean(this.whatsappTemplateSid('en') || this.whatsappTemplateSid('tr'));
+  }
+
+  /**
+   * Approved authentication template for a language.
+   *
+   * WhatsApp templates are per-language resources — Meta owns the body
+   * copy and localizes it per template, so there is one Content SID per
+   * language rather than one template with a language parameter. A
+   * missing language falls back to English; if English is missing too the
+   * caller gets null and must not route to WhatsApp.
+   */
+  private whatsappTemplateSid(lang: 'tr' | 'en'): string | null {
+    const byLang =
+      lang === 'tr'
+        ? process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_TR
+        : process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN;
+    return byLang || process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN || null;
+  }
+
+  /**
+   * Send the OTP as a WhatsApp authentication template.
+   *
+   * Unlike the SMS path there is no message to compose: the body is
+   * Meta's fixed authentication copy and the code travels as variable
+   * `1`. Everything else — E.164 parsing, the metrics counter, throw-on-
+   * failure — matches `sendSms` so callers can treat both channels
+   * identically.
+   */
+  private async sendOtpWhatsApp(
+    phone: string,
+    code: string,
+    lang: 'tr' | 'en',
+  ): Promise<void> {
+    if (process.env.WHATSAPP_OTP_ENABLED?.toLowerCase() !== 'true') {
+      this.logger.error('[SmsService] WhatsApp OTP requested while WHATSAPP_OTP_ENABLED is off');
+      throw new BadRequestException({ code: 'WHATSAPP_OTP_DISABLED' });
+    }
+
+    const parsed = parsePhoneToE164(phone);
+    if (!parsed) {
+      this.logger.error(`[SmsService] phone "${phone}" is not a valid E.164 number (whatsapp)`);
+      throw new BadRequestException({ code: 'INVALID_PHONE_E164' });
+    }
+
+    const contentSid = this.whatsappTemplateSid(lang);
+    if (!contentSid) {
+      this.logger.error(
+        `[SmsService] no WhatsApp OTP template configured for lang=${lang} ` +
+          '(TWILIO_WHATSAPP_OTP_TEMPLATE_EN/_TR)',
+      );
+      throw new InternalServerErrorException('WhatsApp OTP template is not configured');
+    }
+
+    try {
+      await this.whatsappProvider.sendTemplate({
+        e164: parsed.e164,
+        country: parsed.country,
+        contentSid,
+        variables: { '1': code },
+        context: 'otp',
+      });
+      this.smsSendCounter.inc({
+        provider: this.whatsappProvider.name,
+        context: 'otp',
+        country: parsed.country,
+        outcome: 'success',
+      });
+    } catch (err) {
+      this.smsSendCounter.inc({
+        provider: this.whatsappProvider.name,
+        context: 'otp',
+        country: parsed.country,
+        outcome: 'failure',
+      });
+      throw err;
+    }
   }
 
   /**

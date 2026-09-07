@@ -5,6 +5,7 @@ import { BadRequestException } from '@nestjs/common';
 import { SmsService, parsePhoneToE164, resolveOtpLang } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
+import { TwilioWhatsAppProvider } from './providers/twilio-whatsapp.provider';
 
 /**
  * Post-2026-08-13 tests: `SmsService` is a thin router that parses a
@@ -22,6 +23,7 @@ describe('SmsService (router)', () => {
   let service: SmsService;
   let netgsm: { sendSms: jest.Mock; name: string };
   let twilio: { sendSms: jest.Mock; name: string };
+  let whatsapp: { sendTemplate: jest.Mock; name: string };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
   let smsCounter: { inc: jest.Mock };
 
@@ -35,6 +37,10 @@ describe('SmsService (router)', () => {
     }
     netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
     twilio = { name: 'twilio', sendSms: jest.fn().mockResolvedValue(undefined) };
+    whatsapp = {
+      name: 'twilio_whatsapp',
+      sendTemplate: jest.fn().mockResolvedValue(undefined),
+    };
     logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
     smsCounter = { inc: jest.fn() };
 
@@ -43,6 +49,7 @@ describe('SmsService (router)', () => {
         SmsService,
         { provide: NetgsmSmsProvider, useValue: netgsm },
         { provide: TwilioSmsProvider, useValue: twilio },
+        { provide: TwilioWhatsAppProvider, useValue: whatsapp },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
         { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
       ],
@@ -247,6 +254,7 @@ describe('SmsService (router)', () => {
           SmsService,
           { provide: NetgsmSmsProvider, useValue: netgsm },
           { provide: TwilioSmsProvider, useValue: twilio },
+          { provide: TwilioWhatsAppProvider, useValue: whatsapp },
           { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
           { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
         ],
@@ -400,5 +408,170 @@ describe('resolveOtpLang — SMS template language', () => {
     expect(resolveOtpLang(' TR ', 'DE')).toBe('tr');
     expect(resolveOtpLang('tr-TR', 'DE')).toBe('tr');
     expect(resolveOtpLang('TR-tr', 'DE')).toBe('tr');
+  });
+});
+
+// ─── WhatsApp OTP channel (2026-09-07) ────────────────────────────────────
+// SMS stays the default; WhatsApp is a second transport the VISITOR picks.
+// The channel exists because SMS has a structural blind spot for travellers
+// whose home SIM is switched off abroad.
+describe('SmsService — WhatsApp OTP channel', () => {
+  let service: SmsService;
+  let netgsm: { sendSms: jest.Mock; name: string };
+  let twilio: { sendSms: jest.Mock; name: string };
+  let whatsapp: { sendTemplate: jest.Mock; name: string };
+  let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
+  let smsCounter: { inc: jest.Mock };
+
+  const originalEnv = { ...process.env };
+
+  async function build() {
+    netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
+    twilio = { name: 'twilio', sendSms: jest.fn().mockResolvedValue(undefined) };
+    whatsapp = {
+      name: 'twilio_whatsapp',
+      sendTemplate: jest.fn().mockResolvedValue(undefined),
+    };
+    logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    smsCounter = { inc: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SmsService,
+        { provide: NetgsmSmsProvider, useValue: netgsm },
+        { provide: TwilioSmsProvider, useValue: twilio },
+        { provide: TwilioWhatsAppProvider, useValue: whatsapp },
+        { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
+        { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
+      ],
+    }).compile();
+    service = module.get(SmsService);
+  }
+
+  const enableWhatsApp = () => {
+    process.env.WHATSAPP_OTP_ENABLED = 'true';
+    process.env.TWILIO_WHATSAPP_FROM = '+447414150634';
+    process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN = 'HXen';
+    process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_TR = 'HXtr';
+  };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    jest.clearAllMocks();
+  });
+
+  it('defaults to SMS — an existing caller that passes no channel is untouched', async () => {
+    enableWhatsApp();
+    await build();
+
+    await service.sendOtpSms('+905321112233', '123456', 'TestBot', 'tr');
+
+    expect(netgsm.sendSms).toHaveBeenCalledTimes(1);
+    expect(whatsapp.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('sends the code as template variable 1, with no composed message body', async () => {
+    enableWhatsApp();
+    await build();
+
+    await service.sendOtpSms('+31612345678', '654321', 'TestBot', 'en', 'whatsapp');
+
+    expect(whatsapp.sendTemplate).toHaveBeenCalledWith({
+      e164: '+31612345678',
+      country: 'NL',
+      contentSid: 'HXen',
+      variables: { '1': '654321' },
+      context: 'otp',
+    });
+    expect(netgsm.sendSms).not.toHaveBeenCalled();
+    expect(twilio.sendSms).not.toHaveBeenCalled();
+  });
+
+  it('picks the template by language', async () => {
+    enableWhatsApp();
+    await build();
+
+    await service.sendOtpSms('+905321112233', '111111', 'TestBot', 'tr', 'whatsapp');
+
+    expect(whatsapp.sendTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ contentSid: 'HXtr' }),
+    );
+  });
+
+  it('falls back to the English template when the language has none', async () => {
+    process.env.WHATSAPP_OTP_ENABLED = 'true';
+    process.env.TWILIO_WHATSAPP_FROM = '+447414150634';
+    process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN = 'HXen';
+    delete process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_TR;
+    await build();
+
+    await service.sendOtpSms('+905321112233', '111111', 'TestBot', 'tr', 'whatsapp');
+
+    expect(whatsapp.sendTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ contentSid: 'HXen' }),
+    );
+  });
+
+  it('refuses a WhatsApp send while the flag is off, rather than falling back to SMS', async () => {
+    // Silent fallback would be worse than an error: the visitor asked for
+    // WhatsApp precisely because SMS cannot reach them.
+    delete process.env.WHATSAPP_OTP_ENABLED;
+    await build();
+
+    await expect(
+      service.sendOtpSms('+31612345678', '654321', 'TestBot', 'en', 'whatsapp'),
+    ).rejects.toThrow(BadRequestException);
+    expect(netgsm.sendSms).not.toHaveBeenCalled();
+    expect(whatsapp.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unparsable phone before reaching the provider', async () => {
+    enableWhatsApp();
+    await build();
+
+    await expect(
+      service.sendOtpSms('not-a-phone', '654321', 'TestBot', 'en', 'whatsapp'),
+    ).rejects.toThrow(BadRequestException);
+    expect(whatsapp.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('counts success and failure under the whatsapp provider label', async () => {
+    enableWhatsApp();
+    await build();
+
+    await service.sendOtpSms('+31612345678', '1', 'TestBot', 'en', 'whatsapp');
+    expect(smsCounter.inc).toHaveBeenCalledWith({
+      provider: 'twilio_whatsapp',
+      context: 'otp',
+      country: 'NL',
+      outcome: 'success',
+    });
+
+    whatsapp.sendTemplate.mockRejectedValueOnce(new Error('twilio down'));
+    await expect(
+      service.sendOtpSms('+31612345678', '2', 'TestBot', 'en', 'whatsapp'),
+    ).rejects.toThrow('twilio down');
+    expect(smsCounter.inc).toHaveBeenCalledWith({
+      provider: 'twilio_whatsapp',
+      context: 'otp',
+      country: 'NL',
+      outcome: 'failure',
+    });
+  });
+
+  describe('whatsappOtpAvailable', () => {
+    it('is false unless flag, sender and a template are all present', async () => {
+      await build();
+      expect(service.whatsappOtpAvailable()).toBe(false);
+
+      process.env.WHATSAPP_OTP_ENABLED = 'true';
+      expect(service.whatsappOtpAvailable()).toBe(false);
+
+      process.env.TWILIO_WHATSAPP_FROM = '+447414150634';
+      expect(service.whatsappOtpAvailable()).toBe(false);
+
+      process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN = 'HXen';
+      expect(service.whatsappOtpAvailable()).toBe(true);
+    });
   });
 });
