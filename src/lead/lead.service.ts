@@ -19,6 +19,8 @@ import {
 } from './jurisdiction.util';
 import {
   ConsentTextPack,
+  consentLegalUrls,
+  getConsentChrome,
   getConsentPack,
   renderControllerNotice,
 } from './consent-text.constants';
@@ -39,11 +41,6 @@ const MAX_VERIFY_ATTEMPTS = 5;
 // observed 2026-08-11 where the agent re-triggered SMS verification twice
 // in close succession within the same window, well under the abuse cap.
 const SMS_RESEND_COOLDOWN_SECONDS = 60;
-
-// Fallback used only if no "kvkk" LegalDocument has a published version yet
-// (e.g. before the admin has migrated the legacy static text into the new
-// legal-document editor). Once that seeding is done this is never reached.
-const LEGACY_KVKK_VERSION_FALLBACK = process.env.KVKK_TEXT_VERSION || 'v1.0';
 
 // How long a KVKK consent counts as "fresh enough" to gate an SMS OTP
 // request without requiring the visitor to accept again mid-conversation.
@@ -720,34 +717,41 @@ export class LeadService {
       browserLocale: acceptLanguage,
     });
 
-    // Try the LegalDocument admin table first (source of truth once
-    // seeded), fall back to the hardcoded pack version so a bot without
-    // legal-doc rows still gets an audit-quality version string.
+    // Record the version of the text the visitor ACTUALLY saw. This must
+    // resolve exactly the way getConsentText does, or the audit trail
+    // describes a different document than the one on screen.
+    //
+    // Fixed 2026-09-07: this path used to run its own lookup against a
+    // third slug scheme (`privacy-<jurisdiction>`, plus legacy `kvkk`) that
+    // was never seeded in any environment, so it always fell through to the
+    // pack version — including for visitors who were shown CMS text. It
+    // also recorded a bare `v1`, which doesn't identify the document. Both
+    // sides now go through getConsentNotice.
+    const pack = getConsentPack(jurisdiction, locale);
     let legalDocumentVersionId: string | null = null;
-    let privacyVersion = getConsentPack(jurisdiction, locale).version;
+    let privacyVersion = pack.version;
+    // The locale actually shown, which the read path also falls back on —
+    // recording the REQUESTED locale would claim the visitor read Turkish
+    // when they were served the English source.
+    let servedLocale = pack.locale;
     try {
-      // Composite slug encodes jurisdiction so KVKK/GDPR/CCPA/PDPL live
-      // as sibling LegalDocuments; the pre-Slice-3 slug 'kvkk' is still
-      // consulted for backward compat when the jurisdiction is 'kvkk'.
-      const slug = jurisdiction === 'kvkk' ? 'kvkk' : `privacy-${jurisdiction}`;
-      const published = await this.legalDocumentService.getPublished(slug, locale);
-      legalDocumentVersionId = published.versionId;
-      privacyVersion = `v${published.versionNumber}`;
-    } catch (err) {
-      // Missing document / no published version is an EXPECTED state (the
-      // per-jurisdiction CMS slugs are seeded incrementally) — the
-      // hardcoded pack version stays authoritative. Anything else (DB
-      // permission, connectivity) must be visible: this exact catch
-      // silently ate a Postgres 42501 for weeks in dev (found 2026-09-06,
-      // legal Slice 5 canary).
-      if (err instanceof NotFoundException) {
-        // expected: fall through to pack version, no log noise
-      } else {
-        console.warn(
-          `[lead-service] legal-doc lookup failed for jurisdiction=${jurisdiction} locale=${locale} — falling back to pack version:`,
-          err,
-        );
+      const notice = await this.legalDocumentService.getConsentNotice(jurisdiction, locale);
+      if (notice) {
+        legalDocumentVersionId = notice.versionId;
+        privacyVersion = `${notice.slug}-v${notice.versionNumber}`;
+        servedLocale = notice.locale;
       }
+      // notice === null is an EXPECTED state (a jurisdiction whose notice
+      // isn't seeded/published yet) — the pack version stays authoritative,
+      // matching the wholesale fallback on the read side.
+    } catch (err) {
+      // Anything thrown here is unexpected (DB permission, connectivity)
+      // and must be visible: this exact catch silently ate a Postgres 42501
+      // for weeks in dev (found 2026-09-06, legal Slice 5 canary).
+      console.warn(
+        `[lead-service] consent-notice lookup failed for jurisdiction=${jurisdiction} locale=${locale} — falling back to pack version:`,
+        err,
+      );
     }
 
     const consent = await this.prisma.leadPrivacyConsent.create({
@@ -758,7 +762,7 @@ export class LeadService {
         source: 'chatbot',
         privacyVersion,
         legalDocumentVersionId,
-        locale,
+        locale: servedLocale,
         jurisdiction,
         country: null, // filled by bindProvisionalConsent when OTP parses
         privacyAcceptedAt: new Date(),
@@ -852,18 +856,26 @@ export class LeadService {
         return null;
       });
 
-    // Chrome follows the locale that was actually SERVED, not the one that
-    // was requested. The CMS applies its own locale fallback (an unapproved
-    // translation falls back to the document's source locale), so resolving
-    // the pack against the requested locale could pair German buttons with
-    // an English notice. With no CMS notice, servedLocale === locale and
-    // this is byte-for-byte the pre-Slice-9 resolution.
-    const servedLocale = notice?.locale ?? locale;
-    const pack = getConsentPack(jurisdiction, servedLocale);
+    const pack = getConsentPack(jurisdiction, locale);
 
-    // UI chrome (buttons, status labels, error copy) and the legal-page URLs
-    // stay pack-owned: they are not legal text, and the URLs are
-    // environment-derived (FRONTEND_URL), not authorable.
+    // The locale actually rendered — NOT always the one requested. Both
+    // sources apply their own fallback: the CMS drops to the document's
+    // source locale for an unapproved translation, and the pack registry
+    // drops across LANGUAGES when a (jurisdiction, locale) pair doesn't
+    // exist — there is no ccpa:tr pack, so a Turkish visitor under CCPA
+    // gets English legal text.
+    const servedLocale = notice?.locale ?? pack.locale;
+
+    // Chrome and the legal-page links follow the SERVED language, never the
+    // jurisdiction. Taking them from the pack is what produced the
+    // half-translated card: an English CCPA notice with Turkish widget UI
+    // around it, or (once the CMS holds a translation the packs lack) a
+    // Turkish notice under English buttons. These strings carry no
+    // regulatory meaning; the only thing that should drive them is the
+    // language on screen.
+    const chrome = getConsentChrome(servedLocale);
+    const legalUrls = consentLegalUrls(servedLocale);
+
     const source = notice
       ? {
           locale: notice.locale,
@@ -893,12 +905,8 @@ export class LeadService {
       intro: source.intro,
       controllerNotice: renderControllerNotice(source.controllerNotice, controllerName),
       checkboxLabel: source.checkboxLabel,
-      continueButton: pack.continueButton,
-      submitting: pack.submitting,
-      acceptedLabel: pack.acceptedLabel,
-      errorMessage: pack.errorMessage,
-      privacyPolicyUrl: pack.privacyPolicyUrl,
-      termsOfUseUrl: pack.termsOfUseUrl,
+      ...chrome,
+      ...legalUrls,
     };
   }
 

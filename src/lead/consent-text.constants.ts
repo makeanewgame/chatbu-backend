@@ -56,6 +56,19 @@ const appLegalUrls = (locale: string) => ({
   termsOfUseUrl: `${APP_BASE}/terms-of-service?lng=${locale}`,
 });
 
+/**
+ * Legal-page links for the locale the card is ACTUALLY rendered in.
+ *
+ * Exported (2026-09-07) because the served locale is no longer always the
+ * serving pack's locale: the CMS may hold a translation for a language no
+ * pack covers, and conversely a pack request can fall back across
+ * languages. Deriving the links from the served locale keeps the "read the
+ * full policy" links in the same language as the notice around them.
+ */
+export function consentLegalUrls(locale: string) {
+  return appLegalUrls(locale);
+}
+
 // GDPR — English (UK-based Chatbu, EU/UK visitors, and any English-
 // speaking global visitor whose jurisdiction resolves to GDPR).
 const GDPR_EN: ConsentTextPack = {
@@ -250,6 +263,31 @@ const REGISTRY: Record<string, ConsentTextPack> = {
   'pdpl:en': PDPL_EN,
   'generic:en': GENERIC_EN,
 };
+
+/** The non-legal, jurisdiction-independent strings of a pack. */
+export type ConsentChrome = Pick<
+  ConsentTextPack,
+  'continueButton' | 'submitting' | 'acceptedLabel' | 'errorMessage'
+>;
+
+/**
+ * UI chrome for a LANGUAGE, independent of jurisdiction (2026-09-07).
+ *
+ * "Accept and continue" / "Submitting…" carry no regulatory meaning, so
+ * they are the same string for every jurisdiction in a given language.
+ * Resolving them per (jurisdiction, locale) — as the pack lookup does —
+ * produced half-translated cards: a Turkish-speaking visitor whose
+ * Accept-Language put them under CCPA got an English pack end-to-end
+ * (there is no ccpa:tr pack) while the widget's own UI around it stayed
+ * Turkish. Chrome now follows the language of the text actually shown, so
+ * the card is coherent even when the legal regime and the language come
+ * from different places.
+ */
+export function getConsentChrome(locale: string): ConsentChrome {
+  const inLocale = Object.values(REGISTRY).find((p) => p.locale === locale);
+  const { continueButton, submitting, acceptedLabel, errorMessage } = inLocale ?? GENERIC_EN;
+  return { continueButton, submitting, acceptedLabel, errorMessage };
+}
 
 /**
  * Every pack, in registry order. Used by the legal CMS seeder (Slice 6b) to
