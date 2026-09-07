@@ -162,6 +162,11 @@ rewrite) are counsel-blocked — the product ships slots and plumbing now.
 | 3 | Cookie consent banner + gated trackers | **Prod live 2026-09-06** |
 | 4 | AI disclosure (widget + off-platform channels) | **Prod live 2026-09-06** |
 | 5 | Acceptance auditability (SIGNUP context) + endpoint hardening | **Prod live 2026-09-06** |
+| 6 | Content consolidation into CMS (per-slug source locale, CMS-served ToS/Privacy pages, app-hosted legal links, pack-rendering consent card, seeder) | **Prod live 2026-09-06** |
+| 6b | Widget consent notices into the CMS (`privacy-notice-<jurisdiction>`) | **Shipped to develop 2026-09-07** — completes the piece Slice 6 deferred |
+| 7 | DPA surface (slug + team-level acceptance + sub-processor page) | **Prod live 2026-09-06** — `dpa` is an empty slot (text counsel-blocked), `sub-processors` published |
+| 8 | Versioning / re-acceptance mechanics | **Prod live 2026-09-07** — dormant until a publish sets the flag |
+| 9–11 | Team legal identity, retention alignment, cleanup slots | Later |
 
 ### Slice 5 cutover note (2026-09-06)
 
@@ -175,7 +180,32 @@ synthesized acceptance row without a real shown-text version would be
 worthless as evidence. The boolean remains load-bearing for both cohorts.
 The audit trail becomes complete once Slice 6 seeds the two slugs from the
 current hardcoded page texts.
-| 6 | Content consolidation into CMS (per-slug source locale, CMS-served ToS/Privacy pages, app-hosted legal links, pack-rendering consent card, seeder) | **In progress 2026-09-06** — consent packs THEMSELVES stay hardcoded (their structured fields don't fit title+body CMS rows); lifting them into the CMS is a later slice |
-| 7 | DPA surface (slug + team-level acceptance + sub-processor page) | Next wave |
-| 8 | Versioning / re-acceptance mechanics | Next wave |
-| 9–11 | Team legal identity, retention alignment, cleanup slots | Later |
+### Slice 6b note — consent notices in the CMS (2026-09-07)
+
+Slice 6 left the consent packs hardcoded because a `LegalDocumentContent`
+row carries only `title` + `bodyMarkdown` while a pack is a set of
+discrete fields. Slice 6b closes that with a split rather than a
+one-to-one migration:
+
+- **CMS-owned (legal text):** `title`, plus `## Intro`, `## Controller`
+  and `## Consent` sections of one document per jurisdiction
+  (`privacy-notice-gdpr`, `-kvkk`, `-ccpa`, `-pdpl`, `-generic`).
+  `publishVersion` refuses a body that breaks that contract, so a broken
+  edit surfaces as an admin error instead of a silently degraded widget.
+- **Pack-owned (UI chrome):** `continueButton`, `submitting`,
+  `acceptedLabel`, `errorMessage` — not legal text, and not something an
+  admin should be able to break.
+- **Environment-derived:** `privacyPolicyUrl`, `termsOfUseUrl`.
+
+Runtime is CMS-first with a **wholesale** fallback to the hardcoded pack
+(missing document, nothing published, or a body that no longer parses).
+Never a per-field merge: mixing sources would show one text while the
+consent row recorded the other version string, which is exactly the
+divergence Slice 6 closed. The recorded version becomes
+`privacy-notice-<jurisdiction>-v<n>`, so the audit string now bumps
+itself on every publish instead of relying on someone hand-editing a
+`version` constant next to the copy.
+
+`npm run seed:legal` creates these documents **from** the packs, so the
+seeded CMS text and the fallback start identical; after that the CMS copy
+is edited in the admin UI and the pack stays frozen as the safety net.

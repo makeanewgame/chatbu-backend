@@ -28,8 +28,20 @@ import { join } from 'path';
 import { PrismaClient } from '../../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
+import { ConsentTextPack, listConsentPacks } from '../lead/consent-text.constants';
+import { consentNoticeSlug, formatConsentNotice } from '../legal-document/consent-notice.util';
 
 const SEED_DIR = join(process.cwd(), 'prisma', 'seed-data');
+
+interface SeedLocale {
+  locale: string;
+  title: string;
+  // Exactly one of the two: `file` reads prisma/seed-data/<file>, `body`
+  // supplies the markdown inline (Slice 6b consent notices, generated from
+  // the pack registry rather than checked in as duplicate .md files).
+  file?: string;
+  body?: string;
+}
 
 interface SeedDoc {
   slug: string;
@@ -38,7 +50,51 @@ interface SeedDoc {
   // First entry MUST be the source locale. An EMPTY array seeds the
   // document row only (a "slot": visible in the admin UI, no draft) —
   // used for documents whose text is counsel-blocked.
-  locales: { locale: string; file: string; title: string }[];
+  locales: SeedLocale[];
+}
+
+/**
+ * Slice 6b (2026-09-07): one CMS document per jurisdiction holding the
+ * widget consent notice, built from the hardcoded packs in
+ * `src/lead/consent-text.constants.ts`. Seeding from the packs (rather
+ * than from separate .md files) guarantees the CMS text and the runtime
+ * fallback start out identical — after this, the CMS copy is edited in
+ * the admin UI and the pack stays frozen as the safety net.
+ *
+ * Only the LEGAL fields are seeded; UI chrome and URLs stay pack-owned.
+ * KVKK is tr-source, every other jurisdiction is en-source.
+ */
+function consentNoticeSeedDocs(): SeedDoc[] {
+  const byJurisdiction = new Map<string, ConsentTextPack[]>();
+  for (const pack of listConsentPacks()) {
+    const list = byJurisdiction.get(pack.jurisdiction) ?? [];
+    list.push(pack);
+    byJurisdiction.set(pack.jurisdiction, list);
+  }
+
+  return [...byJurisdiction.entries()].map(([jurisdiction, packs]) => {
+    const sourceLocale = jurisdiction === 'kvkk' ? 'tr' : 'en';
+    // Source locale first — the seeder marks entry order, not locale, as
+    // authoritative for which row becomes SOURCE.
+    const ordered = [
+      ...packs.filter((p) => p.locale === sourceLocale),
+      ...packs.filter((p) => p.locale !== sourceLocale),
+    ];
+    return {
+      slug: consentNoticeSlug(jurisdiction),
+      name: `Privacy Notice — ${jurisdiction.toUpperCase()}`,
+      sourceLocale,
+      locales: ordered.map((pack) => ({
+        locale: pack.locale,
+        title: pack.title,
+        body: formatConsentNotice({
+          intro: pack.intro,
+          controllerNotice: pack.controllerNotice,
+          checkboxLabel: pack.checkboxLabel,
+        }),
+      })),
+    };
+  });
 }
 
 const SEED_DOCS: SeedDoc[] = [
@@ -78,6 +134,8 @@ const SEED_DOCS: SeedDoc[] = [
     sourceLocale: 'en',
     locales: [],
   },
+  // ── Slice 6b (2026-09-07): one consent notice per jurisdiction ──
+  ...consentNoticeSeedDocs(),
 ];
 
 async function main() {
@@ -123,8 +181,8 @@ async function main() {
           versionNumber,
           status: 'DRAFT',
           contents: {
-            create: doc.locales.map(({ locale, file, title }) => {
-              const bodyMarkdown = readFileSync(join(SEED_DIR, file), 'utf8');
+            create: doc.locales.map(({ locale, file, body, title }) => {
+              const bodyMarkdown = body ?? readFileSync(join(SEED_DIR, file!), 'utf8');
               const isSource = locale === doc.sourceLocale;
               return {
                 locale,

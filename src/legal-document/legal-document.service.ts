@@ -10,6 +10,13 @@ import {
   SupportedLocale,
   UpdateLegalDocumentContentDto,
 } from './dto/legal-document.dto';
+import {
+  ConsentNoticeFields,
+  consentNoticeSlug,
+  describeConsentNoticeProblem,
+  isConsentNoticeSlug,
+  parseConsentNotice,
+} from './consent-notice.util';
 
 // Documents every new account accepts at registration. Rows are written
 // best-effort: a slug with no published version is skipped (the CMS may
@@ -187,6 +194,23 @@ export class LegalDocumentService {
       throw new BadRequestException({ code: 'SOURCE_LOCKED_AFTER_PUBLISH' });
     }
 
+    // Consent notices are consumed field-by-field, so the section contract
+    // is checked at publish. A TRANSLATION added to an already-published
+    // version never passes through publish again, though — it goes live the
+    // moment it is approved. Validating on the way in closes that gap; the
+    // runtime would otherwise fall back to the hardcoded pack for that
+    // locale without telling anyone.
+    if (isConsentNoticeSlug(document.slug)) {
+      const problem = describeConsentNoticeProblem(dto.bodyMarkdown);
+      if (problem) {
+        throw new BadRequestException({
+          code: 'CONSENT_NOTICE_SECTIONS_INVALID',
+          locale: normalizedLocale,
+          message: problem,
+        });
+      }
+    }
+
     return this.prisma.legalDocumentContent.upsert({
       where: { versionId_locale: { versionId, locale: normalizedLocale } },
       create: {
@@ -249,6 +273,28 @@ export class LegalDocumentService {
       throw new BadRequestException({ code: 'SOURCE_CONTENT_REQUIRED' });
     }
 
+    // Slice 6b: a consent-notice document is consumed field-by-field by the
+    // widget, so its body must satisfy the section contract. Validate every
+    // content the resolver could actually serve — the source locale plus
+    // APPROVED translations — and refuse the publish otherwise. Catching it
+    // here is the difference between an admin seeing an error and the widget
+    // silently falling back to hardcoded copy for that locale.
+    if (isConsentNoticeSlug(slug)) {
+      for (const content of version.contents) {
+        const servable =
+          content.locale === document.sourceLocale || content.translationStatus === 'APPROVED';
+        if (!servable) continue;
+        const problem = describeConsentNoticeProblem(content.bodyMarkdown);
+        if (problem) {
+          throw new BadRequestException({
+            code: 'CONSENT_NOTICE_SECTIONS_INVALID',
+            locale: content.locale,
+            message: problem,
+          });
+        }
+      }
+    }
+
     const now = new Date();
     const [, published] = await this.prisma.$transaction([
       this.prisma.legalDocumentVersion.updateMany({
@@ -298,6 +344,64 @@ export class LegalDocumentService {
       locale: content.locale,
       title: content.title,
       bodyMarkdown: content.bodyMarkdown,
+    };
+  }
+
+  /**
+   * Slice 6b: resolve the widget consent notice for a jurisdiction from the
+   * CMS. Returns null — never throws — when the document doesn't exist, has
+   * no published version, or its servable body doesn't satisfy the section
+   * contract; the caller then serves the hardcoded pack instead. The widget
+   * consent card must render on every bot in every environment, including
+   * ones where nobody has seeded or published these documents yet, so an
+   * unseeded CMS is a normal state here rather than an error.
+   *
+   * The returned `versionNumber` becomes part of the version string
+   * persisted on the consent row, which makes the audit trail bump itself
+   * on every publish — the hardcoded packs relied on a human remembering
+   * to hand-edit `version` alongside the copy.
+   */
+  async getConsentNotice(
+    jurisdiction: string,
+    locale: string,
+  ): Promise<
+    (ConsentNoticeFields & {
+      slug: string;
+      versionId: string;
+      versionNumber: number;
+      locale: string;
+      title: string;
+    }) | null
+  > {
+    const slug = consentNoticeSlug(jurisdiction);
+    const document = await this.prisma.legalDocument.findUnique({ where: { slug } });
+    if (!document) return null;
+
+    const version = await this.prisma.legalDocumentVersion.findFirst({
+      where: { documentId: document.id, status: 'PUBLISHED' },
+      include: { contents: true },
+    });
+    if (!version) return null;
+
+    const normalizedLocale = this.normalizeLocale(locale, document.sourceLocale);
+    let content: { locale: string; title: string; bodyMarkdown: string };
+    try {
+      content = this.resolveContent(version.contents, normalizedLocale, document.sourceLocale);
+    } catch {
+      // SOURCE_CONTENT_MISSING — a published version with no source row.
+      return null;
+    }
+
+    const fields = parseConsentNotice(content.bodyMarkdown);
+    if (!fields) return null;
+
+    return {
+      ...fields,
+      slug,
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+      locale: content.locale,
+      title: content.title,
     };
   }
 

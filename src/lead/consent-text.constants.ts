@@ -1,11 +1,18 @@
 // Slice 3 (2026-08-20): consent text packs by (jurisdiction, locale).
 //
-// These are hardcoded packs — not sourced from the LegalDocument admin —
-// because the LegalDocument admin UI is Turkish-source-locked
-// (SOURCE_LOCALE='tr') and we want an English-first pack for GDPR without
-// forcing a Turkish "source" translation dance for every legal iteration.
-// A future refactor can lift these into the admin UI with per-slug source
-// locale, but that's Slice 3D or later.
+// ROLE AS OF LEGAL SLICE 9 (2026-09-07): these packs are the FALLBACK, no
+// longer the primary source. The legal half of a notice (title, intro,
+// controller notice, consent statement) is served from the CMS document
+// `privacy-notice-<jurisdiction>` when one is published, so counsel edits
+// ship without a deploy; `lead.service.getConsentText` falls back to the
+// pack below — wholesale, never field-by-field — when that document is
+// missing, unpublished, or fails the section contract. `npm run
+// seed:legal` seeds the CMS documents FROM these packs, which keeps this
+// file the origin of the text even after the CMS owns its lifecycle.
+//
+// The UI chrome fields (continueButton, submitting, acceptedLabel,
+// errorMessage) and the two URLs are ALWAYS pack-served: they are not
+// legal text and must not become admin-editable.
 //
 // The controller notice is templated — `{teamBusinessName}` is replaced
 // at request time from the bot's team record. The legal entity is
@@ -48,6 +55,19 @@ const appLegalUrls = (locale: string) => ({
   privacyPolicyUrl: `${APP_BASE}/privacy-policy?lng=${locale}`,
   termsOfUseUrl: `${APP_BASE}/terms-of-service?lng=${locale}`,
 });
+
+/**
+ * Legal-page links for the locale the card is ACTUALLY rendered in.
+ *
+ * Exported (2026-09-07) because the served locale is no longer always the
+ * serving pack's locale: the CMS may hold a translation for a language no
+ * pack covers, and conversely a pack request can fall back across
+ * languages. Deriving the links from the served locale keeps the "read the
+ * full policy" links in the same language as the notice around them.
+ */
+export function consentLegalUrls(locale: string) {
+  return appLegalUrls(locale);
+}
 
 // GDPR — English (UK-based Chatbu, EU/UK visitors, and any English-
 // speaking global visitor whose jurisdiction resolves to GDPR).
@@ -244,6 +264,40 @@ const REGISTRY: Record<string, ConsentTextPack> = {
   'generic:en': GENERIC_EN,
 };
 
+/** The non-legal, jurisdiction-independent strings of a pack. */
+export type ConsentChrome = Pick<
+  ConsentTextPack,
+  'continueButton' | 'submitting' | 'acceptedLabel' | 'errorMessage'
+>;
+
+/**
+ * UI chrome for a LANGUAGE, independent of jurisdiction (2026-09-07).
+ *
+ * "Accept and continue" / "Submitting…" carry no regulatory meaning, so
+ * they are the same string for every jurisdiction in a given language.
+ * Resolving them per (jurisdiction, locale) — as the pack lookup does —
+ * produced half-translated cards: a Turkish-speaking visitor whose
+ * Accept-Language put them under CCPA got an English pack end-to-end
+ * (there is no ccpa:tr pack) while the widget's own UI around it stayed
+ * Turkish. Chrome now follows the language of the text actually shown, so
+ * the card is coherent even when the legal regime and the language come
+ * from different places.
+ */
+export function getConsentChrome(locale: string): ConsentChrome {
+  const inLocale = Object.values(REGISTRY).find((p) => p.locale === locale);
+  const { continueButton, submitting, acceptedLabel, errorMessage } = inLocale ?? GENERIC_EN;
+  return { continueButton, submitting, acceptedLabel, errorMessage };
+}
+
+/**
+ * Every pack, in registry order. Used by the legal CMS seeder (Slice 6b) to
+ * create the `privacy-notice-<jurisdiction>` documents from this file, so
+ * the seeded CMS text and the fallback text start out identical.
+ */
+export function listConsentPacks(): ConsentTextPack[] {
+  return Object.values(REGISTRY);
+}
+
 /**
  * Look up the consent text pack for a (jurisdiction, locale) request.
  *
@@ -271,10 +325,19 @@ export function getConsentPack(jurisdiction: string, locale: string): ConsentTex
 }
 
 /**
- * Interpolate `{teamBusinessName}` into the controllerNotice. Any other
+ * Interpolate `{teamBusinessName}` into a controller notice. Any other
  * placeholders can be added here as the notice text grows.
+ *
+ * Slice 6b (2026-09-07): takes the notice STRING rather than a pack, because
+ * the text may now come either from a hardcoded pack or from the
+ * `privacy-notice-<jurisdiction>` CMS document. A pack is still accepted
+ * for the existing call sites and tests.
  */
-export function renderControllerNotice(pack: ConsentTextPack, teamBusinessName: string): string {
+export function renderControllerNotice(
+  notice: ConsentTextPack | string,
+  teamBusinessName: string,
+): string {
   const safeName = teamBusinessName?.trim() || 'the business you are chatting with';
-  return pack.controllerNotice.replace(/\{teamBusinessName\}/g, safeName);
+  const text = typeof notice === 'string' ? notice : notice.controllerNotice;
+  return text.replace(/\{teamBusinessName\}/g, safeName);
 }
