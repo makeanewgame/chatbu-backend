@@ -350,6 +350,7 @@ export class LegalDocumentService {
   ): Promise<
     (ConsentNoticeFields & {
       slug: string;
+      versionId: string;
       versionNumber: number;
       locale: string;
       title: string;
@@ -380,6 +381,7 @@ export class LegalDocumentService {
     return {
       ...fields,
       slug,
+      versionId: version.id,
       versionNumber: version.versionNumber,
       locale: content.locale,
       title: content.title,

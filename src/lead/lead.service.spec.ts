@@ -745,6 +745,30 @@ describe('LeadService — getConsentText (consent notice CMS-first)', () => {
     expect(result.continueButton).toBe('Accept and continue');
   });
 
+  it('pairs a CMS translation with chrome in the SAME language, whatever the jurisdiction', async () => {
+    // The real half-translated card: Accept-Language en-US put a Turkish
+    // speaker under CCPA, and there is no ccpa:tr pack — so the notice went
+    // out fully English inside a Turkish widget. With a tr translation in
+    // the CMS, the buttons must follow the text into Turkish.
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-ccpa',
+      versionId: 'ver-1',
+      versionNumber: 1,
+      locale: 'tr',
+      title: 'Aydınlatma Metni',
+      intro: 'Türkçe giriş.',
+      controllerNotice: '{teamBusinessName} veri sorumlusudur.',
+      checkboxLabel: 'Okudum, kabul ediyorum.',
+    });
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'ccpa', explicitLocale: 'tr' });
+
+    expect(result.locale).toBe('tr');
+    expect(result.continueButton).not.toBe('Accept and continue');
+    expect(result.privacyPolicyUrl).toContain('lng=tr');
+  });
+
   it('falls back to the pack — text AND version together — when the CMS lookup throws', async () => {
     getConsentNotice.mockRejectedValue(new Error('db down'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -756,5 +780,140 @@ describe('LeadService — getConsentText (consent notice CMS-first)', () => {
     expect(result.title).toBe('Aydınlatma Metni ve Kullanım Şartları');
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+// ─── 2026-09-07: the consent WRITE path ────────────────────────────────────
+// recordPrivacyConsent used to run its own lookup against a slug scheme
+// (`privacy-<jurisdiction>`) that was never seeded, so it always recorded
+// the pack version — even for visitors who had just been shown CMS text.
+// Read and write must resolve identically or the audit trail describes a
+// different document than the one on screen.
+describe('LeadService — recordPrivacyConsent (audit version)', () => {
+  let service: LeadService;
+  let getConsentNotice: jest.Mock;
+  let create: jest.Mock;
+
+  const build = async () => {
+    create = jest.fn().mockImplementation(({ data }: any) => ({ id: 'consent-1', ...data }));
+    const prisma: any = {
+      customerBots: { findUnique: jest.fn().mockResolvedValue({ id: 'bot-1', teamId: 'team-1', settings: {} }) },
+      leadPrivacyConsent: { create },
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LeadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: {} },
+        { provide: JwtService, useValue: {} },
+        { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
+        { provide: LegalDocumentService, useValue: { getConsentNotice } },
+        { provide: ChatFlowService, useValue: { transition: jest.fn() } },
+        { provide: PushNotificationService, useValue: {} },
+        { provide: MixpanelService, useValue: mixpanelStub },
+      ],
+    }).compile();
+    return module.get(LeadService);
+  };
+
+  beforeEach(() => {
+    getConsentNotice = jest.fn().mockResolvedValue(null);
+  });
+
+  it('records the CMS version string and links the version row', async () => {
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-ccpa',
+      versionId: 'ver-9',
+      versionNumber: 1,
+      locale: 'en',
+      title: 'Notice',
+      intro: 'i',
+      controllerNotice: 'c',
+      checkboxLabel: 'k',
+    });
+    service = await build();
+
+    const result = await service.recordPrivacyConsent(
+      { botId: 'bot-1', jurisdiction: 'ccpa', locale: 'en' } as any,
+      null,
+      null,
+      'en-US',
+    );
+
+    expect(result.privacyVersion).toBe('privacy-notice-ccpa-v1');
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          privacyVersion: 'privacy-notice-ccpa-v1',
+          legalDocumentVersionId: 'ver-9',
+        }),
+      }),
+    );
+  });
+
+  it('records the SERVED locale, not the requested one', async () => {
+    // Visitor asked for Turkish; the CMS had no approved tr translation and
+    // served its English source. Recording 'tr' would claim they read a
+    // Turkish notice.
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-ccpa',
+      versionId: 'ver-9',
+      versionNumber: 1,
+      locale: 'en',
+      title: 'Notice',
+      intro: 'i',
+      controllerNotice: 'c',
+      checkboxLabel: 'k',
+    });
+    service = await build();
+
+    const result = await service.recordPrivacyConsent(
+      { botId: 'bot-1', jurisdiction: 'ccpa', locale: 'tr' } as any,
+      null,
+      null,
+      'tr-TR',
+    );
+
+    expect(result.locale).toBe('en');
+  });
+
+  it('falls back to the pack version when no notice is published', async () => {
+    service = await build();
+
+    const result = await service.recordPrivacyConsent(
+      { botId: 'bot-1', jurisdiction: 'gdpr', locale: 'de' } as any,
+      null,
+      null,
+      'de-DE',
+    );
+
+    expect(result.privacyVersion).toBe('gdpr-de-v3');
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ legalDocumentVersionId: null }) }),
+    );
+  });
+
+  it('never records a bare version number — the string must name the document', async () => {
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-kvkk',
+      versionId: 'ver-2',
+      versionNumber: 3,
+      locale: 'tr',
+      title: 'x',
+      intro: 'i',
+      controllerNotice: 'c',
+      checkboxLabel: 'k',
+    });
+    service = await build();
+
+    const result = await service.recordPrivacyConsent(
+      { botId: 'bot-1', jurisdiction: 'kvkk' } as any,
+      null,
+      null,
+      'tr-TR',
+    );
+
+    expect(result.privacyVersion).toBe('privacy-notice-kvkk-v3');
+    expect(result.privacyVersion).not.toMatch(/^v\d+$/);
   });
 });

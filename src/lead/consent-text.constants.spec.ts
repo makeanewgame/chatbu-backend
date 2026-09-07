@@ -1,4 +1,9 @@
-import { getConsentPack, renderControllerNotice } from './consent-text.constants';
+import {
+  consentLegalUrls,
+  getConsentChrome,
+  getConsentPack,
+  renderControllerNotice,
+} from './consent-text.constants';
 
 describe('getConsentPack', () => {
   it('returns GDPR-EN for (gdpr, en)', () => {
@@ -118,5 +123,44 @@ describe('renderControllerNotice', () => {
     };
     const rendered = renderControllerNotice(doubled, 'Foo');
     expect(rendered).toBe('Foo — Foo');
+  });
+});
+
+// 2026-09-07: chrome is jurisdiction-independent. Resolving it per
+// (jurisdiction, locale) produced half-translated cards — a Turkish
+// visitor whose Accept-Language put them under CCPA got an all-English
+// pack (there is no ccpa:tr) inside a Turkish widget UI.
+describe('getConsentChrome', () => {
+  it('returns the chrome of the requested language whatever the jurisdiction', () => {
+    const tr = getConsentChrome('tr');
+    expect(tr.continueButton).toBe(getConsentPack('kvkk', 'tr').continueButton);
+    expect(tr.continueButton).not.toBe(getConsentPack('ccpa', 'en').continueButton);
+  });
+
+  it('covers German from the GDPR pack', () => {
+    expect(getConsentChrome('de').continueButton).toBe(getConsentPack('gdpr', 'de').continueButton);
+  });
+
+  it('falls back to English for a language no pack covers', () => {
+    expect(getConsentChrome('ar')).toEqual(
+      expect.objectContaining({ continueButton: 'Accept and continue' }),
+    );
+  });
+
+  it('carries only chrome — no legal text leaks into it', () => {
+    expect(Object.keys(getConsentChrome('en')).sort()).toEqual([
+      'acceptedLabel',
+      'continueButton',
+      'errorMessage',
+      'submitting',
+    ]);
+  });
+});
+
+describe('consentLegalUrls', () => {
+  it('points both links at the app for the given locale', () => {
+    const urls = consentLegalUrls('de');
+    expect(urls.privacyPolicyUrl).toContain('/privacy-policy?lng=de');
+    expect(urls.termsOfUseUrl).toContain('/terms-of-service?lng=de');
   });
 });
