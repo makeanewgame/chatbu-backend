@@ -550,6 +550,62 @@ describe('LegalDocumentService', () => {
       });
     });
 
+    describe('translation edits', () => {
+      it('rejects a consent-notice translation that breaks the section contract', async () => {
+        // A translation added to an already-published version never passes
+        // through publishVersion again — it goes live on approval, so the
+        // contract has to be enforced on the way in.
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          documentId: noticeDoc.id,
+          status: 'PUBLISHED',
+        });
+
+        await expect(
+          service.updateContent('privacy-notice-gdpr', 'v1', 'de', {
+            title: 'Hinweis',
+            bodyMarkdown: 'Freitext ohne Abschnitte.',
+          } as any),
+        ).rejects.toThrow(BadRequestException);
+        expect(prisma.legalDocumentContent.upsert).not.toHaveBeenCalled();
+      });
+
+      it('accepts a translation that satisfies the contract', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);
+        prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          documentId: noticeDoc.id,
+          status: 'PUBLISHED',
+        });
+        prisma.legalDocumentContent.upsert.mockResolvedValue({});
+
+        await service.updateContent('privacy-notice-gdpr', 'v1', 'de', {
+          title: 'Hinweis',
+          bodyMarkdown: validBody,
+        } as any);
+
+        expect(prisma.legalDocumentContent.upsert).toHaveBeenCalled();
+      });
+
+      it('leaves ordinary legal documents free-form', async () => {
+        prisma.legalDocument.findUnique.mockResolvedValue(document);
+        prisma.legalDocumentVersion.findUnique.mockResolvedValue({
+          id: 'v1',
+          documentId,
+          status: 'PUBLISHED',
+        });
+        prisma.legalDocumentContent.upsert.mockResolvedValue({});
+
+        await service.updateContent('kvkk', 'v1', 'en', {
+          title: 'Notice',
+          bodyMarkdown: 'Any prose at all.',
+        } as any);
+
+        expect(prisma.legalDocumentContent.upsert).toHaveBeenCalled();
+      });
+    });
+
     describe('getConsentNotice', () => {
       it('returns the parsed fields and the version number for the audit string', async () => {
         prisma.legalDocument.findUnique.mockResolvedValue(noticeDoc);

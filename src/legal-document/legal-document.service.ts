@@ -194,6 +194,23 @@ export class LegalDocumentService {
       throw new BadRequestException({ code: 'SOURCE_LOCKED_AFTER_PUBLISH' });
     }
 
+    // Consent notices are consumed field-by-field, so the section contract
+    // is checked at publish. A TRANSLATION added to an already-published
+    // version never passes through publish again, though — it goes live the
+    // moment it is approved. Validating on the way in closes that gap; the
+    // runtime would otherwise fall back to the hardcoded pack for that
+    // locale without telling anyone.
+    if (isConsentNoticeSlug(document.slug)) {
+      const problem = describeConsentNoticeProblem(dto.bodyMarkdown);
+      if (problem) {
+        throw new BadRequestException({
+          code: 'CONSENT_NOTICE_SECTIONS_INVALID',
+          locale: normalizedLocale,
+          message: problem,
+        });
+      }
+    }
+
     return this.prisma.legalDocumentContent.upsert({
       where: { versionId_locale: { versionId, locale: normalizedLocale } },
       create: {
