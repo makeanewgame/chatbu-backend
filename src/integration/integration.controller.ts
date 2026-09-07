@@ -7,6 +7,7 @@ import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { UpdateIntegrationDto } from './dto/update-integration.dto';
 import { DeleteIntegrationDto } from './dto/delete-integration.dto';
 import { TestIntegrationDto } from './dto/test-integration.dto';
+import { UpdateIntegrationScheduleDto } from './dto/update-integration-schedule.dto';
 
 @ApiTags('Integration Services')
 @Controller('integration')
@@ -39,6 +40,15 @@ export class IntegrationController {
     async update(@Req() req, @Body() body: UpdateIntegrationDto) {
         const user = req.user as IUser;
         return this.integrationService.updateIntegration(user.teamId, body);
+    }
+
+    @ApiOperation({ summary: 'Update integration auto-reply schedule' })
+    @ApiResponse({ status: 200, description: 'Integration schedule updated' })
+    @ApiBearerAuth()
+    @Post('schedule')
+    async updateSchedule(@Req() req, @Body() body: UpdateIntegrationScheduleDto) {
+        const user = req.user as IUser;
+        return this.integrationService.updateSchedule(user.teamId, body, user.sub, user.email);
     }
 
     @ApiOperation({ summary: 'Delete integration for team' })

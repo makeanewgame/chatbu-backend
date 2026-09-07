@@ -6,6 +6,8 @@ import { CreateIntegrationDto } from './dto/create-integration.dto';
 import { UpdateIntegrationDto } from './dto/update-integration.dto';
 import { DeleteIntegrationDto } from './dto/delete-integration.dto';
 import { TestIntegrationDto } from './dto/test-integration.dto';
+import { UpdateIntegrationScheduleDto } from './dto/update-integration-schedule.dto';
+import { validateIntegrationSchedule } from './integration-schedule.constants';
 import { SystemLogService } from 'src/system-log/system-log.service';
 
 @Injectable()
@@ -96,6 +98,50 @@ export class IntegrationService {
         if (this.isMcpRelevantType(existing.type)) {
             await this.syncMcpConfig(teamId);
         }
+        return updated;
+    }
+
+    /**
+     * Update only the per-integration auto-reply schedule. Kept separate from
+     * updateIntegration (which rewrites `config` and triggers MCP sync) because
+     * the schedule has no bearing on the MCP payload.
+     */
+    async updateSchedule(
+        teamId: string,
+        dto: UpdateIntegrationScheduleDto,
+        userId?: string,
+        userEmail?: string,
+    ) {
+        const existing = await this.prisma.integrations.findFirst({
+            where: { id: dto.id, teamId },
+        });
+
+        if (!existing) {
+            throw new NotFoundException('Integration not found');
+        }
+
+        const validationError = validateIntegrationSchedule(dto.schedule);
+        if (validationError) {
+            throw new BadRequestException(`Invalid schedule: ${validationError}`);
+        }
+
+        const updated = await this.prisma.integrations.update({
+            where: { id: dto.id },
+            data: { schedule: dto.schedule as any },
+        });
+
+        await this.systemLogService.createLog({
+            category: 'INTEGRATION',
+            action: 'UPDATE',
+            status: 'SUCCESS',
+            teamId,
+            userId,
+            userEmail,
+            entityId: existing.id,
+            entityName: existing.type,
+            message: `Integration schedule updated: ${dto.schedule.mode}`,
+        });
+
         return updated;
     }
 

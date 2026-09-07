@@ -56,6 +56,7 @@ describe('MetaService voice-note handling', () => {
       { shouldRateLimit: jest.fn().mockResolvedValue(false), isDuplicateReply: jest.fn().mockResolvedValue(false), recordReply: jest.fn() } as any, // loopGuard
       { broadcast: jest.fn().mockResolvedValue(undefined) } as any, // conversationBroadcast
       { withDisclosure: jest.fn().mockImplementation(async (_b: string, _c: string, t: string) => t) } as any, // aiDisclosure (pass-through)
+      { isIntegrationActive: jest.fn().mockResolvedValue(true) } as any, // integrationSchedule (always active)
     );
     // sendMetaMessage does a real axios POST — stub it out.
     jest.spyOn(service as any, 'sendMetaMessage').mockResolvedValue(undefined);

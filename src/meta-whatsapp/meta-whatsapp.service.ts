@@ -11,6 +11,7 @@ import { MetaAiDisclosureService } from 'src/meta-ai-disclosure/meta-ai-disclosu
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
+import { IntegrationScheduleService } from 'src/integration/integration-schedule.service';
 
 export interface WhatsAppWebhookEntry {
     id: string;
@@ -91,6 +92,7 @@ export class MetaWhatsappService {
         private readonly loopGuard: MetaLoopGuardService,
         private readonly conversationBroadcast: ConversationBroadcastService,
         private readonly aiDisclosure: MetaAiDisclosureService,
+        private readonly integrationSchedule: IntegrationScheduleService,
     ) { }
 
     /**
@@ -290,6 +292,15 @@ export class MetaWhatsappService {
                         teamId: integration.teamId,
                     });
                     if (!text) continue;
+                    // Schedule gate: integration connected but outside its
+                    // configured active window (or switched off). Silent-drop
+                    // before the LLM call — no auto-reply, no token spend.
+                    if (!(await this.integrationSchedule.isIntegrationActive(integration))) {
+                        this.logger.log(
+                            `[whatsapp-embedded] integration ${integration.id} outside active schedule — bot staying silent`,
+                        );
+                        continue;
+                    }
                     // Loop guard, layer 1: budget exhausted for this pair →
                     // drop before the LLM call burns tokens.
                     if (await this.loopGuard.shouldRateLimit(botId, senderId, 'whatsapp')) continue;

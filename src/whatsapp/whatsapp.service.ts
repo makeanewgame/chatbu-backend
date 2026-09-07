@@ -7,6 +7,7 @@ import { AudioTranscriptionService } from 'src/audio-transcription/audio-transcr
 import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { MetaLoopGuardService } from 'src/meta-loop-guard/meta-loop-guard.service';
 import { MetaAiDisclosureService } from 'src/meta-ai-disclosure/meta-ai-disclosure.service';
+import { IntegrationScheduleService } from 'src/integration/integration-schedule.service';
 import { resolveMetaReplyText } from 'src/meta/meta-reply.util';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class WhatsAppService {
         private metaAudio: MetaAudioService,
         private loopGuard: MetaLoopGuardService,
         private aiDisclosure: MetaAiDisclosureService,
+        private integrationSchedule: IntegrationScheduleService,
     ) { }
 
     /**
@@ -129,6 +131,13 @@ export class WhatsAppService {
                         teamId: integration.teamId,
                     });
                     if (!text) continue;
+                    // Schedule gate — see meta.service.ts Messenger loop.
+                    if (!(await this.integrationSchedule.isIntegrationActive(integration))) {
+                        this.logger.log(
+                            `[whatsapp-legacy] integration ${integration.id} outside active schedule — bot staying silent`,
+                        );
+                        continue;
+                    }
                     // Loop guard, layer 1 — see meta.service.ts Messenger loop.
                     if (await this.loopGuard.shouldRateLimit(botId, senderId, 'whatsapp')) continue;
                     const chatId = await this.metaChatCursor.resolveChatId('wa', senderId);

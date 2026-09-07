@@ -1,0 +1,11 @@
+-- AlterTable
+-- Per-integration auto-reply schedule for messaging channels (WhatsApp,
+-- Messenger, Instagram). NULL = 7/24 always active, so every existing row
+-- keeps its current behaviour with no backfill. JSON shape:
+--   { "mode": "always" | "off" | "business_hours" | "outside_business_hours"
+--            | "weekends" | "nights" | "custom",
+--     "timezone": "Europe/Istanbul",
+--     "days": { "mon": { "enabled": true, "start": "09:00", "end": "18:00" }, ... } }
+-- `days` is only present for mode === 'custom'. Time-based modes resolve the
+-- bot's CustomerBots.appointmentWorkingHours as the "business hours" reference.
+ALTER TABLE "Integrations" ADD COLUMN "schedule" JSONB;

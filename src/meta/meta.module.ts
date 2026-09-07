@@ -7,6 +7,7 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { BotModule } from 'src/bot/bot.module';
 import { MetaWhatsappModule } from 'src/meta-whatsapp/meta-whatsapp.module';
 import { IntegrationModule } from 'src/integration/integration.module';
+import { IntegrationScheduleModule } from 'src/integration/integration-schedule.module';
 import { MetaChatCursorModule } from 'src/meta-chat-cursor/meta-chat-cursor.module';
 import { AudioTranscriptionModule } from 'src/audio-transcription/audio-transcription.module';
 import { MetaLoopGuardModule } from 'src/meta-loop-guard/meta-loop-guard.module';
@@ -15,7 +16,7 @@ import { MetaSentRegistryModule } from 'src/meta-sent-registry/meta-sent-registr
 import { EventsModule } from 'src/events/events.module';
 
 @Module({
-    imports: [PrismaModule, BotModule, JwtModule, MetaWhatsappModule, IntegrationModule, MetaChatCursorModule, AudioTranscriptionModule, MetaLoopGuardModule, MetaAiDisclosureModule, MetaSentRegistryModule, EventsModule],
+    imports: [PrismaModule, BotModule, JwtModule, MetaWhatsappModule, IntegrationModule, IntegrationScheduleModule, MetaChatCursorModule, AudioTranscriptionModule, MetaLoopGuardModule, MetaAiDisclosureModule, MetaSentRegistryModule, EventsModule],
     controllers: [MetaController, MetaIntegrationController],
     providers: [MetaService],
 })

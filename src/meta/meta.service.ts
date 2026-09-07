@@ -10,6 +10,7 @@ import { MetaAudioService } from 'src/audio-transcription/meta-audio.service';
 import { MetaSentRegistryService } from 'src/meta-sent-registry/meta-sent-registry.service';
 import { MetaLoopGuardService } from 'src/meta-loop-guard/meta-loop-guard.service';
 import { MetaAiDisclosureService } from 'src/meta-ai-disclosure/meta-ai-disclosure.service';
+import { IntegrationScheduleService } from 'src/integration/integration-schedule.service';
 import { ConversationBroadcastService } from 'src/events/conversation-broadcast.service';
 import { resolveMetaReplyText } from './meta-reply.util';
 
@@ -29,6 +30,7 @@ export class MetaService {
         private loopGuard: MetaLoopGuardService,
         private conversationBroadcast: ConversationBroadcastService,
         private aiDisclosure: MetaAiDisclosureService,
+        private integrationSchedule: IntegrationScheduleService,
     ) { }
 
     private echoTakeoverEnabled(): boolean {
@@ -255,6 +257,16 @@ export class MetaService {
                     { botId, teamId: integration.teamId, chatId: senderId },
                 );
                 if (!text) continue;
+                // Schedule gate: the integration is connected but currently
+                // outside its configured active window (or switched off).
+                // Silent-drop before the LLM call, same slot the loop guard
+                // uses — no auto-reply, no token spend.
+                if (!(await this.integrationSchedule.isIntegrationActive(integration))) {
+                    this.logger.log(
+                        `[messenger] integration ${integration.id} outside active schedule — bot staying silent`,
+                    );
+                    continue;
+                }
                 // Loop guard, layer 1: budget exhausted for this pair →
                 // drop before the LLM call burns tokens.
                 if (await this.loopGuard.shouldRateLimit(botId, senderId, 'messenger')) continue;
@@ -350,6 +362,13 @@ export class MetaService {
                     { botId, teamId: integration.teamId, chatId: senderId },
                 );
                 if (!text) continue;
+                // Schedule gate — see the Messenger loop above.
+                if (!(await this.integrationSchedule.isIntegrationActive(integration))) {
+                    this.logger.log(
+                        `[instagram] integration ${integration.id} outside active schedule — bot staying silent`,
+                    );
+                    continue;
+                }
                 // Loop guard, layer 1 — see the Messenger loop above.
                 if (await this.loopGuard.shouldRateLimit(botId, senderId, 'instagram')) continue;
                 const contactName = await this.fetchInstagramContactName(senderId, pageAccessToken);

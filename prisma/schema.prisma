@@ -482,6 +482,12 @@ model Integrations {
   botId     String?
   type      String
   config    Json?
+  // Per-integration auto-reply schedule (messaging channels only). NULL = 7/24
+  // always active (back-compat). Shape: { mode, timezone?, days? } — see
+  // src/integration/integration-schedule.constants.ts. `mode: 'off'` fully
+  // silences the bot on that channel; time-based modes resolve the bot's
+  // appointmentWorkingHours as the "business hours" reference.
+  schedule  Json?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   team      Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
