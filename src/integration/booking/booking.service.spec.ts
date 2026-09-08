@@ -140,6 +140,7 @@ describe('BookingService — SMS flow', () => {
       'TestBot',
       'tr',
       'sms',
+      undefined,
     );
 
     const createArgs = prisma.bookingSmsVerification.create.mock.calls[0][0];
@@ -163,6 +164,7 @@ describe('BookingService — SMS flow', () => {
       'TestBot',
       'tr',
       'sms',
+      undefined,
     );
   });
 
@@ -179,6 +181,7 @@ describe('BookingService — SMS flow', () => {
       'TestBot',
       'en',
       'sms',
+      undefined,
     );
   });
 
@@ -197,6 +200,7 @@ describe('BookingService — SMS flow', () => {
       'our team',
       'tr',
       'sms',
+      undefined,
     );
   });
 
@@ -216,6 +220,9 @@ describe('BookingService — SMS flow', () => {
       'TestBot',
       'en',
       'whatsapp',
+      // Fallback context so Twilio's delivery callback can rescue a
+      // WhatsApp code that never lands.
+      { flow: 'booking', botId: 'bot-1', chatId: 'chat-9', phone: '+31612345678', lang: undefined },
     );
   });
 
@@ -236,8 +243,8 @@ describe('BookingService — SMS flow', () => {
 
     await service.requestSmsVerification('+905386450582', 'bot-1', 'chat-9');
 
-    const args = sms.sendOtpSms.mock.calls[0];
-    expect(args[args.length - 1]).toBe('sms');
+    // 5th positional arg is `channel` (a 6th now carries the fallback context).
+    expect(sms.sendOtpSms.mock.calls[0][4]).toBe('sms');
   });
 
   it('still enforces the cooldown when the channel is not changing', async () => {

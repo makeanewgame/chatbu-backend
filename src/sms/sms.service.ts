@@ -14,6 +14,10 @@ import { SmsProvider } from './providers/sms-provider.interface';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
 import { TwilioWhatsAppProvider } from './providers/twilio-whatsapp.provider';
+import {
+  OtpDeliveryFallbackService,
+  OtpFallbackContext,
+} from './otp-delivery-fallback.service';
 
 // Router strategy — read once at boot for hot-path efficiency. Flip via
 // ConfigMap + Reloader restart:
@@ -152,6 +156,7 @@ export class SmsService {
     private readonly netgsmProvider: NetgsmSmsProvider,
     private readonly twilioProvider: TwilioSmsProvider,
     private readonly whatsappProvider: TwilioWhatsAppProvider,
+    private readonly otpDeliveryFallback: OtpDeliveryFallbackService,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     // New provider-agnostic counter. Populated on every send AFTER the
     // provider's own retry envelope resolves. The provider's own more
@@ -268,6 +273,7 @@ export class SmsService {
     botName: string,
     lang: 'tr' | 'en' = 'tr',
     channel: OtpChannel = 'sms',
+    fallback?: OtpFallbackContext,
   ): Promise<void> {
     if (channel === 'whatsapp') {
       await this.sendWhatsAppTemplate({
@@ -276,6 +282,7 @@ export class SmsService {
         lang,
         variables: { '1': code },
         context: 'otp',
+        fallback,
       });
       return;
     }
@@ -353,8 +360,16 @@ export class SmsService {
     lang: 'tr' | 'en';
     variables: Record<string, string>;
     context: string;
+    /**
+     * When present, the message id is registered against this context so
+     * Twilio's delivery callback can re-send the code over SMS if
+     * WhatsApp never lands it. Only the OTP path passes one — a
+     * confirmation that fails to deliver is a nuisance, an unusable
+     * verification code is a dead end.
+     */
+    fallback?: OtpFallbackContext;
   }): Promise<void> {
-    const { kind, phone, lang, variables, context } = args;
+    const { kind, phone, lang, variables, context, fallback } = args;
 
     if (process.env.WHATSAPP_OTP_ENABLED?.toLowerCase() !== 'true') {
       this.logger.error(
@@ -386,13 +401,16 @@ export class SmsService {
     }
 
     try {
-      await this.whatsappProvider.sendTemplate({
+      const messageSid = await this.whatsappProvider.sendTemplate({
         e164: parsed.e164,
         country: parsed.country,
         contentSid,
         variables: safeVariables,
         context,
       });
+      if (fallback) {
+        await this.otpDeliveryFallback.register(messageSid, fallback);
+      }
       this.smsSendCounter.inc({
         provider: this.whatsappProvider.name,
         context,

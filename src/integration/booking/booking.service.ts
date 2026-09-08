@@ -267,7 +267,15 @@ export class BookingService {
         // was made — i.e. every conversation today, until the widget
         // starts offering the option.
         const channel = await this.otpChannelPreference.consumeForOtp(chatId);
-        await this.sms.sendOtpSms(phone, code, botName, smsLang, channel);
+        await this.sms.sendOtpSms(
+            phone,
+            code,
+            botName,
+            smsLang,
+            channel,
+            // See LeadService for why only the OTP registers a fallback.
+            chatId ? { flow: 'booking', botId: botCuid, chatId, phone, lang } : undefined,
+        );
 
         // Enter BOOKING flow at OTP_SENT. `from: null` so any prior
         // BOOKING row in the same chat is overwritten (visitor may have

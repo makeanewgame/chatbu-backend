@@ -22,6 +22,10 @@
  *     implementation adds the `whatsapp:` prefix, nothing else.
  *   - Implementations MUST throw on failure. The caller counts, logs,
  *     and decides whether the outer flow fails (OTP: yes).
+ *   - Implementations return the provider's message id. A WhatsApp send
+ *     that Twilio accepts can still fail to DELIVER minutes later (a
+ *     number with no WhatsApp account), and the id is what ties that
+ *     asynchronous status callback back to the visitor it belongs to.
  *   - Implementations SHOULD retry a transient failure once.
  */
 export interface WhatsAppTemplateInput {
@@ -43,5 +47,6 @@ export interface WhatsAppTemplateInput {
 export interface WhatsAppProvider {
   /** Short identifier for logs and the metrics `provider` label. */
   readonly name: string;
-  sendTemplate(input: WhatsAppTemplateInput): Promise<void>;
+  /** Resolves to the provider's message id for this send. */
+  sendTemplate(input: WhatsAppTemplateInput): Promise<string>;
 }
