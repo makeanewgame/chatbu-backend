@@ -13,6 +13,7 @@ import { MailService } from 'src/mail/mail.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { QuotaService } from 'src/quota/quota.service';
 import { AccountCleanupService } from './account-cleanup.service';
+import { TurnstileGuard } from './utils/turnstile.guard';
 import { LegalDocumentModule } from 'src/legal-document/legal-document.module';
 
 @Module({
@@ -38,6 +39,7 @@ import { LegalDocumentModule } from 'src/legal-document/legal-document.module';
     QuotaService,
     MailService,
     AccountCleanupService,
+    TurnstileGuard,
     {
       provide: 'AUTH_SERVICE',
       useClass: AuthenticationService,
