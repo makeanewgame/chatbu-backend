@@ -6,6 +6,7 @@ import { SmsService, parsePhoneToE164, resolveOtpLang } from './sms.service';
 import { NetgsmSmsProvider } from './providers/netgsm.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
 import { TwilioWhatsAppProvider } from './providers/twilio-whatsapp.provider';
+import { OtpDeliveryFallbackService } from './otp-delivery-fallback.service';
 
 /**
  * Post-2026-08-13 tests: `SmsService` is a thin router that parses a
@@ -24,6 +25,7 @@ describe('SmsService (router)', () => {
   let netgsm: { sendSms: jest.Mock; name: string };
   let twilio: { sendSms: jest.Mock; name: string };
   let whatsapp: { sendTemplate: jest.Mock; name: string };
+  let otpFallback: { register: jest.Mock; take: jest.Mock };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
   let smsCounter: { inc: jest.Mock };
 
@@ -37,6 +39,7 @@ describe('SmsService (router)', () => {
     }
     netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
     twilio = { name: 'twilio', sendSms: jest.fn().mockResolvedValue(undefined) };
+    otpFallback = { register: jest.fn(), take: jest.fn() };
     whatsapp = {
       name: 'twilio_whatsapp',
       sendTemplate: jest.fn().mockResolvedValue(undefined),
@@ -50,6 +53,7 @@ describe('SmsService (router)', () => {
         { provide: NetgsmSmsProvider, useValue: netgsm },
         { provide: TwilioSmsProvider, useValue: twilio },
         { provide: TwilioWhatsAppProvider, useValue: whatsapp },
+        { provide: OtpDeliveryFallbackService, useValue: otpFallback },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
         { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
       ],
@@ -255,6 +259,7 @@ describe('SmsService (router)', () => {
           { provide: NetgsmSmsProvider, useValue: netgsm },
           { provide: TwilioSmsProvider, useValue: twilio },
           { provide: TwilioWhatsAppProvider, useValue: whatsapp },
+          { provide: OtpDeliveryFallbackService, useValue: otpFallback },
           { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
           { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
         ],
@@ -420,6 +425,7 @@ describe('SmsService — WhatsApp OTP channel', () => {
   let netgsm: { sendSms: jest.Mock; name: string };
   let twilio: { sendSms: jest.Mock; name: string };
   let whatsapp: { sendTemplate: jest.Mock; name: string };
+  let otpFallback: { register: jest.Mock; take: jest.Mock };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
   let smsCounter: { inc: jest.Mock };
 
@@ -428,6 +434,7 @@ describe('SmsService — WhatsApp OTP channel', () => {
   async function build() {
     netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
     twilio = { name: 'twilio', sendSms: jest.fn().mockResolvedValue(undefined) };
+    otpFallback = { register: jest.fn(), take: jest.fn() };
     whatsapp = {
       name: 'twilio_whatsapp',
       sendTemplate: jest.fn().mockResolvedValue(undefined),
@@ -441,6 +448,7 @@ describe('SmsService — WhatsApp OTP channel', () => {
         { provide: NetgsmSmsProvider, useValue: netgsm },
         { provide: TwilioSmsProvider, useValue: twilio },
         { provide: TwilioWhatsAppProvider, useValue: whatsapp },
+        { provide: OtpDeliveryFallbackService, useValue: otpFallback },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
         { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
       ],
@@ -582,6 +590,7 @@ describe('SmsService — WhatsApp booking confirmation + reminder', () => {
   let netgsm: { sendSms: jest.Mock; name: string };
   let twilio: { sendSms: jest.Mock; name: string };
   let whatsapp: { sendTemplate: jest.Mock; name: string };
+  let otpFallback: { register: jest.Mock; take: jest.Mock };
   let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
   let smsCounter: { inc: jest.Mock };
 
@@ -591,6 +600,7 @@ describe('SmsService — WhatsApp booking confirmation + reminder', () => {
   async function build() {
     netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
     twilio = { name: 'twilio', sendSms: jest.fn().mockResolvedValue(undefined) };
+    otpFallback = { register: jest.fn(), take: jest.fn() };
     whatsapp = {
       name: 'twilio_whatsapp',
       sendTemplate: jest.fn().mockResolvedValue(undefined),
@@ -604,6 +614,7 @@ describe('SmsService — WhatsApp booking confirmation + reminder', () => {
         { provide: NetgsmSmsProvider, useValue: netgsm },
         { provide: TwilioSmsProvider, useValue: twilio },
         { provide: TwilioWhatsAppProvider, useValue: whatsapp },
+        { provide: OtpDeliveryFallbackService, useValue: otpFallback },
         { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
         { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
       ],

@@ -203,6 +203,20 @@ spec:
               name: chatbu-config
               key: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_TR
               optional: true
+        # Where Twilio POSTs message delivery status. A WhatsApp send to
+        # a number with no WhatsApp account is ACCEPTED and fails minutes
+        # later, asynchronously — this callback is the only signal that
+        # the visitor never got their code, and it is what re-sends it
+        # over SMS. Doubles as the URL the signature is validated
+        # against, so it must match what Twilio was told to call exactly.
+        # Missing ⇒ no statusCallback is sent and the webhook 403s: the
+        # fallback is simply off, nothing else changes.
+        - name: TWILIO_STATUS_CALLBACK_URL
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_STATUS_CALLBACK_URL
+              optional: true
         # Legal Slice 1 (2026-09-05): company identity single-sources
         # from chatbu-config. Explicit env entries override the stale
         # COMPANY_* copies arriving via the backend-secrets envFrom;

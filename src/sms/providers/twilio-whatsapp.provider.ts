@@ -85,7 +85,7 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
     return false;
   }
 
-  async sendTemplate(input: WhatsAppTemplateInput): Promise<void> {
+  async sendTemplate(input: WhatsAppTemplateInput): Promise<string> {
     const { e164, country, contentSid, variables, context } = input;
 
     // Dev escape hatch, mirroring NETGSM_MOCK / TWILIO_MOCK. Lets the
@@ -96,7 +96,7 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
         `[WHATSAPP_MOCK] Would send ${context} to ${e164} (${country}) ` +
           `template=${contentSid} vars=${JSON.stringify(variables)}`,
       );
-      return;
+      return 'mock';
     }
 
     const from = process.env.TWILIO_WHATSAPP_FROM;
@@ -115,6 +115,14 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
         // Twilio expects a JSON STRING here, not an object.
         contentVariables: JSON.stringify(variables),
       };
+
+      // Delivery status callback. A WhatsApp send to a number with no
+      // WhatsApp account is ACCEPTED here and fails minutes later —
+      // asynchronously, with nothing thrown — so this is the only signal
+      // that the code never landed. Optional: with no URL configured the
+      // send behaves exactly as before, we just lose the fallback.
+      const statusCallback = process.env.TWILIO_STATUS_CALLBACK_URL;
+      if (statusCallback) params.statusCallback = statusCallback;
       const send = client.messages.create(params);
       const timeout = new Promise<never>((_, reject) => {
         const t = setTimeout(() => {
@@ -162,5 +170,6 @@ export class TwilioWhatsAppProvider implements WhatsAppProvider {
       `[WHATSAPP] ${context} sent to ${e164} country=${country} ` +
         `template=${contentSid} sid=${sid}`,
     );
+    return sid;
   }
 }

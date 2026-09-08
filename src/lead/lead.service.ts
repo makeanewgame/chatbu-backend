@@ -1150,7 +1150,18 @@ export class LeadService {
     // agent. Defaults to 'sms' whenever no choice was made, which is
     // every conversation on a bot where the WhatsApp option is off.
     const channel = await this.otpChannelPreference.consumeForOtp(dto.chatId);
-    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang, channel);
+    await this.smsService.sendOtpSms(
+      dto.phone,
+      code,
+      bot.botName,
+      smsLang,
+      channel,
+      // Lets Twilio's delivery callback re-send over SMS if WhatsApp
+      // never lands the code. Passed only for the OTP: an unusable
+      // verification code is a dead end, and on Meta channels there is
+      // no card to put a "resend" button on.
+      { flow: 'lead', botId: dto.botId, chatId: dto.chatId, phone: dto.phone, lang: dto.lang },
+    );
 
     // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK
     // — if the state isn't there yet (backfill hasn't seen this
