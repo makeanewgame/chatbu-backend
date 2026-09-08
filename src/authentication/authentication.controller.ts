@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { AuthenticationService } from './authentication.service';
 import { RegisterRequest } from './dto/register.request';
 import { LostRequest } from './dto/lost.request';
@@ -181,6 +182,11 @@ export class AuthenticationController {
     };
   }
 
+  // Signup-abuse guard (2026-09): registration sends an activation email to a
+  // fully attacker-controlled `to:` address, so an unthrottled endpoint is an
+  // open email relay. 5 attempts / hour / IP is well above any real person's
+  // need and well below what makes bulk abuse worthwhile.
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('register')
   async register(@Body() body: RegisterRequest, @Req() req, @Res() res) {
     await this.authService
@@ -217,6 +223,7 @@ export class AuthenticationController {
   //       }
   //     });
   // }
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('lost-password')
   async lostPassword(@Body() body: LostRequest, @Req() req, @Res() res) {
     const result = await this.authService.lostPassword(
@@ -365,6 +372,7 @@ export class AuthenticationController {
 
   // No auth guard: a user who just registered (or hit the emailNotVerified
   // login response) has no access token yet, so this has to work by email.
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('resend-verification-by-email')
   async resendVerificationByEmail(@Body() body: ResendVerificationRequest) {
     return await this.authService.resendEmailVerificationByEmail(body.email);

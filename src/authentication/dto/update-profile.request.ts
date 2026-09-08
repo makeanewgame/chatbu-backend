@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsOptional, IsString, MaxLength } from '@nestjs/class-validator';
+import { IsHumanName } from '../utils/suspicious-name.util';
 
 /**
  * Body for `PUT /auth/profile`. `@Body() body: any` previously skipped
@@ -13,6 +14,7 @@ export class UpdateProfileRequest {
   @IsString()
   @IsNotEmpty()
   @MaxLength(120)
+  @IsHumanName()
   name: string;
 
   @IsString()
