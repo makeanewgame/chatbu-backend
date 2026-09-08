@@ -133,6 +133,23 @@ export class OtpChannelPreferenceService implements OnModuleDestroy {
     if (!this.redis || !chatId) return 'sms';
     try {
       const stored = await this.redis.get(this.key(chatId));
+
+      if (stored === 'whatsapp_used') {
+        // A WhatsApp code already went out and the visitor is asking
+        // again — WhatsApp evidently did not reach them. Fall back to
+        // SMS and clear the choice entirely, so the callers' cooldown
+        // bypass fires exactly once and the appointment stamp records
+        // the channel that actually worked.
+        try {
+          await this.redis.del(this.key(chatId));
+        } catch (delErr: any) {
+          this.logger.warn(
+            `Failed to clear spent OTP channel preference for chat=${chatId}: ${delErr?.message ?? delErr}`,
+          );
+        }
+        return 'sms';
+      }
+
       if (stored !== 'whatsapp') return 'sms';
 
       try {
@@ -153,6 +170,36 @@ export class OtpChannelPreferenceService implements OnModuleDestroy {
         `Failed to read OTP channel preference for chat=${chatId}: ${err?.message ?? err}`,
       );
       return 'sms';
+    }
+  }
+
+  /**
+   * True when a WhatsApp code already went out for this chat, so the
+   * next one will go over SMS instead.
+   *
+   * Callers use this to skip their resend cooldown. That cooldown exists
+   * to stop a caller hammering ONE transport; when the next code goes
+   * over a DIFFERENT one it protects nothing and actively strands the
+   * visitor. Observed on chatbu-dev 2026-09-08: the WhatsApp code was
+   * sent at 14:42:25, the visitor said it never arrived at 14:42:40, and
+   * the 60-second cooldown answered "wait a few minutes" instead of
+   * sending the SMS. Nobody whose code did not arrive waits a minute
+   * before saying so — the fallback is immediate or it may as well not
+   * exist.
+   *
+   * Non-mutating, and one-shot by construction: `consumeForOtp` clears
+   * the key on that same fallback, so the very next request is back
+   * under the normal cooldown.
+   */
+  async hasSpentWhatsAppChoice(chatId: string | null | undefined): Promise<boolean> {
+    if (!this.redis || !chatId) return false;
+    try {
+      return (await this.redis.get(this.key(chatId))) === 'whatsapp_used';
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to read OTP channel preference for chat=${chatId}: ${err?.message ?? err}`,
+      );
+      return false;
     }
   }
 

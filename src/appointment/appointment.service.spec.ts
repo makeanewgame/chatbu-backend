@@ -23,7 +23,7 @@ describe('AppointmentService.createFromMcp', () => {
         customerBots: { findUnique: jest.Mock };
     };
     let sms: { sendBookingConfirmationSms: jest.Mock };
-    let otpChannel: { consumeForOtp: jest.Mock; peek: jest.Mock; set: jest.Mock };
+    let otpChannel: { consumeForOtp: jest.Mock; peek: jest.Mock; hasSpentWhatsAppChoice: jest.Mock; set: jest.Mock };
 
     // 2026-10-06 14:30 Europe/Istanbul as UTC — the fixture the SMS
     // service tests already use, so any datetime-format regression is
@@ -54,7 +54,7 @@ describe('AppointmentService.createFromMcp', () => {
             customerBots: { findUnique: jest.fn() },
         };
         sms = { sendBookingConfirmationSms: jest.fn().mockResolvedValue(undefined) };
-        otpChannel = { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), set: jest.fn() };
+        otpChannel = { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() };
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
