@@ -270,4 +270,69 @@ export class ChatFlowService {
     });
     return rows[0]?.verifiedPhone ?? null;
   }
+
+  /**
+   * Cross-flow OTP-in-flight check: is ANOTHER flow in this chat already
+   * waiting on a code for this same phone?
+   *
+   * `getVerifiedPhoneForChat` above only helps once a code has been
+   * VERIFIED. When two flows both request a code within seconds of each
+   * other, neither is verified yet and both send — which is exactly what
+   * happened on chatbu-dev 2026-09-07 17:00 UTC: the agent collected
+   * name+phone+email from one contact form and then ran BOTH
+   * `request_booking_verification` (17:00:29) and `capture_lead`'s
+   * self-triggered lead OTP (17:00:34). Two codes, 4.5s apart, stored in
+   * two different tables, so the one the visitor typed first (the newer
+   * message, the lead code) failed against the booking table.
+   *
+   * Precedence is deliberately one-directional. The BOOKING code is
+   * load-bearing — `create_appointment` will not proceed without a
+   * booking verification token — while the LEAD code only gates the lead
+   * record, and the lead flow can pick the phone up for free from
+   * `getVerifiedPhoneForChat` once the booking code is verified. So the
+   * lead flow defers to a pending booking code, never the reverse.
+   *
+   * Freshness is bounded by the caller: a row that entered OTP_SENT and
+   * was abandoned must not suppress a genuine resend minutes later.
+   */
+  async getPendingOtpFlowForChat(args: {
+    botId: string;
+    chatId: string;
+    targetPhone: string;
+    /** Flows to look for, in precedence order. */
+    flowKinds: FlowKind[];
+    /** How recently the other flow must have sent its code. */
+    withinSeconds: number;
+  }): Promise<{ flowKind: FlowKind; sentAt: Date } | null> {
+    const { botId, chatId, targetPhone, flowKinds, withinSeconds } = args;
+    if (!botId || !chatId || !targetPhone || flowKinds.length === 0) return null;
+
+    const key = normalizePhoneForDedup(targetPhone);
+    if (!key) return null;
+
+    const since = new Date(Date.now() - withinSeconds * 1000);
+    const rows = await this.prisma.perChatFlowState.findMany({
+      where: {
+        botId,
+        chatId,
+        flowKind: { in: flowKinds },
+        state: 'OTP_SENT',
+        updatedAt: { gte: since },
+      },
+      select: { flowKind: true, updatedAt: true, payload: true },
+    });
+
+    for (const row of rows) {
+      // Both writers stamp the destination phone into the OTP_SENT
+      // payload. A row without one predates that (or came from a writer
+      // that doesn't record it) and is skipped rather than assumed to
+      // match — suppressing a code the visitor is waiting for is worse
+      // than sending one extra.
+      const payloadPhone = (row.payload as any)?.phone;
+      if (typeof payloadPhone !== 'string') continue;
+      if (normalizePhoneForDedup(payloadPhone) !== key) continue;
+      return { flowKind: row.flowKind, sentAt: row.updatedAt };
+    }
+    return null;
+  }
 }

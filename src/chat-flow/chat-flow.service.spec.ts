@@ -177,4 +177,70 @@ describe('ChatFlowService', () => {
       expect(await service.list(botId, chatId)).toEqual(rows);
     });
   });
+
+  describe('getPendingOtpFlowForChat', () => {
+    const args = {
+      botId,
+      chatId,
+      targetPhone: '+90 538 645 05 82',
+      flowKinds: [FlowKind.BOOKING],
+      withinSeconds: 120,
+    };
+
+    it('reports the other flow when it sent a code to the same number', async () => {
+      const sentAt = new Date();
+      prisma.perChatFlowState.findMany.mockResolvedValue([
+        {
+          flowKind: FlowKind.BOOKING,
+          updatedAt: sentAt,
+          payload: { source: 'booking_sms_request', phone: '05386450582' },
+        },
+      ]);
+
+      await expect(service.getPendingOtpFlowForChat(args)).resolves.toEqual({
+        flowKind: FlowKind.BOOKING,
+        sentAt,
+      });
+
+      // Only OTP_SENT rows of the requested kinds, and only fresh ones.
+      const where = prisma.perChatFlowState.findMany.mock.calls[0][0].where;
+      expect(where.state).toBe('OTP_SENT');
+      expect(where.flowKind).toEqual({ in: [FlowKind.BOOKING] });
+      expect(where.updatedAt.gte).toBeInstanceOf(Date);
+    });
+
+    it('ignores a pending code for a different number', async () => {
+      prisma.perChatFlowState.findMany.mockResolvedValue([
+        {
+          flowKind: FlowKind.BOOKING,
+          updatedAt: new Date(),
+          payload: { phone: '+905065432731' },
+        },
+      ]);
+      await expect(service.getPendingOtpFlowForChat(args)).resolves.toBeNull();
+    });
+
+    it('ignores a row with no phone rather than assuming it matches', async () => {
+      // Suppressing a code the visitor is waiting for is worse than
+      // sending one extra, so an un-stamped row must not match.
+      prisma.perChatFlowState.findMany.mockResolvedValue([
+        { flowKind: FlowKind.BOOKING, updatedAt: new Date(), payload: { source: 'x' } },
+        { flowKind: FlowKind.BOOKING, updatedAt: new Date(), payload: null },
+      ]);
+      await expect(service.getPendingOtpFlowForChat(args)).resolves.toBeNull();
+    });
+
+    it('returns null without querying when the inputs are incomplete', async () => {
+      await expect(
+        service.getPendingOtpFlowForChat({ ...args, chatId: '' }),
+      ).resolves.toBeNull();
+      await expect(
+        service.getPendingOtpFlowForChat({ ...args, targetPhone: '' }),
+      ).resolves.toBeNull();
+      await expect(
+        service.getPendingOtpFlowForChat({ ...args, flowKinds: [] }),
+      ).resolves.toBeNull();
+      expect(prisma.perChatFlowState.findMany).not.toHaveBeenCalled();
+    });
+  });
 });

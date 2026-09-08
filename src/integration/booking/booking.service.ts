@@ -263,7 +263,11 @@ export class BookingService {
         // transport actually used, not a hardcoded 'sms'.
         await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
             to: 'OTP_SENT',
-            payload: { source: 'booking_sms_request', verification_id: record.id, channel },
+            // `phone` is what makes this row usable as a cross-flow
+            // OTP-in-flight marker (ChatFlowService
+            // .getPendingOtpFlowForChat) — the lead flow checks it
+            // before sending a second code to the same number.
+            payload: { source: 'booking_sms_request', verification_id: record.id, channel, phone },
         }, 'booking:requestSmsVerification');
 
         return {

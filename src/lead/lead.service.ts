@@ -42,6 +42,13 @@ const MAX_VERIFY_ATTEMPTS = 5;
 // observed 2026-08-11 where the agent re-triggered SMS verification twice
 // in close succession within the same window, well under the abuse cap.
 const SMS_RESEND_COOLDOWN_SECONDS = 60;
+// How recently ANOTHER flow in this chat must have sent a code to the same
+// number for this flow to stand down instead of sending its own. Sized to
+// cover one agent turn sequence (the observed duplicate was 4.5s apart),
+// not the code's lifetime: a visitor who abandons a booking OTP and asks
+// for a callback minutes later must still get a lead code. Anything longer
+// is covered by the verified-phone dedup, which needs no window at all.
+const CROSS_FLOW_OTP_INFLIGHT_SECONDS = 120;
 
 // How long a KVKK consent counts as "fresh enough" to gate an SMS OTP
 // request without requiring the visitor to accept again mid-conversation.
@@ -1033,6 +1040,37 @@ export class LeadService {
         );
         console.log(`[lead:requestSmsVerification] phone already verified this chat, skipping SMS (bot=${dto.botId} chat=${dto.chatId})`);
         return { status: 'already_verified' as const, verificationToken };
+      }
+    }
+
+    // Cross-flow OTP-in-flight guard. The dedup above only fires once a
+    // code has been VERIFIED; when the booking flow requested one seconds
+    // ago and the visitor hasn't answered yet, nothing is verified and
+    // both flows send. Observed on chatbu-dev 2026-09-07 17:00 UTC: one
+    // contact form produced `request_booking_verification` at 17:00:29
+    // and this method (via capture_lead's self-trigger) at 17:00:34 —
+    // two codes 4.5s apart in two different tables, so the one the
+    // visitor typed first failed against the other flow's table.
+    //
+    // The booking code wins: `create_appointment` cannot proceed without
+    // a booking verification token, whereas this flow gets the phone for
+    // free from `getVerifiedPhoneForChat` the moment that booking code
+    // is verified. So we skip the send and tell the caller a code is
+    // already on its way — never the reverse.
+    if (dto.chatId) {
+      const pending = await this.chatFlowService.getPendingOtpFlowForChat({
+        botId: dto.botId,
+        chatId: dto.chatId,
+        targetPhone: dto.phone,
+        flowKinds: [FlowKind.BOOKING],
+        withinSeconds: CROSS_FLOW_OTP_INFLIGHT_SECONDS,
+      });
+      if (pending) {
+        console.log(
+          `[lead:requestSmsVerification] ${pending.flowKind} OTP already in flight for this chat, ` +
+          `skipping duplicate send (bot=${dto.botId} chat=${dto.chatId} sentAt=${pending.sentAt.toISOString()})`,
+        );
+        return { status: 'pending_other_flow' as const, flow: pending.flowKind };
       }
     }
 
