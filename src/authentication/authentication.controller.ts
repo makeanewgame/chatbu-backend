@@ -18,6 +18,7 @@ import { GoogleGuard } from './utils/google.guard';
 import { ConfigService } from '@nestjs/config';
 import { AccessTokenGuard } from './utils/accesstoken.guard';
 import { NotImpersonatingGuard } from './utils/not-impersonating.guard';
+import { TurnstileGuard } from './utils/turnstile.guard';
 import { ActivateRegistrationRequest } from './dto/activateregister.request';
 import { ResendVerificationRequest } from './dto/resendverification.request';
 import { LoginRequest } from './dto/login.request';
@@ -187,6 +188,7 @@ export class AuthenticationController {
   // open email relay. 5 attempts / hour / IP is well above any real person's
   // need and well below what makes bulk abuse worthwhile.
   @Throttle({ default: { limit: 5, ttl: 3600000 } })
+  @UseGuards(TurnstileGuard)
   @Post('register')
   async register(@Body() body: RegisterRequest, @Req() req, @Res() res) {
     await this.authService
@@ -224,6 +226,7 @@ export class AuthenticationController {
   //     });
   // }
   @Throttle({ default: { limit: 5, ttl: 3600000 } })
+  @UseGuards(TurnstileGuard)
   @Post('lost-password')
   async lostPassword(@Body() body: LostRequest, @Req() req, @Res() res) {
     const result = await this.authService.lostPassword(
@@ -373,6 +376,7 @@ export class AuthenticationController {
   // No auth guard: a user who just registered (or hit the emailNotVerified
   // login response) has no access token yet, so this has to work by email.
   @Throttle({ default: { limit: 5, ttl: 3600000 } })
+  @UseGuards(TurnstileGuard)
   @Post('resend-verification-by-email')
   async resendVerificationByEmail(@Body() body: ResendVerificationRequest) {
     return await this.authService.resendEmailVerificationByEmail(body.email);

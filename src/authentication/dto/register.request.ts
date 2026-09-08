@@ -37,6 +37,13 @@ export class RegisterRequest {
     @IsOptional()
     teamId?: string;
 
+    // Cloudflare Turnstile token; verified by TurnstileGuard before this DTO
+    // is even constructed. Optional here so the guard owns the "missing token"
+    // response and the field survives the whitelist validation pipe.
+    @IsString()
+    @IsOptional()
+    turnstileToken?: string;
+
     updated_at: string;
     created_at: string;
     refreshtoken: string;

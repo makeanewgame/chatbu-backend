@@ -10,4 +10,9 @@ export class LostRequest {
   @IsString()
   @IsOptional()
   lang?: string;
+
+  // Verified by TurnstileGuard; see register.request.ts.
+  @IsString()
+  @IsOptional()
+  turnstileToken?: string;
 }
