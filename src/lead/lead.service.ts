@@ -1137,7 +1137,7 @@ export class LeadService {
     // (OtpChannelPreferenceService) rather than passed down through the
     // agent. Defaults to 'sms' whenever no choice was made, which is
     // every conversation on a bot where the WhatsApp option is off.
-    const channel = await this.otpChannelPreference.get(dto.chatId);
+    const channel = await this.otpChannelPreference.consumeForOtp(dto.chatId);
     await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang, channel);
 
     // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK

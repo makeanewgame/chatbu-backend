@@ -144,7 +144,7 @@ export class AppointmentService {
         // with the conversation, while the reminder cron fires hours or
         // days later and still needs to know where to send. Resolved once,
         // used by both the confirmation below and every later reminder.
-        const notifyChannel = await this.otpChannelPreference.get(chatId);
+        const notifyChannel = await this.otpChannelPreference.peek(chatId);
 
         let appointment: Awaited<ReturnType<typeof this.prisma.appointment.create>>;
         try {

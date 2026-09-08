@@ -254,7 +254,7 @@ export class BookingService {
         // down through the agent. Defaults to 'sms' whenever no choice
         // was made — i.e. every conversation today, until the widget
         // starts offering the option.
-        const channel = await this.otpChannelPreference.get(chatId);
+        const channel = await this.otpChannelPreference.consumeForOtp(chatId);
         await this.sms.sendOtpSms(phone, code, botName, smsLang, channel);
 
         // Enter BOOKING flow at OTP_SENT. `from: null` so any prior
