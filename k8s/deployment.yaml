@@ -175,6 +175,34 @@ spec:
               name: chatbu-config
               key: TWILIO_WHATSAPP_OTP_TEMPLATE_TR
               optional: true
+        # Booking confirmation + reminder templates (UTILITY). Separate
+        # SIDs from the OTP pair because Meta approves each template
+        # independently; until these exist the booking messages fall back
+        # to SMS on their own (SmsService.whatsappAvailable per kind).
+        - name: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_EN
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_EN
+              optional: true
+        - name: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_TR
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_TR
+              optional: true
+        - name: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_EN
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_EN
+              optional: true
+        - name: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_TR
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_TR
+              optional: true
         # Legal Slice 1 (2026-09-05): company identity single-sources
         # from chatbu-config. Explicit env entries override the stale
         # COMPANY_* copies arriving via the backend-secrets envFrom;

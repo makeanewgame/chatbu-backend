@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nest
 import { FlowKind } from '../../generated/prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SmsService, parsePhoneToE164 } from 'src/sms/sms.service';
+import { OtpChannelPreferenceService } from 'src/sms/otp-channel-preference.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import {
     ALLOWED_SLOT_MINUTES,
@@ -60,6 +61,7 @@ export class AppointmentService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly sms: SmsService,
+        private readonly otpChannelPreference: OtpChannelPreferenceService,
         private readonly chatFlow: ChatFlowService,
     ) { }
 
@@ -137,6 +139,13 @@ export class AppointmentService {
         // so we return the existing row and skip the SMS. Any OTHER
         // error propagates so the MCP hop's outer try/catch can bucket
         // it (see calendar_tools.py's belt+suspenders wrapper).
+        // Copy the visitor's channel choice off the conversation and onto
+        // the row. It has to move here: the per-chat preference expires
+        // with the conversation, while the reminder cron fires hours or
+        // days later and still needs to know where to send. Resolved once,
+        // used by both the confirmation below and every later reminder.
+        const notifyChannel = await this.otpChannelPreference.get(chatId);
+
         let appointment: Awaited<ReturnType<typeof this.prisma.appointment.create>>;
         try {
             appointment = await this.prisma.appointment.create({
@@ -144,13 +153,14 @@ export class AppointmentService {
                     botId: botCuid,
                     calendarEventId,
                     attendeeName,
-                    attendeePhone,
                     attendeeEmail,
+                    attendeePhone,
                     startAt,
                     endAt,
                     summary,
                     description,
                     timezone,
+                    notifyChannel,
                 },
             });
         } catch (e: any) {
@@ -183,6 +193,7 @@ export class AppointmentService {
                 summary,
                 lang,
                 timezone,
+                notifyChannel,
             );
             confirmationSmsSent = true;
         } catch (e) {

@@ -123,6 +123,7 @@ export class AppointmentReminderService {
             summary: string;
             timezone: string;
             calendarEventId: string;
+            notifyChannel: string | null;
             bot: { botName: string | null } | null;
         },
         offsetMinutes: number,
@@ -142,6 +143,12 @@ export class AppointmentReminderService {
                 offsetMinutes,
                 smsLang,
                 appt.timezone,
+                // Channel the visitor chose when they booked. Stored on the
+                // row precisely because this cron runs long after the
+                // conversation-scoped preference expired. Anything but an
+                // explicit 'whatsapp' is SMS, so pre-existing rows (NULL)
+                // keep today's behaviour.
+                appt.notifyChannel === 'whatsapp' ? 'whatsapp' : 'sms',
             );
             return 'sent';
         } catch (e) {

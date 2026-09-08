@@ -33,7 +33,69 @@ type SmsProviderStrategy = 'netgsm_only' | 'route_by_country';
  * trigger was one traveller whose SIM is switched off abroad, and one
  * report is not evidence that SMS is failing for everyone.
  */
+/**
+ * When-phrase for a reminder, e.g. "tomorrow at 15:30" / "yarın 15:30".
+ *
+ * Exists because the WhatsApp reminder is ONE approved template whose
+ * body is fixed by Meta — the three offset shapes the SMS sentence
+ * branches on have to collapse into a single variable. The wording
+ * mirrors the SMS copy so a visitor reads the same thing on either
+ * channel.
+ */
+export function reminderWhenPhrase(
+  offsetMinutes: number,
+  lang: 'tr' | 'en',
+  timeOnly: string,
+  dateAndTime: string,
+): string {
+  if (offsetMinutes === 1440) {
+    return lang === 'en' ? `tomorrow at ${timeOnly}` : `yarın ${timeOnly}`;
+  }
+  if (offsetMinutes === 60) {
+    return lang === 'en' ? `in 1 hour at ${timeOnly}` : `1 saat sonra ${timeOnly}`;
+  }
+  const hours = offsetMinutes / 60;
+  const humanOffset =
+    Number.isInteger(hours) && hours > 0
+      ? lang === 'en'
+        ? `in ${hours} hours`
+        : `${hours} saat sonra`
+      : lang === 'en'
+        ? 'soon'
+        : 'yaklaşıyor';
+  return lang === 'en'
+    ? `${humanOffset} at ${dateAndTime}`
+    : `${humanOffset}, ${dateAndTime}`;
+}
+
 export type OtpChannel = 'sms' | 'whatsapp';
+
+/**
+ * Business-initiated WhatsApp messages must each be a separately approved
+ * template, so every distinct message this platform sends needs its own
+ * kind here plus its own pair of Content SIDs.
+ */
+export type WhatsAppTemplateKind = 'otp' | 'booking_confirmation' | 'booking_reminder';
+
+/**
+ * Which env var holds the approved Content SID for each (kind, language).
+ * Data, not branching: a new template kind is one entry plus one
+ * configmap pair, with no new code path.
+ */
+const WHATSAPP_TEMPLATE_ENV: Record<WhatsAppTemplateKind, { en: string; tr: string }> = {
+  otp: {
+    en: 'TWILIO_WHATSAPP_OTP_TEMPLATE_EN',
+    tr: 'TWILIO_WHATSAPP_OTP_TEMPLATE_TR',
+  },
+  booking_confirmation: {
+    en: 'TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_EN',
+    tr: 'TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_TR',
+  },
+  booking_reminder: {
+    en: 'TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_EN',
+    tr: 'TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_TR',
+  },
+};
 
 /**
  * Convert an arbitrary user-typed phone string into an
@@ -208,7 +270,13 @@ export class SmsService {
     channel: OtpChannel = 'sms',
   ): Promise<void> {
     if (channel === 'whatsapp') {
-      await this.sendOtpWhatsApp(phone, code, lang);
+      await this.sendWhatsAppTemplate({
+        kind: 'otp',
+        phone,
+        lang,
+        variables: { '1': code },
+        context: 'otp',
+      });
       return;
     }
     const message =
@@ -226,13 +294,30 @@ export class SmsService {
    * worse than never offering it.
    */
   whatsappOtpAvailable(): boolean {
-    if (process.env.WHATSAPP_OTP_ENABLED?.toLowerCase() !== 'true') return false;
-    if (!process.env.TWILIO_WHATSAPP_FROM) return false;
-    return Boolean(this.whatsappTemplateSid('en') || this.whatsappTemplateSid('tr'));
+    return this.whatsappAvailable('otp');
   }
 
   /**
-   * Approved authentication template for a language.
+   * True when a given message kind can actually be delivered over
+   * WhatsApp right now: the flag is on, a sender is configured, and at
+   * least one approved template exists for that kind.
+   *
+   * Per-kind rather than global because the kinds clear Meta approval
+   * independently — the OTP templates were approved days before the
+   * booking ones were even written. A caller must never route to a
+   * channel whose template is still pending; the send would fail
+   * outright, which is strictly worse than the SMS that works today.
+   */
+  whatsappAvailable(kind: WhatsAppTemplateKind): boolean {
+    if (process.env.WHATSAPP_OTP_ENABLED?.toLowerCase() !== 'true') return false;
+    if (!process.env.TWILIO_WHATSAPP_FROM) return false;
+    return Boolean(
+      this.whatsappTemplateSid(kind, 'en') || this.whatsappTemplateSid(kind, 'tr'),
+    );
+  }
+
+  /**
+   * Approved template for a (kind, language) pair.
    *
    * WhatsApp templates are per-language resources — Meta owns the body
    * copy and localizes it per template, so there is one Content SID per
@@ -240,30 +325,41 @@ export class SmsService {
    * missing language falls back to English; if English is missing too the
    * caller gets null and must not route to WhatsApp.
    */
-  private whatsappTemplateSid(lang: 'tr' | 'en'): string | null {
-    const byLang =
-      lang === 'tr'
-        ? process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_TR
-        : process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN;
-    return byLang || process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN || null;
+  private whatsappTemplateSid(
+    kind: WhatsAppTemplateKind,
+    lang: 'tr' | 'en',
+  ): string | null {
+    const env = WHATSAPP_TEMPLATE_ENV[kind];
+    return process.env[lang === 'tr' ? env.tr : env.en] || process.env[env.en] || null;
   }
 
   /**
-   * Send the OTP as a WhatsApp authentication template.
+   * Send one approved WhatsApp template.
    *
-   * Unlike the SMS path there is no message to compose: the body is
-   * Meta's fixed authentication copy and the code travels as variable
-   * `1`. Everything else — E.164 parsing, the metrics counter, throw-on-
-   * failure — matches `sendSms` so callers can treat both channels
-   * identically.
+   * Unlike the SMS path there is no message to compose: Meta owns the
+   * body and localizes it per template, and we supply only the numbered
+   * variables. Everything else — E.164 parsing, the metrics counter,
+   * throw-on-failure — matches `sendSms` so callers can treat both
+   * channels identically.
+   *
+   * Every variable is coerced to a non-empty string. Meta rejects a send
+   * whose variable is empty, and the values here come from optional
+   * fields (a booking `summary` can legitimately be blank), so an empty
+   * one would turn a cosmetic gap into a failed delivery.
    */
-  private async sendOtpWhatsApp(
-    phone: string,
-    code: string,
-    lang: 'tr' | 'en',
-  ): Promise<void> {
+  private async sendWhatsAppTemplate(args: {
+    kind: WhatsAppTemplateKind;
+    phone: string;
+    lang: 'tr' | 'en';
+    variables: Record<string, string>;
+    context: string;
+  }): Promise<void> {
+    const { kind, phone, lang, variables, context } = args;
+
     if (process.env.WHATSAPP_OTP_ENABLED?.toLowerCase() !== 'true') {
-      this.logger.error('[SmsService] WhatsApp OTP requested while WHATSAPP_OTP_ENABLED is off');
+      this.logger.error(
+        `[SmsService] WhatsApp ${context} requested while WHATSAPP_OTP_ENABLED is off`,
+      );
       throw new BadRequestException({ code: 'WHATSAPP_OTP_DISABLED' });
     }
 
@@ -273,13 +369,20 @@ export class SmsService {
       throw new BadRequestException({ code: 'INVALID_PHONE_E164' });
     }
 
-    const contentSid = this.whatsappTemplateSid(lang);
+    const contentSid = this.whatsappTemplateSid(kind, lang);
     if (!contentSid) {
+      const env = WHATSAPP_TEMPLATE_ENV[kind];
       this.logger.error(
-        `[SmsService] no WhatsApp OTP template configured for lang=${lang} ` +
-          '(TWILIO_WHATSAPP_OTP_TEMPLATE_EN/_TR)',
+        `[SmsService] no WhatsApp ${kind} template configured for lang=${lang} ` +
+          `(${env.en}/${env.tr})`,
       );
-      throw new InternalServerErrorException('WhatsApp OTP template is not configured');
+      throw new InternalServerErrorException(`WhatsApp ${kind} template is not configured`);
+    }
+
+    const safeVariables: Record<string, string> = {};
+    for (const [key, value] of Object.entries(variables)) {
+      const trimmed = (value ?? '').trim();
+      safeVariables[key] = trimmed.length > 0 ? trimmed : '-';
     }
 
     try {
@@ -287,19 +390,19 @@ export class SmsService {
         e164: parsed.e164,
         country: parsed.country,
         contentSid,
-        variables: { '1': code },
-        context: 'otp',
+        variables: safeVariables,
+        context,
       });
       this.smsSendCounter.inc({
         provider: this.whatsappProvider.name,
-        context: 'otp',
+        context,
         country: parsed.country,
         outcome: 'success',
       });
     } catch (err) {
       this.smsSendCounter.inc({
         provider: this.whatsappProvider.name,
-        context: 'otp',
+        context,
         country: parsed.country,
         outcome: 'failure',
       });
@@ -317,8 +420,35 @@ export class SmsService {
     summary: string,
     lang: 'tr' | 'en' = 'tr',
     timezone: string = 'Europe/Istanbul',
+    channel: OtpChannel = 'sms',
   ): Promise<void> {
     const when = formatDateAndTime(appointmentStart, timezone);
+
+    // The WhatsApp template carries the same three pieces the SMS
+    // sentence does — business, when, details — so the visitor reads the
+    // same message either way. Meta owns the wording around them.
+    //
+    // Falls back to SMS when this template kind isn't deliverable yet,
+    // rather than refusing the way the OTP path does. The two cases are
+    // genuinely different: the widget only offers WhatsApp for the OTP
+    // once `whatsappOtpAvailable()` is true, so an unavailable OTP
+    // template means something is misconfigured and silence is the
+    // honest answer. Here the channel is INHERITED from that OTP choice
+    // while these templates clear Meta approval on their own schedule —
+    // so "not approved yet" is the expected state, and dropping the
+    // confirmation entirely would be a regression against the SMS that
+    // works today.
+    if (channel === 'whatsapp' && this.whatsappAvailable('booking_confirmation')) {
+      await this.sendWhatsAppTemplate({
+        kind: 'booking_confirmation',
+        phone,
+        lang,
+        variables: { '1': botName, '2': when, '3': summary },
+        context: 'booking_confirmation',
+      });
+      return;
+    }
+
     const message =
       lang === 'en'
         ? `Your ${botName} appointment is confirmed for ${when}. Details: ${summary}.`
@@ -337,9 +467,34 @@ export class SmsService {
     offsetMinutes: number,
     lang: 'tr' | 'en' = 'tr',
     timezone: string = 'Europe/Istanbul',
+    channel: OtpChannel = 'sms',
   ): Promise<void> {
     const timeOnly = formatTimeOnly(appointmentStart, timezone);
     const dateAndTime = formatDateAndTime(appointmentStart, timezone);
+
+    // One WhatsApp template covers all three offset shapes: the phrase
+    // that varies ("tomorrow at 15:30" / "in 1 hour at 15:30" / "in 3
+    // hours at 8 September 15:30") is composed here and passed as a
+    // variable, rather than approving three near-identical templates per
+    // language with Meta.
+    //
+    // Same fall-back-to-SMS rule as the confirmation above: an
+    // unapproved template must not cost the visitor their reminder.
+    if (channel === 'whatsapp' && this.whatsappAvailable('booking_reminder')) {
+      await this.sendWhatsAppTemplate({
+        kind: 'booking_reminder',
+        phone,
+        lang,
+        variables: {
+          '1': botName,
+          '2': reminderWhenPhrase(offsetMinutes, lang, timeOnly, dateAndTime),
+          '3': summary,
+        },
+        context: 'booking_reminder',
+      });
+      return;
+    }
+
     let message: string;
 
     if (offsetMinutes === 1440) {
