@@ -20,7 +20,7 @@ describe('BookingService — kind differentiator', () => {
         { provide: PrismaService, useValue: {} },
         { provide: MailService, useValue: {} },
         { provide: SmsService, useValue: {} },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
         { provide: JwtService, useValue: jwt },
         { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
       ],
@@ -87,7 +87,7 @@ describe('BookingService — SMS flow', () => {
     customerBots: { findUnique: jest.Mock };
   };
   let sms: { sendOtpSms: jest.Mock };
-  let otpChannel: { get: jest.Mock; set: jest.Mock };
+  let otpChannel: { consumeForOtp: jest.Mock; peek: jest.Mock; set: jest.Mock };
 
   beforeEach(async () => {
     jwt = { signAsync: jest.fn(), verifyAsync: jest.fn() };
@@ -101,7 +101,7 @@ describe('BookingService — SMS flow', () => {
       customerBots: { findUnique: jest.fn() },
     };
     sms = { sendOtpSms: jest.fn().mockResolvedValue(undefined) };
-    otpChannel = { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() };
+    otpChannel = { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), set: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -204,11 +204,12 @@ describe('BookingService — SMS flow', () => {
     prisma.bookingSmsVerification.count.mockResolvedValue(0);
     prisma.bookingSmsVerification.create.mockResolvedValue({ id: 'rec-1' });
     prisma.customerBots.findUnique.mockResolvedValue({ botName: 'TestBot' });
-    otpChannel.get.mockResolvedValue('whatsapp');
+    // The OTP path CONSUMES the choice so a resend falls back to SMS.
+    otpChannel.consumeForOtp.mockResolvedValue('whatsapp');
 
     await service.requestSmsVerification('+31612345678', 'bot-1', 'chat-9');
 
-    expect(otpChannel.get).toHaveBeenCalledWith('chat-9');
+    expect(otpChannel.consumeForOtp).toHaveBeenCalledWith('chat-9');
     expect(sms.sendOtpSms).toHaveBeenCalledWith(
       '+31612345678',
       expect.stringMatching(/^\d{6}$/),

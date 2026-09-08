@@ -32,6 +32,29 @@ import { OtpChannel } from './sms.service';
  * carries `botCuid`), and a key mismatch here fails silently as "SMS".
  * One field, no mismatch possible.
  *
+ * ## Why the OTP choice is single-use
+ *
+ * A number with no WhatsApp account fails ASYNCHRONOUSLY at Twilio: our
+ * send returns success, the code never arrives, and nothing throws. With
+ * a sticky preference the resend would go to WhatsApp too and the
+ * visitor would be stuck in a loop — a silently lost lead, and only for
+ * people who mis-picked.
+ *
+ * So `consumeForOtp` marks the choice used on the first code. A resend
+ * falls back to SMS. This costs the traveller the feature exists for
+ * almost nothing: their first send reaches them precisely because they
+ * do have WhatsApp, so they never reach a resend. Someone who does
+ * reach one is, by that fact, someone WhatsApp didn't reach. Re-picking
+ * WhatsApp on the form writes a fresh choice, so the escape hatch stays
+ * open in both directions.
+ *
+ * The mark is a value change rather than a delete because a second
+ * reader still needs the answer: `AppointmentService` stamps the
+ * visitor's channel onto the appointment AFTER the booking OTP has
+ * already consumed it, and that appointment's confirmation and
+ * reminders must still follow the channel the visitor chose. `peek` is
+ * for those readers; `consumeForOtp` is only for the code senders.
+ *
  * ## Failure posture
  *
  * Every failure path returns `'sms'` — the channel every caller used
@@ -96,15 +119,54 @@ export class OtpChannelPreferenceService implements OnModuleDestroy {
   }
 
   /**
-   * Channel the next code for this conversation should go out over.
-   * Returns `'sms'` for anything but an explicit, still-live `whatsapp`
-   * choice.
+   * Channel the NEXT ONE-TIME CODE for this conversation goes out over,
+   * marking the choice used so a resend falls back to SMS. Only the code
+   * senders call this — see the single-use rationale in the class
+   * docstring.
+   *
+   * The mark is best-effort: if it fails we still return the channel the
+   * visitor picked, because failing to record "used" is far better than
+   * withholding a code they are waiting for. Worst case a resend also
+   * goes over WhatsApp, which is exactly today's behaviour.
    */
-  async get(chatId: string | null | undefined): Promise<OtpChannel> {
+  async consumeForOtp(chatId: string | null | undefined): Promise<OtpChannel> {
     if (!this.redis || !chatId) return 'sms';
     try {
       const stored = await this.redis.get(this.key(chatId));
-      return stored === 'whatsapp' ? 'whatsapp' : 'sms';
+      if (stored !== 'whatsapp') return 'sms';
+
+      try {
+        await this.redis.set(
+          this.key(chatId),
+          'whatsapp_used',
+          'EX',
+          OtpChannelPreferenceService.KEY_TTL_SECONDS,
+        );
+      } catch (markErr: any) {
+        this.logger.warn(
+          `Failed to mark OTP channel preference used for chat=${chatId}: ${markErr?.message ?? markErr}`,
+        );
+      }
+      return 'whatsapp';
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to read OTP channel preference for chat=${chatId}: ${err?.message ?? err}`,
+      );
+      return 'sms';
+    }
+  }
+
+  /**
+   * The channel the visitor chose, without consuming it. For readers
+   * that are not sending a code — today `AppointmentService`, stamping
+   * the choice onto the appointment so its confirmation and reminders
+   * follow it long after the OTP consumed the mark.
+   */
+  async peek(chatId: string | null | undefined): Promise<OtpChannel> {
+    if (!this.redis || !chatId) return 'sms';
+    try {
+      const stored = await this.redis.get(this.key(chatId));
+      return stored === 'whatsapp' || stored === 'whatsapp_used' ? 'whatsapp' : 'sms';
     } catch (err: any) {
       this.logger.warn(
         `Failed to read OTP channel preference for chat=${chatId}: ${err?.message ?? err}`,
