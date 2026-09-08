@@ -948,6 +948,12 @@ model Appointment {
   summary         String
   description     String       @default("")
   timezone        String       @default("UTC")
+  // Transport the visitor picked for THIS appointment's notifications:
+  // 'sms' (or NULL, same thing) | 'whatsapp'. Copied off the per-chat OTP
+  // channel preference at creation time and then owned by the row,
+  // because the reminder cron fires hours or days later — long after the
+  // conversation-scoped preference has expired.
+  notifyChannel   String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   // Per-offset reminder dispatch state. Keys are the offset in minutes

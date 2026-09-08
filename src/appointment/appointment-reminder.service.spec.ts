@@ -56,6 +56,7 @@ describe('AppointmentReminderService.dispatchDueReminders', () => {
             summary: 'AI/LLM Bootcamp',
             timezone: 'Europe/Istanbul',
             calendarEventId: `evt_${minutesFromNow}`,
+            notifyChannel: null,
             reminderStates: {},
             bot: {
                 botName: 'MyBot',
@@ -78,6 +79,27 @@ describe('AppointmentReminderService.dispatchDueReminders', () => {
 
         // 6th positional arg is `lang`.
         expect(sms.sendBookingReminderSms.mock.calls[0][5]).toBe('en');
+    });
+
+    it('reminds over the channel stored on the row, not the expired chat preference', async () => {
+        // The conversation-scoped preference is long gone by the time this
+        // cron runs, which is exactly why the choice lives on the row.
+        prisma.appointment.findMany.mockResolvedValue([
+            apptStartingIn(60, { notifyChannel: 'whatsapp' }),
+        ]);
+
+        await service.dispatchDueReminders();
+
+        // 8th positional arg is `channel`.
+        expect(sms.sendBookingReminderSms.mock.calls[0][7]).toBe('whatsapp');
+    });
+
+    it('treats a row with no stored channel as SMS (every pre-existing appointment)', async () => {
+        prisma.appointment.findMany.mockResolvedValue([apptStartingIn(60)]);
+
+        await service.dispatchDueReminders();
+
+        expect(sms.sendBookingReminderSms.mock.calls[0][7]).toBe('sms');
     });
 
     it('fires the 60-minute reminder when startAt is 60 minutes from now', async () => {

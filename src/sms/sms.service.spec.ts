@@ -575,3 +575,139 @@ describe('SmsService — WhatsApp OTP channel', () => {
     });
   });
 });
+
+
+describe('SmsService — WhatsApp booking confirmation + reminder', () => {
+  let service: SmsService;
+  let netgsm: { sendSms: jest.Mock; name: string };
+  let twilio: { sendSms: jest.Mock; name: string };
+  let whatsapp: { sendTemplate: jest.Mock; name: string };
+  let logger: { info: jest.Mock; error: jest.Mock; warn: jest.Mock };
+  let smsCounter: { inc: jest.Mock };
+
+  const originalEnv = { ...process.env };
+  const startAt = new Date('2026-09-08T12:30:00+03:00');
+
+  async function build() {
+    netgsm = { name: 'netgsm', sendSms: jest.fn().mockResolvedValue(undefined) };
+    twilio = { name: 'twilio', sendSms: jest.fn().mockResolvedValue(undefined) };
+    whatsapp = {
+      name: 'twilio_whatsapp',
+      sendTemplate: jest.fn().mockResolvedValue(undefined),
+    };
+    logger = { info: jest.fn(), error: jest.fn(), warn: jest.fn() };
+    smsCounter = { inc: jest.fn() };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SmsService,
+        { provide: NetgsmSmsProvider, useValue: netgsm },
+        { provide: TwilioSmsProvider, useValue: twilio },
+        { provide: TwilioWhatsAppProvider, useValue: whatsapp },
+        { provide: WINSTON_MODULE_PROVIDER, useValue: logger },
+        { provide: 'PROM_METRIC_CHATBU_SMS_SEND_TOTAL', useValue: smsCounter },
+      ],
+    }).compile();
+    service = module.get(SmsService);
+  }
+
+  const enableChannel = () => {
+    process.env.WHATSAPP_OTP_ENABLED = 'true';
+    process.env.TWILIO_WHATSAPP_FROM = '+447414150634';
+  };
+  const enableBookingTemplates = () => {
+    process.env.TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_EN = 'HXconfEN';
+    process.env.TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_TR = 'HXconfTR';
+    process.env.TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_EN = 'HXremEN';
+    process.env.TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_TR = 'HXremTR';
+  };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    jest.clearAllMocks();
+  });
+
+  it('sends the confirmation as a template when the channel is whatsapp', async () => {
+    enableChannel();
+    enableBookingTemplates();
+    await build();
+
+    await service.sendBookingConfirmationSms(
+      '+905065432731', 'TestBot', startAt, 'Saç bakımı', 'tr', 'Europe/Istanbul', 'whatsapp',
+    );
+
+    expect(netgsm.sendSms).not.toHaveBeenCalled();
+    const call = whatsapp.sendTemplate.mock.calls[0][0];
+    expect(call.contentSid).toBe('HXconfTR');
+    expect(call.context).toBe('booking_confirmation');
+    expect(call.variables['1']).toBe('TestBot');
+    expect(call.variables['3']).toBe('Saç bakımı');
+  });
+
+  it('falls back to SMS when the booking template is not approved yet', async () => {
+    // The channel is live for OTP but these templates clear Meta approval
+    // on their own schedule. Dropping the confirmation would be a
+    // regression against the SMS that works today.
+    enableChannel();
+    process.env.TWILIO_WHATSAPP_OTP_TEMPLATE_EN = 'HXotpEN';
+    await build();
+
+    await service.sendBookingConfirmationSms(
+      '+905065432731', 'TestBot', startAt, 'Saç bakımı', 'tr', 'Europe/Istanbul', 'whatsapp',
+    );
+
+    expect(whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(netgsm.sendSms).toHaveBeenCalledTimes(1);
+  });
+
+  it('never sends an empty template variable — Meta rejects the send', async () => {
+    enableChannel();
+    enableBookingTemplates();
+    await build();
+
+    await service.sendBookingConfirmationSms(
+      '+905065432731', 'TestBot', startAt, '   ', 'tr', 'Europe/Istanbul', 'whatsapp',
+    );
+
+    expect(whatsapp.sendTemplate.mock.calls[0][0].variables['3']).toBe('-');
+  });
+
+  it('collapses every reminder offset shape into the one approved template', async () => {
+    enableChannel();
+    enableBookingTemplates();
+    await build();
+
+    for (const offset of [1440, 60, 180]) {
+      await service.sendBookingReminderSms(
+        '+905065432731', 'TestBot', startAt, 'Saç bakımı', offset, 'tr', 'Europe/Istanbul', 'whatsapp',
+      );
+    }
+
+    const sids = whatsapp.sendTemplate.mock.calls.map((c: any[]) => c[0].contentSid);
+    expect(sids).toEqual(['HXremTR', 'HXremTR', 'HXremTR']);
+
+    // The offset-dependent phrasing rides in variable 2, not in three
+    // separately approved templates.
+    const phrases = whatsapp.sendTemplate.mock.calls.map((c: any[]) => c[0].variables['2']);
+    expect(phrases[0]).toContain('yarın');
+    expect(phrases[1]).toContain('1 saat sonra');
+    expect(phrases[2]).toContain('3 saat sonra');
+    expect(new Set(phrases).size).toBe(3);
+  });
+
+  it('leaves the SMS path byte-for-byte unchanged when no channel is passed', async () => {
+    enableChannel();
+    enableBookingTemplates();
+    await build();
+
+    await service.sendBookingConfirmationSms(
+      '+905065432731', 'TestBot', startAt, 'Saç bakımı', 'tr', 'Europe/Istanbul',
+    );
+    await service.sendBookingReminderSms(
+      '+905065432731', 'TestBot', startAt, 'Saç bakımı', 1440, 'tr', 'Europe/Istanbul',
+    );
+
+    expect(whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(netgsm.sendSms).toHaveBeenCalledTimes(2);
+  });
+});
