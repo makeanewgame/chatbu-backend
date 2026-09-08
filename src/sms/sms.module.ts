@@ -5,6 +5,7 @@ import { NetgsmSmsProvider } from './providers/netgsm.provider';
 import { TwilioSmsProvider } from './providers/twilio.provider';
 import { TwilioWhatsAppProvider } from './providers/twilio-whatsapp.provider';
 import { OtpChannelPreferenceService } from './otp-channel-preference.service';
+import { OtpDeliveryFallbackService } from './otp-delivery-fallback.service';
 import {
   chatbuNetgsmSendTotal,
   chatbuSmsSendTotal,
@@ -31,9 +32,10 @@ import {
     TwilioWhatsAppProvider,
     SmsService,
     OtpChannelPreferenceService,
+    OtpDeliveryFallbackService,
     chatbuNetgsmSendTotal,
     chatbuSmsSendTotal,
   ],
-  exports: [SmsService, OtpChannelPreferenceService],
+  exports: [SmsService, OtpChannelPreferenceService, OtpDeliveryFallbackService],
 })
 export class SmsModule { }

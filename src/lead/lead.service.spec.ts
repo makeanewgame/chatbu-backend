@@ -60,7 +60,7 @@ describe('LeadService — lead verification', () => {
         { provide: MailService, useValue: mail },
         { provide: JwtService, useValue: jwt },
         { provide: SmsService, useValue: { sendOtpSms: jest.fn() } },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() } },
         {
           provide: LegalDocumentService,
           useValue: { getPublished: jest.fn().mockRejectedValue(new Error('no published version in tests')) },
@@ -441,7 +441,7 @@ describe('LeadService — hasFreshKvkkConsent (gateway pre-agent probe)', () => 
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: {} },
         { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: {} },
         { provide: ChatFlowService, useValue: {} },
         { provide: PushNotificationService, useValue: {} },
@@ -537,7 +537,7 @@ describe('LeadService — submit privacy-consent gate (Legal Slice 2)', () => {
         { provide: MailService, useValue: mail },
         { provide: JwtService, useValue: { signAsync: jest.fn(), verifyAsync: jest.fn() } },
         { provide: SmsService, useValue: { sendOtpSms: jest.fn() } },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: {} },
         {
           provide: ChatFlowService,
@@ -651,7 +651,7 @@ describe('LeadService — getConsentText (consent notice CMS-first)', () => {
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: {} },
         { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: { getConsentNotice } },
         { provide: ChatFlowService, useValue: {} },
         { provide: PushNotificationService, useValue: {} },
@@ -812,7 +812,7 @@ describe('LeadService — recordPrivacyConsent (audit version)', () => {
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: {} },
         { provide: (await import('src/sms/sms.service')).SmsService, useValue: {} },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() } },
         { provide: LegalDocumentService, useValue: { getConsentNotice } },
         { provide: ChatFlowService, useValue: { transition: jest.fn() } },
         { provide: PushNotificationService, useValue: {} },
@@ -929,6 +929,7 @@ describe('LeadService — requestSmsVerification cross-flow OTP guard', () => {
   let service: LeadService;
   let prisma: any;
   let sms: { sendOtpSms: jest.Mock };
+  let otpChannel: { consumeForOtp: jest.Mock; peek: jest.Mock; hasSpentWhatsAppChoice: jest.Mock; set: jest.Mock };
   let chatFlow: {
     getVerifiedPhoneForChat: jest.Mock;
     getPendingOtpFlowForChat: jest.Mock;
@@ -957,6 +958,12 @@ describe('LeadService — requestSmsVerification cross-flow OTP guard', () => {
       },
     };
     sms = { sendOtpSms: jest.fn().mockResolvedValue(undefined) };
+    otpChannel = {
+      consumeForOtp: jest.fn().mockResolvedValue('sms'),
+      peek: jest.fn().mockResolvedValue('sms'),
+      hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false),
+      set: jest.fn(),
+    };
     chatFlow = {
       getVerifiedPhoneForChat: jest.fn().mockResolvedValue(null),
       getPendingOtpFlowForChat: jest.fn().mockResolvedValue(null),
@@ -970,7 +977,7 @@ describe('LeadService — requestSmsVerification cross-flow OTP guard', () => {
         { provide: MailService, useValue: {} },
         { provide: JwtService, useValue: { signAsync: jest.fn() } },
         { provide: SmsService, useValue: sms },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: otpChannel },
         { provide: LegalDocumentService, useValue: {} },
         { provide: ChatFlowService, useValue: chatFlow },
         { provide: PushNotificationService, useValue: {} },
@@ -1006,6 +1013,33 @@ describe('LeadService — requestSmsVerification cross-flow OTP guard', () => {
 
     expect(result).toMatchObject({ status: 'sent' });
     expect(sms.sendOtpSms).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets the SMS rescue through the resend cooldown when WhatsApp already failed', async () => {
+    prisma.leadSmsVerification.findFirst.mockResolvedValue({
+      id: 'v-0',
+      createdAt: new Date(Date.now() - 15 * 1000), // inside the 60s cooldown
+    });
+    otpChannel.hasSpentWhatsAppChoice.mockResolvedValue(true);
+    otpChannel.consumeForOtp.mockResolvedValue('sms');
+
+    const result = await service.requestSmsVerification({ botId, chatId, phone });
+
+    expect(result).toMatchObject({ status: 'sent' });
+    expect(sms.sendOtpSms).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rate-limits when the channel is not changing', async () => {
+    prisma.leadSmsVerification.findFirst.mockResolvedValue({
+      id: 'v-0',
+      createdAt: new Date(Date.now() - 15 * 1000),
+    });
+    otpChannel.hasSpentWhatsAppChoice.mockResolvedValue(false);
+
+    const result = await service.requestSmsVerification({ botId, chatId, phone });
+
+    expect(result).toEqual({ status: 'rate_limited' });
+    expect(sms.sendOtpSms).not.toHaveBeenCalled();
   });
 
   it('skips the guard entirely without a chatId (the guard is chat-scoped)', async () => {

@@ -28,6 +28,7 @@ import { IntegrationModule } from './integration/integration.module';
 import { SystemLogModule } from './system-log/system-log.module';
 import { MetaModule } from './meta/meta.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { TwilioStatusModule } from './twilio-status/twilio-status.module';
 import { MetaWhatsappModule } from './meta-whatsapp/meta-whatsapp.module';
 import { WidgetModule } from './widget/widget.module';
 import { LeadModule } from './lead/lead.module';
@@ -107,7 +108,7 @@ import { AudioTranscriptionModule } from './audio-transcription/audio-transcript
       defaultLabels: { app: 'chatbu-backend' },
       defaultMetrics: { enabled: true },
     }),
-    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule, AppointmentModule, LegalDocumentModule, ChatFlowModule, PushNotificationModule, AnalyticsModule, AudioTranscriptionModule],
+    AuthenticationModule, MailModule, FileModule, MinioClientModule, PrismaModule, BotModule, QuotaModule, ReportModule, EventsModule, ContentModule, AdminModule, TeamModule, SubscriptionModule, FeedbackModule, TicketModule, IntegrationModule, SystemLogModule, MetaModule, WhatsAppModule, MetaWhatsappModule, WidgetModule, LeadModule, AppointmentModule, LegalDocumentModule, ChatFlowModule, PushNotificationModule, AnalyticsModule, AudioTranscriptionModule, TwilioStatusModule],
   controllers: [AppController],
   providers: [
     AppService,

@@ -1095,7 +1095,19 @@ export class LeadService {
       lastRequest &&
       Date.now() - lastRequest.createdAt.getTime() < SMS_RESEND_COOLDOWN_SECONDS * 1000
     ) {
-      return { status: 'rate_limited' as const };
+      // ...unless the next code goes over a DIFFERENT transport. The
+      // cooldown guards against hammering one channel; when the
+      // visitor's WhatsApp code never arrived, the SMS that rescues them
+      // is not the abuse this rule exists to stop. Blocking it is what
+      // strands them: nobody waits 60 seconds before saying "the code
+      // didn't come".
+      const switchingChannel = await this.otpChannelPreference.hasSpentWhatsAppChoice(dto.chatId);
+      if (!switchingChannel) {
+        return { status: 'rate_limited' as const };
+      }
+      console.log(
+        `[lead:requestSmsVerification] resend cooldown bypassed for bot=${dto.botId} chat=${dto.chatId}: falling back from WhatsApp to SMS`,
+      );
     }
 
     if (consent) {
@@ -1137,8 +1149,19 @@ export class LeadService {
     // (OtpChannelPreferenceService) rather than passed down through the
     // agent. Defaults to 'sms' whenever no choice was made, which is
     // every conversation on a bot where the WhatsApp option is off.
-    const channel = await this.otpChannelPreference.get(dto.chatId);
-    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang, channel);
+    const channel = await this.otpChannelPreference.consumeForOtp(dto.chatId);
+    await this.smsService.sendOtpSms(
+      dto.phone,
+      code,
+      bot.botName,
+      smsLang,
+      channel,
+      // Lets Twilio's delivery callback re-send over SMS if WhatsApp
+      // never lands the code. Passed only for the OTP: an unusable
+      // verification code is a dead end, and on Meta channels there is
+      // no card to put a "resend" button on.
+      { flow: 'lead', botId: dto.botId, chatId: dto.chatId, phone: dto.phone, lang: dto.lang },
+    );
 
     // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK
     // — if the state isn't there yet (backfill hasn't seen this

@@ -11,5 +11,6 @@ import { BookingService } from './booking.service';
     imports: [PrismaModule, MailModule, SmsModule, JwtModule.register({}), ChatFlowModule],
     controllers: [BookingController],
     providers: [BookingService],
+    exports: [BookingService],
 })
 export class BookingModule { }

@@ -214,8 +214,20 @@ export class BookingService {
             lastRequest &&
             Date.now() - lastRequest.createdAt.getTime() < SMS_RESEND_COOLDOWN_SECONDS * 1000
         ) {
-            this.logger.warn(`SMS resend cooldown active for ${phone} on bot ${botCuid}`);
-            throw new Error('TOO_MANY_REQUESTS');
+            // ...unless the next code goes over a DIFFERENT transport. The
+            // cooldown guards against hammering one channel; when the
+            // visitor's WhatsApp code never arrived, the SMS that rescues
+            // them is not the abuse this rule exists to stop. Blocking it
+            // is what strands them: nobody waits 60 seconds before saying
+            // "the code didn't come".
+            const switchingChannel = await this.otpChannelPreference.hasSpentWhatsAppChoice(chatId);
+            if (!switchingChannel) {
+                this.logger.warn(`SMS resend cooldown active for ${phone} on bot ${botCuid}`);
+                throw new Error('TOO_MANY_REQUESTS');
+            }
+            this.logger.log(
+                `Resend cooldown bypassed for ${phone} on bot ${botCuid}: falling back from WhatsApp to SMS`,
+            );
         }
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -254,8 +266,16 @@ export class BookingService {
         // down through the agent. Defaults to 'sms' whenever no choice
         // was made — i.e. every conversation today, until the widget
         // starts offering the option.
-        const channel = await this.otpChannelPreference.get(chatId);
-        await this.sms.sendOtpSms(phone, code, botName, smsLang, channel);
+        const channel = await this.otpChannelPreference.consumeForOtp(chatId);
+        await this.sms.sendOtpSms(
+            phone,
+            code,
+            botName,
+            smsLang,
+            channel,
+            // See LeadService for why only the OTP registers a fallback.
+            chatId ? { flow: 'booking', botId: botCuid, chatId, phone, lang } : undefined,
+        );
 
         // Enter BOOKING flow at OTP_SENT. `from: null` so any prior
         // BOOKING row in the same chat is overwritten (visitor may have

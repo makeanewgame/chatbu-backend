@@ -23,7 +23,7 @@ describe('AppointmentService.createFromMcp', () => {
         customerBots: { findUnique: jest.Mock };
     };
     let sms: { sendBookingConfirmationSms: jest.Mock };
-    let otpChannel: { get: jest.Mock; set: jest.Mock };
+    let otpChannel: { consumeForOtp: jest.Mock; peek: jest.Mock; hasSpentWhatsAppChoice: jest.Mock; set: jest.Mock };
 
     // 2026-10-06 14:30 Europe/Istanbul as UTC — the fixture the SMS
     // service tests already use, so any datetime-format regression is
@@ -54,7 +54,7 @@ describe('AppointmentService.createFromMcp', () => {
             customerBots: { findUnique: jest.fn() },
         };
         sms = { sendBookingConfirmationSms: jest.fn().mockResolvedValue(undefined) };
-        otpChannel = { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() };
+        otpChannel = { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() };
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
@@ -160,7 +160,12 @@ describe('AppointmentService.createFromMcp', () => {
         // The per-chat preference expires with the conversation while the
         // reminder cron fires days later, so the choice has to move onto
         // the row at creation time.
-        otpChannel.get.mockResolvedValue('whatsapp');
+        //
+        // Reads via `peek`, not `consumeForOtp`: the booking OTP has
+        // already consumed the mark by the time we get here, and the
+        // confirmation + every later reminder must still follow the
+        // channel the visitor picked.
+        otpChannel.peek.mockResolvedValue('whatsapp');
         prisma.appointment.create.mockResolvedValue({ id: 'appt_1' });
         prisma.customerBots.findUnique.mockResolvedValue({ botName: 'MyBot' });
 
@@ -169,6 +174,16 @@ describe('AppointmentService.createFromMcp', () => {
         expect(prisma.appointment.create.mock.calls[0][0].data.notifyChannel).toBe('whatsapp');
         const args = sms.sendBookingConfirmationSms.mock.calls[0];
         expect(args[args.length - 1]).toBe('whatsapp');
+    });
+
+    it('does not consume the OTP mark when stamping the appointment', async () => {
+        otpChannel.peek.mockResolvedValue('whatsapp');
+        prisma.appointment.create.mockResolvedValue({ id: 'appt_1' });
+        prisma.customerBots.findUnique.mockResolvedValue({ botName: 'MyBot' });
+
+        await service.createFromMcp(basePayload());
+
+        expect(otpChannel.consumeForOtp).not.toHaveBeenCalled();
     });
 
     it('persists the row even when the confirmation SMS throws', async () => {

@@ -20,7 +20,7 @@ describe('BookingService — kind differentiator', () => {
         { provide: PrismaService, useValue: {} },
         { provide: MailService, useValue: {} },
         { provide: SmsService, useValue: {} },
-        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: OtpChannelPreferenceService, useValue: { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() } },
         { provide: JwtService, useValue: jwt },
         { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
       ],
@@ -87,7 +87,7 @@ describe('BookingService — SMS flow', () => {
     customerBots: { findUnique: jest.Mock };
   };
   let sms: { sendOtpSms: jest.Mock };
-  let otpChannel: { get: jest.Mock; set: jest.Mock };
+  let otpChannel: { consumeForOtp: jest.Mock; peek: jest.Mock; hasSpentWhatsAppChoice: jest.Mock; set: jest.Mock };
 
   beforeEach(async () => {
     jwt = { signAsync: jest.fn(), verifyAsync: jest.fn() };
@@ -101,7 +101,7 @@ describe('BookingService — SMS flow', () => {
       customerBots: { findUnique: jest.fn() },
     };
     sms = { sendOtpSms: jest.fn().mockResolvedValue(undefined) };
-    otpChannel = { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() };
+    otpChannel = { consumeForOtp: jest.fn().mockResolvedValue('sms'), peek: jest.fn().mockResolvedValue('sms'), hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false), set: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -140,6 +140,7 @@ describe('BookingService — SMS flow', () => {
       'TestBot',
       'tr',
       'sms',
+      undefined,
     );
 
     const createArgs = prisma.bookingSmsVerification.create.mock.calls[0][0];
@@ -163,6 +164,7 @@ describe('BookingService — SMS flow', () => {
       'TestBot',
       'tr',
       'sms',
+      undefined,
     );
   });
 
@@ -179,6 +181,7 @@ describe('BookingService — SMS flow', () => {
       'TestBot',
       'en',
       'sms',
+      undefined,
     );
   });
 
@@ -197,6 +200,7 @@ describe('BookingService — SMS flow', () => {
       'our team',
       'tr',
       'sms',
+      undefined,
     );
   });
 
@@ -204,18 +208,57 @@ describe('BookingService — SMS flow', () => {
     prisma.bookingSmsVerification.count.mockResolvedValue(0);
     prisma.bookingSmsVerification.create.mockResolvedValue({ id: 'rec-1' });
     prisma.customerBots.findUnique.mockResolvedValue({ botName: 'TestBot' });
-    otpChannel.get.mockResolvedValue('whatsapp');
+    // The OTP path CONSUMES the choice so a resend falls back to SMS.
+    otpChannel.consumeForOtp.mockResolvedValue('whatsapp');
 
     await service.requestSmsVerification('+31612345678', 'bot-1', 'chat-9');
 
-    expect(otpChannel.get).toHaveBeenCalledWith('chat-9');
+    expect(otpChannel.consumeForOtp).toHaveBeenCalledWith('chat-9');
     expect(sms.sendOtpSms).toHaveBeenCalledWith(
       '+31612345678',
       expect.stringMatching(/^\d{6}$/),
       'TestBot',
       'en',
       'whatsapp',
+      // Fallback context so Twilio's delivery callback can rescue a
+      // WhatsApp code that never lands.
+      { flow: 'booking', botId: 'bot-1', chatId: 'chat-9', phone: '+31612345678', lang: undefined },
     );
+  });
+
+  it('lets the SMS rescue through the resend cooldown when WhatsApp already failed', async () => {
+    // The bug this closes: WhatsApp code at 14:42:25, visitor said it
+    // never arrived at 14:42:40, cooldown answered "wait a few minutes".
+    // The cooldown guards against hammering ONE transport — the SMS that
+    // rescues the visitor is not the abuse it exists to stop.
+    prisma.bookingSmsVerification.count.mockResolvedValue(0);
+    prisma.bookingSmsVerification.create.mockResolvedValue({ id: 'rec-2' });
+    prisma.customerBots.findUnique.mockResolvedValue({ botName: 'TestBot' });
+    prisma.bookingSmsVerification.findFirst.mockResolvedValue({
+      id: 'rec-1',
+      createdAt: new Date(Date.now() - 15 * 1000), // 15s ago — well inside the 60s cooldown
+    });
+    otpChannel.hasSpentWhatsAppChoice.mockResolvedValue(true);
+    otpChannel.consumeForOtp.mockResolvedValue('sms');
+
+    await service.requestSmsVerification('+905386450582', 'bot-1', 'chat-9');
+
+    // 5th positional arg is `channel` (a 6th now carries the fallback context).
+    expect(sms.sendOtpSms.mock.calls[0][4]).toBe('sms');
+  });
+
+  it('still enforces the cooldown when the channel is not changing', async () => {
+    prisma.bookingSmsVerification.count.mockResolvedValue(0);
+    prisma.bookingSmsVerification.findFirst.mockResolvedValue({
+      id: 'rec-1',
+      createdAt: new Date(Date.now() - 15 * 1000),
+    });
+    otpChannel.hasSpentWhatsAppChoice.mockResolvedValue(false);
+
+    await expect(
+      service.requestSmsVerification('+905386450582', 'bot-1', 'chat-9'),
+    ).rejects.toThrow('TOO_MANY_REQUESTS');
+    expect(sms.sendOtpSms).not.toHaveBeenCalled();
   });
 
   it('requestSmsVerification throws TOO_MANY_REQUESTS after 5 codes in an hour', async () => {
