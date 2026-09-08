@@ -696,6 +696,7 @@ export class AuthenticationService {
         isDeleted: true,
         deletionScheduledFor: true,
         emailVerified: true,
+        accountBlocked: true,
       },
     });
 
@@ -718,7 +719,12 @@ export class AuthenticationService {
         await this.cacheManager.del(ATTEMPTS_KEY);
         await this.cacheManager.del(LOCK_KEY);
 
-        const { password, isDeleted, deletionScheduledFor, emailVerified, ...data } = findUser;
+        const { password, isDeleted, deletionScheduledFor, emailVerified, accountBlocked, ...data } = findUser;
+
+        if (accountBlocked) {
+          this.logger.warn(`Blocked account attempted login: ${data.email}`);
+          throw new UnauthorizedException('Account has been suspended');
+        }
 
         if (!emailVerified) {
           return { success: false, emailNotVerified: true, email: data.email };
@@ -823,6 +829,7 @@ export class AuthenticationService {
       role: true,
       googleId: true,
       appleId: true,
+      accountBlocked: true,
     } as const;
 
     let findUser = null;
@@ -964,7 +971,12 @@ export class AuthenticationService {
       });
     }
 
-    const { password, ...data } = findUser;
+    const { password, accountBlocked, ...data } = findUser;
+
+    if (accountBlocked) {
+      this.logger.warn(`Blocked account attempted OAuth login: ${data.email}`);
+      throw new UnauthorizedException('Account has been suspended');
+    }
 
     // Fetch termsAccepted separately (not in select above)
     const userFull = await this.prisma.user.findUnique({
@@ -1226,11 +1238,15 @@ export class AuthenticationService {
 
     const findUser = await this.prisma.user.findFirst({
       where: { id: userId },
-      select: { id: true, email: true, role: true, refreshToken: true },
+      select: { id: true, email: true, role: true, refreshToken: true, accountBlocked: true },
     });
 
     if (!findUser) {
       return { message: 'User not found', code: 'USER_NOT_FOUND' };
+    }
+
+    if (findUser.accountBlocked) {
+      return { message: 'Account has been suspended', code: 'ACCOUNT_BLOCKED' };
     }
 
     // Server-side invalidation check: if logout cleared the DB token, reject
