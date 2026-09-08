@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SmsService } from 'src/sms/sms.service';
+import { OtpChannelPreferenceService } from 'src/sms/otp-channel-preference.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 import { AppointmentService, AppointmentCreatedPayload } from './appointment.service';
 
@@ -22,6 +23,7 @@ describe('AppointmentService.createFromMcp', () => {
         customerBots: { findUnique: jest.Mock };
     };
     let sms: { sendBookingConfirmationSms: jest.Mock };
+    let otpChannel: { get: jest.Mock; set: jest.Mock };
 
     // 2026-10-06 14:30 Europe/Istanbul as UTC — the fixture the SMS
     // service tests already use, so any datetime-format regression is
@@ -52,12 +54,14 @@ describe('AppointmentService.createFromMcp', () => {
             customerBots: { findUnique: jest.fn() },
         };
         sms = { sendBookingConfirmationSms: jest.fn().mockResolvedValue(undefined) };
+        otpChannel = { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() };
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 AppointmentService,
                 { provide: PrismaService, useValue: prisma },
                 { provide: SmsService, useValue: sms },
+                { provide: OtpChannelPreferenceService, useValue: otpChannel },
                 { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
             ],
         }).compile();
@@ -103,6 +107,7 @@ describe('AppointmentService.createFromMcp', () => {
             'AI/LLM Bootcamp',
             'tr',
             'Europe/Istanbul',
+            'sms',
         );
     });
 
@@ -120,6 +125,7 @@ describe('AppointmentService.createFromMcp', () => {
             'AI/LLM Bootcamp',
             'tr',
             'Europe/Istanbul',
+            'sms',
         );
     });
 
@@ -149,6 +155,21 @@ describe('AppointmentService.createFromMcp', () => {
     // -------------------------------------------------------------------
     // Fail-soft: SMS failure MUST NOT block the row
     // -------------------------------------------------------------------
+
+    it('persists the visitor-chosen channel on the row and uses it for the confirmation', async () => {
+        // The per-chat preference expires with the conversation while the
+        // reminder cron fires days later, so the choice has to move onto
+        // the row at creation time.
+        otpChannel.get.mockResolvedValue('whatsapp');
+        prisma.appointment.create.mockResolvedValue({ id: 'appt_1' });
+        prisma.customerBots.findUnique.mockResolvedValue({ botName: 'MyBot' });
+
+        await service.createFromMcp(basePayload());
+
+        expect(prisma.appointment.create.mock.calls[0][0].data.notifyChannel).toBe('whatsapp');
+        const args = sms.sendBookingConfirmationSms.mock.calls[0];
+        expect(args[args.length - 1]).toBe('whatsapp');
+    });
 
     it('persists the row even when the confirmation SMS throws', async () => {
         prisma.appointment.create.mockResolvedValue({ id: 'appt_1' });
@@ -231,6 +252,7 @@ describe('AppointmentService.updateReminderOffsets', () => {
                 AppointmentService,
                 { provide: PrismaService, useValue: prisma },
                 { provide: SmsService, useValue: {} },
+                { provide: OtpChannelPreferenceService, useValue: {} },
                 { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
             ],
         }).compile();

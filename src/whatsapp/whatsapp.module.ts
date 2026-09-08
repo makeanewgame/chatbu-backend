@@ -5,11 +5,12 @@ import { MetaChatCursorModule } from 'src/meta-chat-cursor/meta-chat-cursor.modu
 import { AudioTranscriptionModule } from 'src/audio-transcription/audio-transcription.module';
 import { MetaLoopGuardModule } from 'src/meta-loop-guard/meta-loop-guard.module';
 import { MetaAiDisclosureModule } from 'src/meta-ai-disclosure/meta-ai-disclosure.module';
+import { IntegrationScheduleModule } from 'src/integration/integration-schedule.module';
 import { WhatsAppController } from './whatsapp.controller';
 import { WhatsAppService } from './whatsapp.service';
 
 @Module({
-    imports: [PrismaModule, BotModule, MetaChatCursorModule, AudioTranscriptionModule, MetaLoopGuardModule, MetaAiDisclosureModule],
+    imports: [PrismaModule, BotModule, MetaChatCursorModule, AudioTranscriptionModule, MetaLoopGuardModule, MetaAiDisclosureModule, IntegrationScheduleModule],
     controllers: [WhatsAppController],
     providers: [WhatsAppService],
 })

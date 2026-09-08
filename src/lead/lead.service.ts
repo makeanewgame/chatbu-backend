@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService, parsePhoneToE164, resolveOtpLang } from 'src/sms/sms.service';
+import { OtpChannelPreferenceService } from 'src/sms/otp-channel-preference.service';
 import { SubmitLeadDto } from './dto/submit-lead.dto';
 import { ListLeadsDto } from './dto/list-leads.dto';
 import { MarkLeadStatusDto } from './dto/mark-lead-status.dto';
@@ -41,6 +42,13 @@ const MAX_VERIFY_ATTEMPTS = 5;
 // observed 2026-08-11 where the agent re-triggered SMS verification twice
 // in close succession within the same window, well under the abuse cap.
 const SMS_RESEND_COOLDOWN_SECONDS = 60;
+// How recently ANOTHER flow in this chat must have sent a code to the same
+// number for this flow to stand down instead of sending its own. Sized to
+// cover one agent turn sequence (the observed duplicate was 4.5s apart),
+// not the code's lifetime: a visitor who abandons a booking OTP and asks
+// for a callback minutes later must still get a lead code. Anything longer
+// is covered by the verified-phone dedup, which needs no window at all.
+const CROSS_FLOW_OTP_INFLIGHT_SECONDS = 120;
 
 // How long a KVKK consent counts as "fresh enough" to gate an SMS OTP
 // request without requiring the visitor to accept again mid-conversation.
@@ -68,6 +76,7 @@ export class LeadService {
     private prisma: PrismaService,
     private mailService: MailService,
     private smsService: SmsService,
+    private otpChannelPreference: OtpChannelPreferenceService,
     private jwt: JwtService,
     private legalDocumentService: LegalDocumentService,
     private chatFlowService: ChatFlowService,
@@ -1034,6 +1043,37 @@ export class LeadService {
       }
     }
 
+    // Cross-flow OTP-in-flight guard. The dedup above only fires once a
+    // code has been VERIFIED; when the booking flow requested one seconds
+    // ago and the visitor hasn't answered yet, nothing is verified and
+    // both flows send. Observed on chatbu-dev 2026-09-07 17:00 UTC: one
+    // contact form produced `request_booking_verification` at 17:00:29
+    // and this method (via capture_lead's self-trigger) at 17:00:34 —
+    // two codes 4.5s apart in two different tables, so the one the
+    // visitor typed first failed against the other flow's table.
+    //
+    // The booking code wins: `create_appointment` cannot proceed without
+    // a booking verification token, whereas this flow gets the phone for
+    // free from `getVerifiedPhoneForChat` the moment that booking code
+    // is verified. So we skip the send and tell the caller a code is
+    // already on its way — never the reverse.
+    if (dto.chatId) {
+      const pending = await this.chatFlowService.getPendingOtpFlowForChat({
+        botId: dto.botId,
+        chatId: dto.chatId,
+        targetPhone: dto.phone,
+        flowKinds: [FlowKind.BOOKING],
+        withinSeconds: CROSS_FLOW_OTP_INFLIGHT_SECONDS,
+      });
+      if (pending) {
+        console.log(
+          `[lead:requestSmsVerification] ${pending.flowKind} OTP already in flight for this chat, ` +
+          `skipping duplicate send (bot=${dto.botId} chat=${dto.chatId} sentAt=${pending.sentAt.toISOString()})`,
+        );
+        return { status: 'pending_other_flow' as const, flow: pending.flowKind };
+      }
+    }
+
     const windowStart = new Date(Date.now() - CODE_REQUEST_WINDOW_MINUTES * 60 * 1000);
     const recentCount = await this.prisma.leadSmsVerification.count({
       where: { botId: dto.botId, phone: dto.phone, createdAt: { gte: windowStart } },
@@ -1092,7 +1132,13 @@ export class LeadService {
     // phone-country fallback otherwise. See resolveOtpLang. More locales
     // than tr/en are backlog (SMS template languages).
     const smsLang: 'tr' | 'en' = resolveOtpLang(dto.lang, country);
-    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang);
+
+    // Transport the VISITOR picked on the contact form, read out-of-band
+    // (OtpChannelPreferenceService) rather than passed down through the
+    // agent. Defaults to 'sms' whenever no choice was made, which is
+    // every conversation on a bot where the WhatsApp option is off.
+    const channel = await this.otpChannelPreference.get(dto.chatId);
+    await this.smsService.sendOtpSms(dto.phone, code, bot.botName, smsLang, channel);
 
     // Advance LEAD flow to OTP_SENT. Optimistic-lock on CONSENT_OK
     // — if the state isn't there yet (backfill hasn't seen this
@@ -1101,7 +1147,7 @@ export class LeadService {
     await this.safeTransition(dto.botId, dto.chatId, FlowKind.LEAD, {
       from: 'CONSENT_OK',
       to: 'OTP_SENT',
-      payload: { phone: dto.phone, code_sent_at: new Date().toISOString() },
+      payload: { phone: dto.phone, code_sent_at: new Date().toISOString(), channel },
     });
 
     return { status: 'sent' as const, expiresAt: expiresAt.toISOString() };

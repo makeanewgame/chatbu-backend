@@ -135,6 +135,74 @@ spec:
               name: chatbu-config
               key: SMS_PROVIDER_STRATEGY
               optional: true
+        # WhatsApp OTP channel (2026-09-07). Second, VISITOR-SELECTABLE
+        # transport for one-time codes — SMS stays the default for every
+        # bot. Exists because SMS has a structural blind spot for
+        # travellers: a visitor whose home SIM is switched off abroad
+        # (WiFi only) never receives it, from any provider.
+        #
+        # All four keys are `optional: true` and the code fails closed:
+        # WHATSAPP_OTP_ENABLED missing/not "true" ⇒ the channel is never
+        # offered and `sendOtpSms` refuses a whatsapp request outright.
+        # The sender is CENTRAL (Chatbu's own WhatsApp number) — a
+        # tenant's number would need its own Meta-approved template in
+        # its own WABA.
+        - name: WHATSAPP_OTP_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: WHATSAPP_OTP_ENABLED
+              optional: true
+        - name: TWILIO_WHATSAPP_FROM
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_FROM
+              optional: true
+        # One Content SID per language: WhatsApp authentication templates
+        # are per-language resources (Meta owns the body copy and
+        # localizes it), so there is no single template with a language
+        # parameter. Missing TR falls back to EN in code.
+        - name: TWILIO_WHATSAPP_OTP_TEMPLATE_EN
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_OTP_TEMPLATE_EN
+              optional: true
+        - name: TWILIO_WHATSAPP_OTP_TEMPLATE_TR
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_OTP_TEMPLATE_TR
+              optional: true
+        # Booking confirmation + reminder templates (UTILITY). Separate
+        # SIDs from the OTP pair because Meta approves each template
+        # independently; until these exist the booking messages fall back
+        # to SMS on their own (SmsService.whatsappAvailable per kind).
+        - name: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_EN
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_EN
+              optional: true
+        - name: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_TR
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_CONFIRMATION_TEMPLATE_TR
+              optional: true
+        - name: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_EN
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_EN
+              optional: true
+        - name: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_TR
+          valueFrom:
+            configMapKeyRef:
+              name: chatbu-config
+              key: TWILIO_WHATSAPP_BOOKING_REMINDER_TEMPLATE_TR
+              optional: true
         # Legal Slice 1 (2026-09-05): company identity single-sources
         # from chatbu-config. Explicit env entries override the stale
         # COMPANY_* copies arriving via the backend-secrets envFrom;

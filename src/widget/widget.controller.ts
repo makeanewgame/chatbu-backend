@@ -202,6 +202,37 @@ export class WidgetController {
     }
 
     /**
+     * Transports the visitor may pick for the one-time code. Platform
+     * state, not per-bot: the WhatsApp sender and its approved templates
+     * are Chatbu's own, so the answer is identical for every bot and
+     * safely cacheable. `sms` is always present.
+     */
+    @ApiOperation({ summary: 'List the OTP delivery channels the widget may offer' })
+    @Get('lead/otp-channels')
+    @Throttle({ default: { ttl: 60000, limit: 30 } })
+    async getOtpChannels(@Res({ passthrough: true }) res: Response) {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+        return this.widgetService.getOtpChannels();
+    }
+
+    /**
+     * Record which transport the visitor chose for the code that this
+     * conversation's flow is about to send.
+     *
+     * Keyed on chatId alone and holds no PII, so no session token is
+     * required — the worst a forged call can do is flip a stranger's
+     * unsent code between two channels the platform operates, and it
+     * needs their chatId to do even that. Throttled like the other
+     * unauthenticated widget writes.
+     */
+    @ApiOperation({ summary: 'Set the visitor-chosen OTP delivery channel for a chat' })
+    @Post('lead/otp-channel')
+    @Throttle({ default: { ttl: 60000, limit: 10 } })
+    async setOtpChannel(@Body() body: any) {
+        return this.widgetService.setOtpChannel(body?.chatId, body?.channel);
+    }
+
+    /**
      * Uploads a chat attachment (image or document).
      * Authenticated via sessionToken (2-hour JWT from /widget/session).
      * Throttled to 10 uploads/min per IP.

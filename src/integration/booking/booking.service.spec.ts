@@ -4,6 +4,7 @@ import { BookingService } from './booking.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/mail/mail.service';
 import { SmsService } from 'src/sms/sms.service';
+import { OtpChannelPreferenceService } from 'src/sms/otp-channel-preference.service';
 import { ChatFlowService } from 'src/chat-flow/chat-flow.service';
 
 describe('BookingService — kind differentiator', () => {
@@ -19,6 +20,7 @@ describe('BookingService — kind differentiator', () => {
         { provide: PrismaService, useValue: {} },
         { provide: MailService, useValue: {} },
         { provide: SmsService, useValue: {} },
+        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
         { provide: JwtService, useValue: jwt },
         { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
       ],
@@ -85,6 +87,7 @@ describe('BookingService — SMS flow', () => {
     customerBots: { findUnique: jest.Mock };
   };
   let sms: { sendOtpSms: jest.Mock };
+  let otpChannel: { get: jest.Mock; set: jest.Mock };
 
   beforeEach(async () => {
     jwt = { signAsync: jest.fn(), verifyAsync: jest.fn() };
@@ -98,6 +101,7 @@ describe('BookingService — SMS flow', () => {
       customerBots: { findUnique: jest.fn() },
     };
     sms = { sendOtpSms: jest.fn().mockResolvedValue(undefined) };
+    otpChannel = { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -105,8 +109,15 @@ describe('BookingService — SMS flow', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: MailService, useValue: {} },
         { provide: SmsService, useValue: sms },
+        { provide: OtpChannelPreferenceService, useValue: otpChannel },
         { provide: JwtService, useValue: jwt },
-        { provide: ChatFlowService, useValue: { safeTransition: jest.fn() } },
+        {
+          provide: ChatFlowService,
+          useValue: {
+            safeTransition: jest.fn(),
+            getVerifiedPhoneForChat: jest.fn().mockResolvedValue(null),
+          },
+        },
       ],
     }).compile();
 
@@ -128,6 +139,7 @@ describe('BookingService — SMS flow', () => {
       expect.stringMatching(/^\d{6}$/),
       'TestBot',
       'tr',
+      'sms',
     );
 
     const createArgs = prisma.bookingSmsVerification.create.mock.calls[0][0];
@@ -150,6 +162,7 @@ describe('BookingService — SMS flow', () => {
       expect.stringMatching(/^\d{6}$/),
       'TestBot',
       'tr',
+      'sms',
     );
   });
 
@@ -165,6 +178,7 @@ describe('BookingService — SMS flow', () => {
       expect.stringMatching(/^\d{6}$/),
       'TestBot',
       'en',
+      'sms',
     );
   });
 
@@ -182,6 +196,25 @@ describe('BookingService — SMS flow', () => {
       expect.any(String),
       'our team',
       'tr',
+      'sms',
+    );
+  });
+
+  it('requestSmsVerification honors a visitor-chosen WhatsApp channel for this chat', async () => {
+    prisma.bookingSmsVerification.count.mockResolvedValue(0);
+    prisma.bookingSmsVerification.create.mockResolvedValue({ id: 'rec-1' });
+    prisma.customerBots.findUnique.mockResolvedValue({ botName: 'TestBot' });
+    otpChannel.get.mockResolvedValue('whatsapp');
+
+    await service.requestSmsVerification('+31612345678', 'bot-1', 'chat-9');
+
+    expect(otpChannel.get).toHaveBeenCalledWith('chat-9');
+    expect(sms.sendOtpSms).toHaveBeenCalledWith(
+      '+31612345678',
+      expect.stringMatching(/^\d{6}$/),
+      'TestBot',
+      'en',
+      'whatsapp',
     );
   });
 
