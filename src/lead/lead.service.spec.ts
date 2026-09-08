@@ -923,3 +923,94 @@ describe('LeadService — recordPrivacyConsent (audit version)', () => {
     expect(result.privacyVersion).not.toMatch(/^v\d+$/);
   });
 });
+
+
+describe('LeadService — requestSmsVerification cross-flow OTP guard', () => {
+  let service: LeadService;
+  let prisma: any;
+  let sms: { sendOtpSms: jest.Mock };
+  let chatFlow: {
+    getVerifiedPhoneForChat: jest.Mock;
+    getPendingOtpFlowForChat: jest.Mock;
+    transition: jest.Mock;
+  };
+
+  const botId = 'bot-1';
+  const chatId = 'chat-1';
+  const phone = '+90 538 645 05 82';
+
+  beforeEach(async () => {
+    prisma = {
+      customerBots: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: botId,
+          botName: 'TestBot',
+          smsVerificationRequired: true,
+          kvkkConsentRequired: false,
+        }),
+      },
+      leadPrivacyConsent: { findFirst: jest.fn(), update: jest.fn() },
+      leadSmsVerification: {
+        count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'v-1' }),
+      },
+    };
+    sms = { sendOtpSms: jest.fn().mockResolvedValue(undefined) };
+    chatFlow = {
+      getVerifiedPhoneForChat: jest.fn().mockResolvedValue(null),
+      getPendingOtpFlowForChat: jest.fn().mockResolvedValue(null),
+      transition: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LeadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: {} },
+        { provide: JwtService, useValue: { signAsync: jest.fn() } },
+        { provide: SmsService, useValue: sms },
+        { provide: OtpChannelPreferenceService, useValue: { get: jest.fn().mockResolvedValue('sms'), set: jest.fn() } },
+        { provide: LegalDocumentService, useValue: {} },
+        { provide: ChatFlowService, useValue: chatFlow },
+        { provide: PushNotificationService, useValue: {} },
+        { provide: MixpanelService, useValue: mixpanelStub },
+      ],
+    }).compile();
+    service = module.get(LeadService);
+  });
+
+  it('stands down when the booking flow already has a code in flight to the same number', async () => {
+    const sentAt = new Date();
+    chatFlow.getPendingOtpFlowForChat.mockResolvedValue({ flowKind: 'BOOKING', sentAt });
+
+    const result = await service.requestSmsVerification({ botId, chatId, phone });
+
+    expect(result).toEqual({ status: 'pending_other_flow', flow: 'BOOKING' });
+    // The whole point: no second code exists, so the visitor cannot be
+    // handed two codes that verify against two different tables.
+    expect(sms.sendOtpSms).not.toHaveBeenCalled();
+    expect(prisma.leadSmsVerification.create).not.toHaveBeenCalled();
+  });
+
+  it('only defers to BOOKING — never lets a lead code suppress a booking one', async () => {
+    await service.requestSmsVerification({ botId, chatId, phone });
+    const call = chatFlow.getPendingOtpFlowForChat.mock.calls[0][0];
+    expect(call.flowKinds).toEqual(['BOOKING']);
+    expect(call.targetPhone).toBe(phone);
+    expect(call.chatId).toBe(chatId);
+  });
+
+  it('sends normally when no other flow is waiting', async () => {
+    const result = await service.requestSmsVerification({ botId, chatId, phone });
+
+    expect(result).toMatchObject({ status: 'sent' });
+    expect(sms.sendOtpSms).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the guard entirely without a chatId (the guard is chat-scoped)', async () => {
+    await service.requestSmsVerification({ botId, chatId: '', phone });
+    expect(chatFlow.getPendingOtpFlowForChat).not.toHaveBeenCalled();
+    expect(sms.sendOtpSms).toHaveBeenCalledTimes(1);
+  });
+});
