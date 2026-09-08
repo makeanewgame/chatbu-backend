@@ -1095,7 +1095,19 @@ export class LeadService {
       lastRequest &&
       Date.now() - lastRequest.createdAt.getTime() < SMS_RESEND_COOLDOWN_SECONDS * 1000
     ) {
-      return { status: 'rate_limited' as const };
+      // ...unless the next code goes over a DIFFERENT transport. The
+      // cooldown guards against hammering one channel; when the
+      // visitor's WhatsApp code never arrived, the SMS that rescues them
+      // is not the abuse this rule exists to stop. Blocking it is what
+      // strands them: nobody waits 60 seconds before saying "the code
+      // didn't come".
+      const switchingChannel = await this.otpChannelPreference.hasSpentWhatsAppChoice(dto.chatId);
+      if (!switchingChannel) {
+        return { status: 'rate_limited' as const };
+      }
+      console.log(
+        `[lead:requestSmsVerification] resend cooldown bypassed for bot=${dto.botId} chat=${dto.chatId}: falling back from WhatsApp to SMS`,
+      );
     }
 
     if (consent) {
