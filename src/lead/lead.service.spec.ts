@@ -1247,3 +1247,120 @@ describe('LeadService — off-widget consent fallback (chatId-derived channel)',
     });
   });
 });
+
+// The audit row must describe what actually happened, whoever calls
+// recordPrivacyConsent. On chatbu-dev 2026-09-10 the MCP text-consent hop
+// (which goes through the public widget endpoint) produced
+// source='chatbot' — the same label as a visitor tapping the card — with
+// the MCP pod's cluster IP recorded as the visitor's, and a fresh row on
+// every capture_lead retry.
+describe('LeadService — recordPrivacyConsent audit truthfulness by channel', () => {
+  let create: jest.Mock;
+  let findFirst: jest.Mock;
+
+  const build = async () => {
+    create = jest.fn().mockImplementation(({ data }: any) => ({ id: 'consent-new', ...data }));
+    findFirst = jest.fn().mockResolvedValue(null);
+    const prisma: any = {
+      customerBots: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'bot-1', teamId: 'team-1', settings: {} }),
+      },
+      leadPrivacyConsent: { create, findFirst },
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LeadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: {} },
+        { provide: JwtService, useValue: {} },
+        { provide: SmsService, useValue: {} },
+        {
+          provide: OtpChannelPreferenceService,
+          useValue: {
+            consumeForOtp: jest.fn().mockResolvedValue('sms'),
+            peek: jest.fn().mockResolvedValue('sms'),
+            hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false),
+            set: jest.fn(),
+          },
+        },
+        { provide: LegalDocumentService, useValue: { getConsentNotice: jest.fn().mockResolvedValue(null) } },
+        { provide: ChatFlowService, useValue: { transition: jest.fn() } },
+        { provide: PushNotificationService, useValue: {} },
+        { provide: MixpanelService, useValue: mixpanelStub },
+      ],
+    }).compile();
+    return module.get(LeadService);
+  };
+
+  it('labels an Instagram row by channel and drops the caller address', async () => {
+    const service = await build();
+
+    // Exactly what the MCP hop sends through the public endpoint.
+    await service.recordPrivacyConsent(
+      { botId: 'bot-1', chatId: 'ig_thread-1' },
+      '::ffff:10.0.24.125',
+      'python-requests/2.32',
+    );
+
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      source: 'chatbot_instagram',
+      ipAddress: null,
+      userAgent: null,
+    });
+  });
+
+  it('keeps a widget tap exactly as before', async () => {
+    const service = await build();
+
+    await service.recordPrivacyConsent(
+      { botId: 'bot-1', chatId: 'sid_web-1' },
+      '203.0.113.9',
+      'Mozilla/5.0',
+    );
+
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      source: 'chatbot',
+      ipAddress: '203.0.113.9',
+      userAgent: 'Mozilla/5.0',
+    });
+    // Widget re-taps are a second act by the visitor; never deduplicated.
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('reuses the fresh off-widget row instead of writing one per tool call', async () => {
+    const service = await build();
+    findFirst.mockResolvedValue({
+      id: 'consent-existing',
+      privacyVersion: 'pack-v1',
+      jurisdiction: 'generic',
+      locale: 'en',
+    });
+
+    const result = await service.recordPrivacyConsent(
+      { botId: 'bot-1', chatId: 'ig_thread-1' },
+      null,
+      null,
+    );
+
+    expect(create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ accepted: true, consentId: 'consent-existing' });
+    // Scoped to this conversation's freshness window, not any old row.
+    expect(findFirst.mock.calls[0][0].where).toMatchObject({
+      botId: 'bot-1',
+      chatId: 'ig_thread-1',
+      createdAt: { gte: expect.any(Date) },
+    });
+  });
+
+  it('never treats a provisional (chatless) consent as off-widget', async () => {
+    const service = await build();
+
+    await service.recordPrivacyConsent({ botId: 'bot-1' }, '203.0.113.9', 'Mozilla/5.0');
+
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(create.mock.calls[0][0].data).toMatchObject({
+      source: 'chatbot',
+      ipAddress: '203.0.113.9',
+    });
+  });
+});
