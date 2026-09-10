@@ -36,6 +36,7 @@ import { FlowKind } from '../../generated/prisma/client';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
 import { HandoffNotificationService } from 'src/handoff/handoff-notification.service';
 import { LegalDocumentService } from 'src/legal-document/legal-document.service';
+import { inferChatChannel } from 'src/common/chat-channel.util';
 
 @Injectable()
 export class BotService {
@@ -866,11 +867,10 @@ export class BotService {
       );
 
       // Yeni chat ise oluştur, mevcut ise güncelle
-      // Kanal tespiti: chatId prefix'inden otomatik belirle
-      const chatChannel = body.chatId?.startsWith('wa_') ? 'WHATSAPP'
-        : body.chatId?.startsWith('fb_') ? 'META_MESSENGER'
-          : body.chatId?.startsWith('ig_') ? 'INSTAGRAM'
-            : 'WIDGET';
+      // Kanal tespiti: chatId prefix'inden otomatik belirle.
+      // The rule itself now lives in common/chat-channel.util so the lead
+      // consent + SMS gates can apply the same one (2026-09-10).
+      const chatChannel = inferChatChannel(body.chatId);
       const externalContactId = (chatChannel !== 'WIDGET') ? body.sender : null;
 
       if (isNewChat) {

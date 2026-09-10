@@ -1048,3 +1048,202 @@ describe('LeadService — requestSmsVerification cross-flow OTP guard', () => {
     expect(sms.sendOtpSms).toHaveBeenCalledTimes(1);
   });
 });
+
+// The consent gate must not depend on the agent remembering to pass
+// `source_channel`. When it goes missing on a DM channel, the gate
+// answers KVKK_CONSENT_REQUIRED — a sentinel naming two tools the Meta
+// tool filter has already stripped, so nothing the agent can call clears
+// it. Prod GÜNSA (Instagram DM, 2026-09-05) is what that looks like from
+// the visitor's side one gate earlier in the same chain: three "your
+// details were saved" replies and no lead row at all.
+describe('LeadService — off-widget consent fallback (chatId-derived channel)', () => {
+  const botId = 'bot-1';
+  const phone = '+90 538 858 88 89';
+
+  const buildModule = async (overrides: {
+    bot: Record<string, unknown>;
+    prismaExtra?: Record<string, unknown>;
+  }) => {
+    const prisma: any = {
+      customerBots: { findUnique: jest.fn().mockResolvedValue(overrides.bot) },
+      botLeads: { create: jest.fn().mockResolvedValue({ id: 'lead-1' }) },
+      teamMember: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
+      team: { findUnique: jest.fn().mockResolvedValue({ ownerId: 'owner-1' }) },
+      leadPrivacyConsent: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn(),
+        create: jest.fn().mockResolvedValue({
+          id: 'consent-1',
+          privacyVersion: 'pack-v1',
+          jurisdiction: 'kvkk',
+          locale: 'tr',
+        }),
+      },
+      leadSmsVerification: {
+        count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'v-1' }),
+      },
+      ...(overrides.prismaExtra || {}),
+    };
+    const sms = { sendOtpSms: jest.fn().mockResolvedValue(undefined) };
+    const mail = { sendLeadNotification: jest.fn().mockResolvedValue(undefined) };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        LeadService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: MailService, useValue: mail },
+        { provide: JwtService, useValue: { signAsync: jest.fn(), verifyAsync: jest.fn() } },
+        { provide: SmsService, useValue: sms },
+        {
+          provide: OtpChannelPreferenceService,
+          useValue: {
+            consumeForOtp: jest.fn().mockResolvedValue('sms'),
+            peek: jest.fn().mockResolvedValue('sms'),
+            hasSpentWhatsAppChoice: jest.fn().mockResolvedValue(false),
+            set: jest.fn(),
+          },
+        },
+        {
+          provide: LegalDocumentService,
+          // Not seeded in any environment yet — the null answer is the
+          // expected state and recordPrivacyConsent falls back to the pack.
+          useValue: { getConsentNotice: jest.fn().mockResolvedValue(null) },
+        },
+        {
+          provide: ChatFlowService,
+          useValue: {
+            transition: jest.fn().mockResolvedValue(undefined),
+            getVerifiedPhoneForChat: jest.fn().mockResolvedValue(null),
+            getPendingOtpFlowForChat: jest.fn().mockResolvedValue(null),
+          },
+        },
+        { provide: PushNotificationService, useValue: { sendToUsers: jest.fn() } },
+        { provide: MixpanelService, useValue: mixpanelStub },
+      ],
+    }).compile();
+    return { service: module.get(LeadService), prisma, sms, mail };
+  };
+
+  const smsBot = {
+    id: botId,
+    botName: 'GunsaLike',
+    teamId: 'team-1',
+    smsVerificationRequired: true,
+    kvkkConsentRequired: true,
+  };
+
+  const plainBot = {
+    id: botId,
+    botName: 'GunsaLike',
+    teamId: 'team-1',
+    leadDestinations: [{ channel: 'email', target: 'owner@example.com', enabled: true }],
+    leadVerificationRequired: false,
+    smsVerificationRequired: false,
+    primaryLanguage: 'tr',
+  };
+
+  describe('requestSmsVerification', () => {
+    it('records consent itself on an Instagram chat and sends the code', async () => {
+      const { service, prisma, sms } = await buildModule({ bot: smsBot });
+
+      const result = await service.requestSmsVerification({
+        botId,
+        chatId: 'ig_1128825063142264_1788609920677',
+        phone,
+        lang: 'tr',
+      });
+
+      expect(result).toMatchObject({ status: 'sent' });
+      expect(sms.sendOtpSms).toHaveBeenCalledTimes(1);
+      // Written on the agent's behalf, and labelled so it is never
+      // mistaken for a visitor who tapped the widget's consent card.
+      expect(prisma.leadPrivacyConsent.create).toHaveBeenCalledTimes(1);
+      expect(prisma.leadPrivacyConsent.create.mock.calls[0][0].data).toMatchObject({
+        botId,
+        chatId: 'ig_1128825063142264_1788609920677',
+        source: 'chatbot_instagram',
+      });
+    });
+
+    it.each([['fb_thread-9'], ['wa_905388588889']])(
+      'covers %s too — every DM channel lacks the card',
+      async (chatId) => {
+        const { service, sms } = await buildModule({ bot: smsBot });
+        await expect(
+          service.requestSmsVerification({ botId, chatId, phone }),
+        ).resolves.toMatchObject({ status: 'sent' });
+        expect(sms.sendOtpSms).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('still demands the card on a widget chat', async () => {
+      const { service, prisma, sms } = await buildModule({ bot: smsBot });
+
+      await expect(
+        service.requestSmsVerification({ botId, chatId: 'sid_web-1', phone }),
+      ).rejects.toMatchObject({
+        response: { code: 'KVKK_CONSENT_REQUIRED' },
+      });
+      expect(prisma.leadPrivacyConsent.create).not.toHaveBeenCalled();
+      expect(sms.sendOtpSms).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the consent write itself fails', async () => {
+      const { service, sms, prisma } = await buildModule({ bot: smsBot });
+      prisma.leadPrivacyConsent.create.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.requestSmsVerification({ botId, chatId: 'ig_thread-1', phone }),
+      ).rejects.toMatchObject({
+        response: { code: 'KVKK_CONSENT_REQUIRED' },
+      });
+      // A missing consent row is never treated as consent.
+      expect(sms.sendOtpSms).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('submit', () => {
+    beforeEach(() => {
+      process.env.LEAD_PRIVACY_CONSENT_GATE_ENABLED = 'true';
+    });
+    afterEach(() => {
+      delete process.env.LEAD_PRIVACY_CONSENT_GATE_ENABLED;
+    });
+
+    it('lets an Instagram lead through by recording consent instead of rejecting', async () => {
+      const { service, prisma } = await buildModule({ bot: plainBot });
+
+      await service.submit({
+        botId,
+        chatId: 'ig_thread-1',
+        leadData: { name: 'Recep', phone: '05388588889' },
+      } as any);
+
+      expect(prisma.leadPrivacyConsent.create).toHaveBeenCalledTimes(1);
+      // A real lead row, not the rejection audit row (which carries
+      // deliveryErrors [{channel:'none', error:'privacy_consent_required'}]
+      // and no consent id).
+      const created = prisma.botLeads.create.mock.calls[0][0].data;
+      expect(created.deliveryErrors).not.toEqual([
+        { channel: 'none', error: 'privacy_consent_required' },
+      ]);
+      expect(created.privacyConsentId).toBe('consent-1');
+    });
+
+    it('still rejects a widget lead with no consent row', async () => {
+      const { service, prisma } = await buildModule({ bot: plainBot });
+
+      await expect(
+        service.submit({
+          botId,
+          chatId: 'sid_web-1',
+          leadData: { name: 'Recep', phone: '05388588889' },
+        } as any),
+      ).rejects.toMatchObject({
+        response: { code: 'PRIVACY_CONSENT_REQUIRED' },
+      });
+      expect(prisma.leadPrivacyConsent.create).not.toHaveBeenCalled();
+    });
+  });
+});
