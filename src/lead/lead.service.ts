@@ -748,7 +748,6 @@ export class LeadService {
         null,
         null,
         lang || null,
-        consentSourceForChat(chatId),
       );
       console.log(
         `[lead-service] off-widget consent recorded bot=${botId} chat=${chatId} ` +
@@ -769,11 +768,6 @@ export class LeadService {
     ipAddress: string | null,
     userAgent: string | null,
     acceptLanguage: string | null = null,
-    // Audit-trail label. Public callers (the widget's consent card) leave
-    // this at 'chatbot'; the off-widget gates below stamp the channel so a
-    // text-based confirmation on Instagram is never indistinguishable from
-    // a visitor who actually tapped the card. See consentSourceForChat.
-    source: string = 'chatbot',
   ) {
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: dto.botId, isDeleted: false },
@@ -781,6 +775,37 @@ export class LeadService {
 
     if (!bot) {
       throw new NotFoundException('Bot not found');
+    }
+
+    // Off-widget chats (Instagram / Messenger / WhatsApp) never show the
+    // visitor a consent card, so whoever records one here — MCP's
+    // text-consent hop through the public endpoint, or
+    // recordOffWidgetConsent — is recording the agent's typed confirmation
+    // on the visitor's behalf. That is decided by the chat id, not by the
+    // caller: on chatbu-dev 2026-09-10 the MCP hop's rows came out as
+    // source='chatbot' (indistinguishable from a card tap) with the MCP
+    // pod's cluster IP in ipAddress, as if it were the visitor's.
+    const offWidget = isOffWidgetChat(dto.chatId);
+
+    // The MCP hop fires on every capture_lead retry. One row per
+    // conversation window is the record; one per tool call is noise in an
+    // audit table. Widget re-taps still write a new row each time — there
+    // a second tap is a second act by the visitor.
+    if (offWidget) {
+      const windowStart = new Date(Date.now() - CONSENT_FRESHNESS_MINUTES * 60 * 1000);
+      const existing = await this.prisma.leadPrivacyConsent.findFirst({
+        where: { botId: dto.botId, chatId: dto.chatId, createdAt: { gte: windowStart } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (existing) {
+        return {
+          accepted: true,
+          consentId: existing.id,
+          privacyVersion: existing.privacyVersion,
+          jurisdiction: existing.jurisdiction,
+          locale: existing.locale,
+        };
+      }
     }
 
     // Resolve jurisdiction: DTO wins if the widget sent one; else server
@@ -840,15 +865,17 @@ export class LeadService {
         botId: dto.botId,
         teamId: bot.teamId,
         chatId: dto.chatId ?? null,
-        source,
+        source: consentSourceForChat(dto.chatId),
         privacyVersion,
         legalDocumentVersionId,
         locale: servedLocale,
         jurisdiction,
         country: null, // filled by bindProvisionalConsent when OTP parses
         privacyAcceptedAt: new Date(),
-        ipAddress: ipAddress || null,
-        userAgent: userAgent || null,
+        // Off-widget: the request came from our own MCP pod, not the
+        // visitor — recording its address would be a false statement.
+        ipAddress: offWidget ? null : ipAddress || null,
+        userAgent: offWidget ? null : userAgent || null,
       },
     });
 
