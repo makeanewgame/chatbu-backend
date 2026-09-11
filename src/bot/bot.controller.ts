@@ -433,7 +433,7 @@ export class BotController {
   //#region updateModelTier
   @ApiOperation({ summary: 'Update bot model tier' })
   @ApiResponse({ status: 200, description: 'Model tier updated' })
-  @ApiBadRequestResponse({ description: 'Invalid model tier or plan upgrade required' })
+  @ApiBadRequestResponse({ description: 'Invalid model tier' })
   @ApiBearerAuth()
   @ApiBody({
     schema: {
