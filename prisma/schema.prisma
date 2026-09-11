@@ -181,7 +181,7 @@ model CustomerBots {
   settings                   Json?
   purpose                    String?
   active                     Boolean        @default(false)
-  modelTier                  String         @default("haiku")
+  modelTier                  String         @default("sonnet")
   leadDestinations           Json           @default("[]")
   leadVerificationRequired   Boolean        @default(false)
   smsVerificationRequired    Boolean        @default(false)
