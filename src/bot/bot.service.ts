@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateBotRequest } from './dto/createBotRequest';
 import { DeleteBotRequest } from './dto/deleteBotRequest';
@@ -7,7 +7,7 @@ import { ChageStatusBotRequest } from './dto/changeStatusBotRequest';
 import { RenameBotRequest } from './dto/renameBotRequest';
 import { ChatRequest } from './dto/chatRequest';
 import { GenerateSystemPromptRequest } from './dto/generateSystemPromptRequest';
-import { MODEL_TIERS, DEFAULT_MODEL_TIER } from './model-tier.constants';
+import { MODEL_TIERS } from './model-tier.constants';
 import { UpdateModelTierRequest } from './dto/updateModelTierRequest';
 import { UpdateLeadDestinationsRequest } from './dto/updateLeadDestinationsRequest';
 import { UpdateLeadVerificationRequest } from './dto/updateLeadVerificationRequest';
@@ -808,11 +808,9 @@ export class BotService {
             customer_cuid: botUser.teamId,
             messages: [body.message],
             system_prompt: botUser.systemPrompt,
-            // Per-bot Bedrock model tier ('haiku' | 'sonnet'). The
-            // plan-tier gate lives in updateModelTier — by the time
-            // this value is persisted, the team already has the plan
-            // that unlocks it. Older gateway pods that don't know
-            // about model_tier silently ignore it (Pydantic Optional).
+            // Per-bot Bedrock model tier ('haiku' | 'sonnet'), open to
+            // every plan since 2026-09-11. Older gateway pods that don't
+            // know about model_tier silently ignore it (Pydantic Optional).
             model_tier: botUser.modelTier,
             session_id: body.chatId, // null veya mevcut session_id
             // Forward the widget's provisional consent id (widget records
@@ -1956,38 +1954,6 @@ export class BotService {
 
     if (bot.teamId !== teamId) {
       throw new ForbiddenException('Bot not owned by your team');
-    }
-
-    // Plan-tier gate: 'sonnet' requires PREMIUM subscription
-    if (body.modelTier !== DEFAULT_MODEL_TIER) {
-      const team = await this.prisma.team.findUnique({
-        where: { id: teamId },
-        select: { ownerId: true },
-      });
-
-      const subscription = await this.prisma.subscription.findFirst({
-        where: { userId: team.ownerId },
-        select: { tier: true },
-      });
-
-      if (!subscription || subscription.tier !== 'PREMIUM') {
-        await this.systemLogService.createLog({
-          category: 'BOT',
-          action: 'UPDATE_MODEL_TIER',
-          status: 'REJECTED_PLAN',
-          userId,
-          userEmail,
-          teamId,
-          entityId: bot.id,
-          entityName: bot.botName,
-          message: `Bot model tier change rejected (plan): ${bot.modelTier} -> ${body.modelTier}`,
-        });
-
-        throw new HttpException(
-          { message: 'This model is only available on Premium plans', code: 'PLAN_UPGRADE_REQUIRED' },
-          402,
-        );
-      }
     }
 
     const oldTier = bot.modelTier;
