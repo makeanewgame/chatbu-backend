@@ -31,6 +31,11 @@ import { ChatFlowService, TransitionArgs, normalizePhoneForDedup } from 'src/cha
 import { FlowKind } from '../../generated/prisma/client';
 import { PushNotificationService } from 'src/push-notification/push-notification.service';
 import { MixpanelService } from 'src/analytics/mixpanel.service';
+import {
+  consentSourceForChat,
+  inferChatChannel,
+  isOffWidgetChat,
+} from 'src/common/chat-channel.util';
 
 const CODE_TTL_MINUTES = 5;
 const VERIFICATION_TOKEN_TTL_SECONDS = 30 * 60;
@@ -147,7 +152,7 @@ export class LeadService {
   }
 
   async submit(dto: SubmitLeadDto) {
-    const { botId, chatId, leadData, verificationToken, smsVerificationToken, sourceChannel } = dto;
+    const { botId, chatId, leadData, verificationToken, smsVerificationToken } = dto;
 
     if (!leadData?.email && !leadData?.phone) {
       throw new BadRequestException(
@@ -220,30 +225,40 @@ export class LeadService {
         });
         gateConsentId = consentRow?.id ?? null;
       }
+      // Same off-widget rule as requestSmsVerification: on a DM channel
+      // the consent card can't be rendered, so the typed confirmation the
+      // agent was told to obtain is what gets recorded (2026-09-10).
+      if (!gateConsentId) {
+        gateConsentId = await this.recordOffWidgetConsent(botId, chatId, null);
+      }
       if (!gateConsentId) {
         await this.recordVerificationRejection(botId, chatId, cleanLeadData, 'privacy_consent_required');
         throw new BadRequestException({ code: 'PRIVACY_CONSENT_REQUIRED' });
       }
     }
 
-    // Slice 6 of backlog #23: sourceChannel is still forwarded (used
-    // below for the audit-trail lead source label), but it NO LONGER
-    // bypasses the verification gates. Reason: platform identity (WA/
-    // IG/FB account) verifies who the visitor IS, not that the phone/
-    // email they typed in DM actually belongs to them. A visitor can
-    // easily give someone else's phone from DM — the anti-fraud goal
-    // of smsVerificationRequired holds regardless of channel. So on
-    // Meta channels the same SMS/email OTP round-trips run; the
-    // difference from widget is purely presentation: the code lands
-    // on the visitor's phone/inbox as usual, and the agent asks them
-    // to type the code back into the DM (guided by the revised
-    // channel_guard_block prompt on the gateway side).
+    // Slice 6 of backlog #23: the channel NO LONGER bypasses the
+    // verification gates. Reason: platform identity (WA/IG/FB account)
+    // verifies who the visitor IS, not that the phone/email they typed
+    // in DM actually belongs to them. A visitor can easily give someone
+    // else's phone from DM — the anti-fraud goal of
+    // smsVerificationRequired holds regardless of channel. So on Meta
+    // channels the same SMS/email OTP round-trips run; the difference
+    // from widget is purely presentation: the code lands on the
+    // visitor's phone/inbox as usual, and the agent asks them to type
+    // the code back into the DM (guided by the channel_guard_block
+    // prompt on the gateway side).
+    //
+    // `dto.sourceChannel` is accepted and ignored here. It used to be
+    // described as the audit-trail lead source label, but nothing ever
+    // read it — and it could not be trusted for that anyway, since the
+    // agent fills it in. Anything that needs the channel derives it from
+    // the chat id (see common/chat-channel.util).
     //
     // Consent record for the KVKK gate: MCP capture_lead posts to
-    // POST /widget/lead/privacy-consent right before the SMS trigger
-    // on Meta channels, so the row already exists by the time the
-    // has_fresh_kvkk_consent probe runs here. No inline creation
-    // needed anymore.
+    // POST /widget/lead/privacy-consent before the SMS trigger when it
+    // recognises the channel, and the off-widget fallback above writes
+    // the row when it doesn't (2026-09-10).
 
     let verified = false;
     if (bot.leadVerificationRequired && !isCalendarBookingSource) {
@@ -697,6 +712,57 @@ export class LeadService {
    * `country` stays NULL here — it is joined in later via
    * `bindProvisionalConsent` once the OTP phone parse gives us one.
    */
+  /**
+   * Record consent on behalf of an off-widget conversation.
+   *
+   * Instagram / Messenger / WhatsApp DMs have no consent card — the
+   * gateway's Meta tool filter strips `prompt_kvkk_consent` precisely
+   * because nothing would render. The agent is instructed to obtain a
+   * typed confirmation ("kabul ediyorum") first, and the row is written
+   * for it when it reaches a lead gate.
+   *
+   * This used to hinge on the agent passing `source_channel` to
+   * `capture_lead`, which is prompt compliance rather than a fact. When
+   * it goes missing the visitor hits KVKK_CONSENT_REQUIRED, a sentinel
+   * naming two tools that channel has had removed — nothing the agent
+   * can call clears it, and it improvises instead (on prod GÜNSA,
+   * 2026-09-05, an earlier gate in this same chain produced exactly that:
+   * three "your details were saved" replies, zero lead rows). The channel
+   * now comes from the chatId prefix, which no model can forget to send.
+   *
+   * Returns the new consent id, or null for a widget chat (where the card
+   * IS the right answer) or when the write failed — callers keep their
+   * own rejection path, a missing row is never treated as consent.
+   */
+  private async recordOffWidgetConsent(
+    botId: string,
+    chatId: string | null | undefined,
+    lang?: string | null,
+  ): Promise<string | null> {
+    if (!chatId || !isOffWidgetChat(chatId)) {
+      return null;
+    }
+    try {
+      const recorded = await this.recordPrivacyConsent(
+        { botId, chatId },
+        null,
+        null,
+        lang || null,
+      );
+      console.log(
+        `[lead-service] off-widget consent recorded bot=${botId} chat=${chatId} ` +
+          `channel=${inferChatChannel(chatId)} consent=${recorded.consentId}`,
+      );
+      return recorded.consentId;
+    } catch (err) {
+      console.warn(
+        `[lead-service] off-widget consent write failed bot=${botId} chat=${chatId}:`,
+        err,
+      );
+      return null;
+    }
+  }
+
   async recordPrivacyConsent(
     dto: RecordPrivacyConsentDto,
     ipAddress: string | null,
@@ -709,6 +775,37 @@ export class LeadService {
 
     if (!bot) {
       throw new NotFoundException('Bot not found');
+    }
+
+    // Off-widget chats (Instagram / Messenger / WhatsApp) never show the
+    // visitor a consent card, so whoever records one here — MCP's
+    // text-consent hop through the public endpoint, or
+    // recordOffWidgetConsent — is recording the agent's typed confirmation
+    // on the visitor's behalf. That is decided by the chat id, not by the
+    // caller: on chatbu-dev 2026-09-10 the MCP hop's rows came out as
+    // source='chatbot' (indistinguishable from a card tap) with the MCP
+    // pod's cluster IP in ipAddress, as if it were the visitor's.
+    const offWidget = isOffWidgetChat(dto.chatId);
+
+    // The MCP hop fires on every capture_lead retry. One row per
+    // conversation window is the record; one per tool call is noise in an
+    // audit table. Widget re-taps still write a new row each time — there
+    // a second tap is a second act by the visitor.
+    if (offWidget) {
+      const windowStart = new Date(Date.now() - CONSENT_FRESHNESS_MINUTES * 60 * 1000);
+      const existing = await this.prisma.leadPrivacyConsent.findFirst({
+        where: { botId: dto.botId, chatId: dto.chatId, createdAt: { gte: windowStart } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (existing) {
+        return {
+          accepted: true,
+          consentId: existing.id,
+          privacyVersion: existing.privacyVersion,
+          jurisdiction: existing.jurisdiction,
+          locale: existing.locale,
+        };
+      }
     }
 
     // Resolve jurisdiction: DTO wins if the widget sent one; else server
@@ -768,15 +865,17 @@ export class LeadService {
         botId: dto.botId,
         teamId: bot.teamId,
         chatId: dto.chatId ?? null,
-        source: 'chatbot',
+        source: consentSourceForChat(dto.chatId),
         privacyVersion,
         legalDocumentVersionId,
         locale: servedLocale,
         jurisdiction,
         country: null, // filled by bindProvisionalConsent when OTP parses
         privacyAcceptedAt: new Date(),
-        ipAddress: ipAddress || null,
-        userAgent: userAgent || null,
+        // Off-widget: the request came from our own MCP pod, not the
+        // visitor — recording its address would be a false statement.
+        ipAddress: offWidget ? null : ipAddress || null,
+        userAgent: offWidget ? null : userAgent || null,
       },
     });
 
@@ -1012,6 +1111,20 @@ export class LeadService {
         orderBy: { createdAt: 'desc' },
         select: { id: true },
       });
+
+      // Off-widget conversations have no card to tap; record the agent's
+      // text-based confirmation on its behalf rather than answering with a
+      // sentinel that names tools this channel doesn't have (2026-09-10).
+      if (!consent) {
+        const offWidgetConsentId = await this.recordOffWidgetConsent(
+          dto.botId,
+          dto.chatId,
+          dto.lang,
+        );
+        if (offWidgetConsentId) {
+          consent = { id: offWidgetConsentId };
+        }
+      }
 
       if (!consent) {
         throw new BadRequestException({ code: 'KVKK_CONSENT_REQUIRED' });
