@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
 
 import { PrismaService } from 'src/prisma/prisma.service';
+import { consentLegalUrls } from 'src/lead/consent-text.constants';
 
 /**
  * AI-transparency disclosure for the Meta family of channels (Legal
@@ -112,8 +113,13 @@ export class MetaAiDisclosureService implements OnModuleDestroy {
         /* language lookup is cosmetic — English fallback */
       }
 
+      // The app's own CMS-served privacy page, in the disclosure's
+      // language (legal Slice 6) — the same link the widget consent card
+      // uses. Never the marketing site: its copy drifts (2026-09-12: a
+      // static "4 Ağustos" header over a CMS body dated "6 Eylül"). The
+      // env override stays for operators hosting the policy elsewhere.
       const privacyUrl =
-        process.env.FRONTEND_PRIVACY_POLICY_URL || 'https://chatbu.io/privacy-policy';
+        process.env.FRONTEND_PRIVACY_POLICY_URL || consentLegalUrls(lang).privacyPolicyUrl;
       this.logger.log(`AI disclosure prepended for chat ${chatId} (lang=${lang})`);
       return `${MetaAiDisclosureService.LINES[lang]} ${privacyUrl}\n\n${replyText}`;
     } catch (err) {

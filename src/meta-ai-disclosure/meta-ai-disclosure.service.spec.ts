@@ -98,6 +98,21 @@ describe('MetaAiDisclosureService', () => {
     expect(out).toContain('https://chatbu.io/pp-test');
   });
 
+  it("defaults the privacy link to the app's CMS-served page in the disclosure language", async () => {
+    delete process.env.FRONTEND_PRIVACY_POLICY_URL;
+    const { service } = makeService({
+      redisSet: jest.fn().mockResolvedValue('OK'),
+      primaryLanguage: 'en',
+    });
+
+    const out = await service.withDisclosure('bot-1', 'chat-1', REPLY);
+
+    // Same builder as the widget consent card — app origin, CMS route,
+    // locale hint. Never the marketing site.
+    expect(out).toContain('/privacy-policy?lng=en');
+    expect(out).not.toContain('https://chatbu.io/');
+  });
+
   it('passes replies through untouched without Redis (graceful degrade)', async () => {
     const { service } = makeService({ primaryLanguage: 'en' }); // redis = null
     const out = await service.withDisclosure('bot-1', 'chat-1', REPLY);
