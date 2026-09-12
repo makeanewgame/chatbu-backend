@@ -86,6 +86,27 @@ const COUNTRY_TO_JURISDICTION: Record<string, Jurisdiction> = {
   OM: 'pdpl',
 };
 
+// Language → regime, for the signals that carry a language rather than a
+// place. Only languages that are (near-)exclusive to one regime are listed:
+// KVKK is the one pack bound to a language, and DE/FR/IT/ES speakers are
+// overwhelmingly inside the GDPR area — where the localized gdpr:* packs
+// live; the generic pack exists only in English, so falling through would
+// hand them an English notice. English maps to nothing: it spans UK, US,
+// IE, AU and every "English UI" browser worldwide, so it stays 'generic'.
+const LANGUAGE_TO_JURISDICTION: Record<string, Jurisdiction> = {
+  tr: 'kvkk',
+  de: 'gdpr',
+  fr: 'gdpr',
+  it: 'gdpr',
+  es: 'gdpr',
+};
+
+function jurisdictionForLanguage(tag?: string | null): Jurisdiction | null {
+  if (!tag) return null;
+  const language = tag.trim().split(/[-_]/)[0].toLowerCase();
+  return LANGUAGE_TO_JURISDICTION[language] ?? null;
+}
+
 export interface ResolveJurisdictionInput {
   // ISO alpha-2 from libphonenumber-js. When present, wins — a UK visitor
   // roaming on a German SIM gets GDPR either way, but a US visitor on a
@@ -95,15 +116,26 @@ export interface ResolveJurisdictionInput {
   // Used when the country signal is unavailable (widget consent render
   // step where the phone has not been entered yet).
   botDefault?: Jurisdiction | null;
-  // Browser locale from Accept-Language, e.g. "de-DE", "en-GB", "tr-TR".
-  // Only the region tag is inspected ("de-DE" → "DE"); the language tag
-  // is not enough on its own (a German-speaking visitor in Switzerland
-  // is still GDPR, but a Turkish-speaking visitor in Germany is GDPR
-  // too, not KVKK). Falls through to 'generic' if the header has no
-  // parseable region tag.
-  browserLocale?: string | null;
+  // Language the owner declared for the bot (CustomerBots.primaryLanguage,
+  // ISO 639-1). The notice names the owner's business as the data
+  // controller, so the owner's market is the strongest signal available
+  // before the phone is known.
+  botPrimaryLanguage?: string | null;
+  // Language the widget is actually rendering in (i18next `i18n.language`,
+  // sent as `?locale=`). Catches v1 bots that never declared a primary
+  // language. A Turkish-speaking visitor in Germany therefore gets KVKK
+  // rather than GDPR wording — an accepted trade-off: the alternative was
+  // the English generic pack, which they could not read at all.
+  widgetLocale?: string | null;
 }
 
+// The browser's Accept-Language header is deliberately NOT a jurisdiction
+// signal (removed 2026-09-12). Its region tag is a browser default, not a
+// location: English-UI Chrome sends `en-US` everywhere on earth, and a
+// Turkish visitor's `tr,en-US;q=0.9` still carries a US tag. Measured on
+// prod over 30 days: 9 of 24 consents were served the CCPA notice and not
+// one of them had a US phone number. The header still steers the LOCALE
+// of the text (resolveConsentLocale below), which is what it is for.
 export function resolveJurisdiction(input: ResolveJurisdictionInput): Jurisdiction {
   // 1. Explicit country (from phone parse) wins — most accurate signal
   //    when available. Uppercased for map lookup because ISO alpha-2 is
@@ -119,15 +151,13 @@ export function resolveJurisdiction(input: ResolveJurisdictionInput): Jurisdicti
     return input.botDefault;
   }
 
-  // 3. Browser locale — parse "de-DE" style tags and look up the region.
-  //    "en" alone has no region, falls through.
-  if (input.browserLocale) {
-    const match = input.browserLocale.match(/[-_]([A-Za-z]{2})\b/);
-    if (match) {
-      const upper = match[1].toUpperCase();
-      if (COUNTRY_TO_JURISDICTION[upper]) return COUNTRY_TO_JURISDICTION[upper];
-    }
-  }
+  // 3. The owner's declared bot language, then the language the widget is
+  //    rendering in. Both are language signals, so they can only select a
+  //    language-bound regime (see LANGUAGE_TO_JURISDICTION).
+  const byLanguage =
+    jurisdictionForLanguage(input.botPrimaryLanguage) ??
+    jurisdictionForLanguage(input.widgetLocale);
+  if (byLanguage) return byLanguage;
 
   // 4. No signal → generic (Chatbu-branded, English, GDPR-compatible).
   return 'generic';

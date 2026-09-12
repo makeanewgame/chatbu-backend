@@ -48,52 +48,82 @@ describe('resolveJurisdiction', () => {
     expect(resolveJurisdiction({ botDefault: 'ccpa' })).toBe('ccpa');
   });
 
-  it('parses browser locale region tag when country + bot default absent', () => {
-    expect(resolveJurisdiction({ browserLocale: 'de-DE' })).toBe('gdpr');
-    expect(resolveJurisdiction({ browserLocale: 'en-US' })).toBe('ccpa');
-    expect(resolveJurisdiction({ browserLocale: 'tr-TR' })).toBe('kvkk');
-    expect(resolveJurisdiction({ browserLocale: 'ar-AE' })).toBe('pdpl');
+  it("maps the owner's declared bot language when country + bot default absent", () => {
+    expect(resolveJurisdiction({ botPrimaryLanguage: 'tr' })).toBe('kvkk');
+    expect(resolveJurisdiction({ botPrimaryLanguage: 'de' })).toBe('gdpr');
+    expect(resolveJurisdiction({ botPrimaryLanguage: 'fr' })).toBe('gdpr');
+    expect(resolveJurisdiction({ botPrimaryLanguage: 'it' })).toBe('gdpr');
+    expect(resolveJurisdiction({ botPrimaryLanguage: 'es' })).toBe('gdpr');
   });
 
-  it('ignores browser locale without region tag', () => {
-    // "en" alone gives no country hint → generic
-    expect(resolveJurisdiction({ browserLocale: 'en' })).toBe('generic');
+  it('maps the language the widget renders in when the bot declares none', () => {
+    expect(resolveJurisdiction({ widgetLocale: 'tr' })).toBe('kvkk');
+    expect(resolveJurisdiction({ widgetLocale: 'tr-TR' })).toBe('kvkk');
+    expect(resolveJurisdiction({ widgetLocale: 'de' })).toBe('gdpr');
   });
 
-  it('ignores invalid browser locale', () => {
-    expect(resolveJurisdiction({ browserLocale: 'not-a-locale' })).toBe('generic');
-    expect(resolveJurisdiction({ browserLocale: '' })).toBe('generic');
+  it('English is not a jurisdiction signal — UK, US, IE and every "English UI" browser share it', () => {
+    expect(resolveJurisdiction({ botPrimaryLanguage: 'en' })).toBe('generic');
+    expect(resolveJurisdiction({ widgetLocale: 'en' })).toBe('generic');
+    // The region tag is a browser default, not a location: a Turkish
+    // visitor's Chrome sends `en-US` too. It must never pick CCPA.
+    expect(resolveJurisdiction({ widgetLocale: 'en-US' })).toBe('generic');
+    expect(resolveJurisdiction({ botPrimaryLanguage: 'en-US' })).toBe('generic');
+  });
+
+  it('languages without a language-bound regime fall through to generic', () => {
+    expect(resolveJurisdiction({ widgetLocale: 'ru' })).toBe('generic');
+    expect(resolveJurisdiction({ widgetLocale: 'ar' })).toBe('generic');
+    expect(resolveJurisdiction({ widgetLocale: 'not-a-locale' })).toBe('generic');
+    expect(resolveJurisdiction({ widgetLocale: '' })).toBe('generic');
   });
 
   it('returns generic when every signal is absent', () => {
     expect(resolveJurisdiction({})).toBe('generic');
-    expect(resolveJurisdiction({ country: null, botDefault: null, browserLocale: null })).toBe(
-      'generic',
-    );
+    expect(
+      resolveJurisdiction({
+        country: null,
+        botDefault: null,
+        botPrimaryLanguage: null,
+        widgetLocale: null,
+      }),
+    ).toBe('generic');
   });
 
-  it('priority: country > botDefault > browserLocale', () => {
-    // country=TR (kvkk) beats botDefault=gdpr beats browserLocale=en-US (ccpa)
+  it('priority: country > botDefault > botPrimaryLanguage > widgetLocale', () => {
+    // country=US (ccpa) beats every language signal
     expect(
       resolveJurisdiction({
-        country: 'TR',
+        country: 'US',
         botDefault: 'gdpr',
-        browserLocale: 'en-US',
-      }),
-    ).toBe('kvkk');
-    // no country: botDefault beats browserLocale
-    expect(
-      resolveJurisdiction({
-        botDefault: 'gdpr',
-        browserLocale: 'en-US',
-      }),
-    ).toBe('gdpr');
-    // no country + no botDefault: browserLocale kicks in
-    expect(
-      resolveJurisdiction({
-        browserLocale: 'en-US',
+        botPrimaryLanguage: 'tr',
+        widgetLocale: 'tr',
       }),
     ).toBe('ccpa');
+    // no country: botDefault beats the languages
+    expect(
+      resolveJurisdiction({
+        botDefault: 'gdpr',
+        botPrimaryLanguage: 'tr',
+        widgetLocale: 'tr',
+      }),
+    ).toBe('gdpr');
+    // no country + no botDefault: the owner's bot language beats the
+    // visitor's widget language — the notice names the owner's business
+    // as the data controller
+    expect(
+      resolveJurisdiction({
+        botPrimaryLanguage: 'tr',
+        widgetLocale: 'de',
+      }),
+    ).toBe('kvkk');
+    // owner language carries no regime: the widget language decides
+    expect(
+      resolveJurisdiction({
+        botPrimaryLanguage: 'en',
+        widgetLocale: 'tr',
+      }),
+    ).toBe('kvkk');
   });
 });
 
