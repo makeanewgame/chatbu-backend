@@ -49,6 +49,9 @@ spec:
           labelSelector:
             matchLabels:
               app: backend
+      # 15s preStop sleep + 45s for Nest to finish in-flight requests
+      # after SIGTERM (see lifecycle below).
+      terminationGracePeriodSeconds: 60
       containers:
       - name: backend
         image: 152100380489.dkr.ecr.eu-central-1.amazonaws.com/chatbu-repo:backend-latest
@@ -300,3 +303,16 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
+        # Zero-downtime rolls behind the ALB (2026-09-12). A terminating
+        # pod used to get SIGTERM the instant it left the Service, while
+        # the ALB kept routing to its IP for a few more seconds — every
+        # deploy or config roll (Reloader rolls this Deployment on any
+        # chatbu-config change) answered a handful of requests with 502,
+        # which the dashboard surfaces as a generic error toast. Sleeping
+        # first keeps the pod serving until the load balancer controller
+        # has deregistered the target. Native sleep action (Kubernetes
+        # ≥ 1.30), no binary needed in the image.
+        lifecycle:
+          preStop:
+            sleep:
+              seconds: 15
