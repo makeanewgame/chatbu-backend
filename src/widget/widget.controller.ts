@@ -153,12 +153,14 @@ export class WidgetController {
      * Serve the consent-card text pack (title, intro, controller notice,
      * button labels, legal URLs) the widget should render.
      *
-     * Jurisdiction + locale are resolved server-side from an optional
-     * `locale` / `jurisdiction` query hint (widget's i18n.language), the
-     * bot's `settings.defaultJurisdiction`, and the browser's
-     * Accept-Language header. Response includes `jurisdiction` + `locale`
-     * echoes so the widget can send them back on the follow-up POST for
-     * exact-match audit persistence.
+     * Jurisdiction is resolved server-side from an optional `jurisdiction`
+     * query hint, the bot's `settings.defaultJurisdiction`, the owner's
+     * declared bot language and the `locale` hint (widget's
+     * i18n.language); the browser's Accept-Language header only steers
+     * the locale of the text (2026-09-12: its region tag is a browser
+     * default, not a location — see jurisdiction.util). Response includes
+     * `jurisdiction` + `locale` echoes so the widget can send them back on
+     * the follow-up POST for exact-match audit persistence.
      *
      * Cache-Control: 5 min public. Text pack is fully derivable from
      * (botId, jurisdiction, locale), so per-visitor caches are safe.

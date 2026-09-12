@@ -809,13 +809,17 @@ export class LeadService {
     }
 
     // Resolve jurisdiction: DTO wins if the widget sent one; else server
-    // derives from bot's configured default and the browser's locale.
+    // derives from the bot's configured default, the owner's declared bot
+    // language and the language the widget rendered in. The browser's
+    // Accept-Language only steers the LOCALE below — its region tag is a
+    // browser default, not a location (see jurisdiction.util).
     const botDefault = readBotDefaultJurisdiction(bot.settings);
     const jurisdiction: Jurisdiction =
       dto.jurisdiction ??
       resolveJurisdiction({
         botDefault,
-        browserLocale: acceptLanguage,
+        botPrimaryLanguage: bot.primaryLanguage ?? null,
+        widgetLocale: dto.locale ?? null,
       });
     const locale = resolveConsentLocale({
       jurisdiction,
@@ -919,7 +923,7 @@ export class LeadService {
   ) {
     const bot = await this.prisma.customerBots.findUnique({
       where: { id: botId, isDeleted: false },
-      select: { id: true, teamId: true, settings: true },
+      select: { id: true, teamId: true, settings: true, primaryLanguage: true },
     });
     if (!bot) throw new NotFoundException('Bot not found');
 
@@ -928,12 +932,16 @@ export class LeadService {
       select: { businessName: true, name: true },
     });
 
+    // Same inputs as recordPrivacyConsent — the audit row must describe
+    // the notice the visitor actually saw. Accept-Language steers only
+    // the locale (its region tag is a browser default, not a location).
     const botDefault = readBotDefaultJurisdiction(bot.settings);
     const jurisdiction: Jurisdiction =
       input.explicitJurisdiction ??
       resolveJurisdiction({
         botDefault,
-        browserLocale: input.acceptLanguage ?? null,
+        botPrimaryLanguage: bot.primaryLanguage ?? null,
+        widgetLocale: input.explicitLocale ?? null,
       });
     const locale = resolveConsentLocale({
       jurisdiction,
