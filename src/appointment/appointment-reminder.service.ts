@@ -19,7 +19,7 @@ const DUE_WINDOW_MS = 30 * 1000;
 // cron ticks).
 const SCAN_WINDOW_MINUTES = 25 * 60;
 
-type ReminderState = 'sent' | 'failed';
+type ReminderState = 'pending' | 'sent' | 'failed';
 
 @Injectable()
 export class AppointmentReminderService {
@@ -35,8 +35,10 @@ export class AppointmentReminderService {
      * SMS for any offset whose target time has arrived.
      *
      * Idempotency lives in the appointment's `reminderStates` JSON:
-     * on every dispatch attempt we write the offset key with `sent` or
-     * `failed`. A future tick sees the existing key and skips. `failed`
+     * before sending, the pod atomically claims the offset key
+     * (`pending`, see `claimOffset` — the cron runs on EVERY replica)
+     * and after the attempt writes `sent` or `failed`. A future tick
+     * sees the existing key and skips. `failed`
      * means we already tried and the SMS provider rejected — we do NOT
      * retry (unbounded retry against a real provider outage would
      * multiply the outage cost). Owner can re-schedule manually or wait
@@ -93,6 +95,22 @@ export class AppointmentReminderService {
                     continue;
                 }
 
+                // Atomic claim (2026-09-12). `@Cron` fires on every backend
+                // pod and prod runs two, so both pods read the same empty
+                // state map, both sent, and both wrote "sent" — a visitor
+                // got the 1-hour WhatsApp reminder twice. One UPDATE that
+                // only matches while the offset key is still absent makes
+                // exactly one pod the owner of this (appointment, offset);
+                // the other sees 0 rows and moves on. The claim writes
+                // "pending"; the dispatch outcome replaces it below. A pod
+                // dying between claim and outcome leaves "pending" behind,
+                // which the skip above treats as handled — one lost
+                // reminder beats a duplicate, and the marker stays visible
+                // on the row.
+                const claimed = await this.claimOffset(appt.id, key);
+                if (!claimed) {
+                    continue;
+                }
                 const outcome = await this.dispatchOne(appt, offsetMinutes);
                 await this.recordOutcome(appt.id, states, key, outcome);
                 if (outcome === 'sent') {
@@ -160,14 +178,39 @@ export class AppointmentReminderService {
     }
 
     /**
+     * Mark this pod as the sole sender of one (appointment, offset) pair.
+     * Server-side conditional merge: the row is only touched when the
+     * offset key is still absent, so two pods racing on the same tick
+     * can't both win. Returns true when this call claimed it. Fails
+     * closed — a DB error means single delivery can't be guaranteed, so
+     * skip; the next tick retries while the due window is still open.
+     */
+    private async claimOffset(appointmentId: string, offsetKey: string): Promise<boolean> {
+        try {
+            const rows = await this.prisma.$executeRaw`
+                UPDATE "Appointment"
+                SET "reminderStates" = COALESCE("reminderStates", '{}'::jsonb)
+                    || jsonb_build_object(${offsetKey}::text, 'pending'::text)
+                WHERE id = ${appointmentId}
+                  AND NOT (COALESCE("reminderStates", '{}'::jsonb) ? ${offsetKey}::text)`;
+            return rows === 1;
+        } catch (e) {
+            this.logger.error(
+                `Failed to claim reminder offset=${offsetKey} for appointment ${appointmentId}: ${e}`,
+            );
+            return false;
+        }
+    }
+
+    /**
      * Persist the per-offset dispatch outcome on the Appointment row.
      * Serialized as `{ "1440": "sent", "60": "pending" }` — Prisma's
      * JSON write is atomic per row, but we read+merge+write here rather
      * than an in-place patch because the JSON column doesn't support
-     * partial updates through the Prisma client. Concurrency risk is
-     * tiny: only one cron replica should be scheduling these (Nest
-     * `@Cron` fires per pod, so this is a follow-up if we ever scale
-     * the backend beyond one replica — Faz F backlog).
+     * partial updates through the Prisma client. Safe against the
+     * multi-replica cron because `claimOffset` made this pod the sole
+     * owner of the (appointment, offset) pair before the send; the
+     * "pending" marker the claim wrote is replaced here.
      */
     private async recordOutcome(
         appointmentId: string,
