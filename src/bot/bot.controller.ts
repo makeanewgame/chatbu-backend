@@ -485,7 +485,7 @@ export class BotController {
   //#endregion
 
   //#region updateSmsVerification
-  @ApiOperation({ summary: 'Toggle required SMS (NETGSM) verification for bot leads' })
+  @ApiOperation({ summary: 'Toggle required SMS verification for visitor phone numbers (lead capture + appointment booking)' })
   @ApiResponse({ status: 200, description: 'SMS verification setting updated' })
   @ApiBearerAuth()
   @Post('updateSmsVerification')
