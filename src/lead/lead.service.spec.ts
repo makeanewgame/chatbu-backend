@@ -731,8 +731,10 @@ describe('LeadService — getConsentText (consent notice CMS-first)', () => {
   });
 
   it('resolves UI chrome against the SERVED locale, not the requested one', async () => {
-    // Requested 'de', but the CMS has no approved German translation and
-    // falls back to its English source — the buttons must follow the text.
+    // Requested 'zh': the CMS has no Chinese translation and no pack holds
+    // one either, so it falls back to its English source — the buttons
+    // must follow the text. (A requested language that a pack DOES hold
+    // is served from the pack instead — see the kvkk:ru case below.)
     getConsentNotice.mockResolvedValue({
       slug: 'privacy-notice-gdpr',
       versionNumber: 3,
@@ -744,7 +746,7 @@ describe('LeadService — getConsentText (consent notice CMS-first)', () => {
     });
     service = await build();
 
-    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'gdpr', explicitLocale: 'de' });
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'gdpr', explicitLocale: 'zh' });
 
     expect(result.locale).toBe('en');
     expect(result.continueButton).toBe('Accept and continue');
@@ -772,6 +774,49 @@ describe('LeadService — getConsentText (consent notice CMS-first)', () => {
     expect(result.locale).toBe('tr');
     expect(result.continueButton).not.toBe('Accept and continue');
     expect(result.privacyPolicyUrl).toContain('lng=tr');
+  });
+
+  it('prefers a pack translation over the CMS source locale the visitor cannot read', async () => {
+    // Dev's seeded KVKK document holds Turkish only. A Russian-speaking
+    // visitor asks for ru: the CMS would fall back to its Turkish source,
+    // but kvkk:ru exists as a pack — that is what they get, wholesale.
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-kvkk',
+      versionId: 'ver-1',
+      versionNumber: 1,
+      locale: 'tr',
+      title: 'Aydınlatma Metni',
+      intro: 'Türkçe giriş.',
+      controllerNotice: '{teamBusinessName} veri sorumlusudur.',
+      checkboxLabel: 'Okudum, kabul ediyorum.',
+    });
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'kvkk', explicitLocale: 'ru' });
+
+    expect(result.locale).toBe('ru');
+    expect(result.version).toBe('kvkk-ru-v1');
+    expect(result.intro).toMatch(/6698/);
+    expect(result.privacyPolicyUrl).toContain('lng=ru');
+  });
+
+  it('keeps the CMS source locale when no pack holds the requested language', async () => {
+    getConsentNotice.mockResolvedValue({
+      slug: 'privacy-notice-kvkk',
+      versionId: 'ver-1',
+      versionNumber: 1,
+      locale: 'tr',
+      title: 'Aydınlatma Metni',
+      intro: 'Türkçe giriş.',
+      controllerNotice: '{teamBusinessName} veri sorumlusudur.',
+      checkboxLabel: 'Okudum, kabul ediyorum.',
+    });
+    service = await build();
+
+    const result = await service.getConsentText('bot-1', { explicitJurisdiction: 'kvkk', explicitLocale: 'zh' });
+
+    expect(result.locale).toBe('tr');
+    expect(result.version).toBe('privacy-notice-kvkk-v1');
   });
 
   it('falls back to the pack — text AND version together — when the CMS lookup throws', async () => {

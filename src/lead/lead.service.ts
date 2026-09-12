@@ -75,6 +75,21 @@ function readBotDefaultJurisdiction(settings: unknown): Jurisdiction | null {
     : null;
 }
 
+// The CMS is the authority for a language it actually holds. When it only
+// has the document's source locale and a pack exists in the language the
+// visitor is reading, the readable translation wins — still wholesale,
+// every field from the pack. Found 2026-09-12: the seeded KVKK document
+// carries Turkish only, so every non-Turkish visitor kept getting the
+// Turkish notice although kvkk:ru/de/… packs exist. Both the read path
+// and the audit write go through this so the row matches the screen.
+function preferPackTranslation(
+  notice: { locale: string } | null,
+  pack: { locale: string },
+  requestedLocale: string,
+): boolean {
+  return !!notice && notice.locale !== requestedLocale && pack.locale === requestedLocale;
+}
+
 @Injectable()
 export class LeadService {
   constructor(
@@ -846,7 +861,7 @@ export class LeadService {
     let servedLocale = pack.locale;
     try {
       const notice = await this.legalDocumentService.getConsentNotice(jurisdiction, locale);
-      if (notice) {
+      if (notice && !preferPackTranslation(notice, pack, locale)) {
         legalDocumentVersionId = notice.versionId;
         privacyVersion = `${notice.slug}-v${notice.versionNumber}`;
         servedLocale = notice.locale;
@@ -973,14 +988,16 @@ export class LeadService {
       });
 
     const pack = getConsentPack(jurisdiction, locale);
+    const servedNotice = preferPackTranslation(notice, pack, locale) ? null : notice;
 
     // The locale actually rendered — NOT always the one requested. Both
     // sources apply their own fallback: the CMS drops to the document's
-    // source locale for an unapproved translation, and the pack registry
-    // drops across LANGUAGES when a (jurisdiction, locale) pair doesn't
-    // exist — there is no ccpa:tr pack, so a Turkish visitor under CCPA
-    // gets English legal text.
-    const servedLocale = notice?.locale ?? pack.locale;
+    // source locale for an unapproved translation (unless a pack holds
+    // the requested language — see preferPackTranslation), and the pack
+    // registry drops across LANGUAGES when a (jurisdiction, locale) pair
+    // doesn't exist — there is no ccpa:tr pack, so a Turkish visitor
+    // under CCPA gets English legal text.
+    const servedLocale = servedNotice?.locale ?? pack.locale;
 
     // Chrome and the legal-page links follow the SERVED language, never the
     // jurisdiction. Taking them from the pack is what produced the
@@ -992,14 +1009,14 @@ export class LeadService {
     const chrome = getConsentChrome(servedLocale);
     const legalUrls = consentLegalUrls(servedLocale);
 
-    const source = notice
+    const source = servedNotice
       ? {
-          locale: notice.locale,
-          version: `${notice.slug}-v${notice.versionNumber}`,
-          title: notice.title,
-          intro: notice.intro,
-          controllerNotice: notice.controllerNotice,
-          checkboxLabel: notice.checkboxLabel,
+          locale: servedNotice.locale,
+          version: `${servedNotice.slug}-v${servedNotice.versionNumber}`,
+          title: servedNotice.title,
+          intro: servedNotice.intro,
+          controllerNotice: servedNotice.controllerNotice,
+          checkboxLabel: servedNotice.checkboxLabel,
         }
       : {
           locale: pack.locale,
