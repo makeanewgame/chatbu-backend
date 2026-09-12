@@ -15,6 +15,7 @@ describe('AppointmentReminderService.dispatchDueReminders', () => {
     let service: AppointmentReminderService;
     let prisma: {
         appointment: { findMany: jest.Mock; update: jest.Mock };
+        $executeRaw: jest.Mock;
     };
     let sms: { sendBookingReminderSms: jest.Mock };
 
@@ -26,6 +27,8 @@ describe('AppointmentReminderService.dispatchDueReminders', () => {
     beforeEach(async () => {
         prisma = {
             appointment: { findMany: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+            // Atomic claim UPDATE — 1 row = this pod owns the send.
+            $executeRaw: jest.fn().mockResolvedValue(1),
         };
         sms = { sendBookingReminderSms: jest.fn().mockResolvedValue(undefined) };
 
@@ -183,6 +186,55 @@ describe('AppointmentReminderService.dispatchDueReminders', () => {
 
         const updateArgs = prisma.appointment.update.mock.calls[0][0];
         expect(updateArgs.data.reminderStates).toEqual({ '1440': 'sent', '60': 'sent' });
+    });
+
+    // -------------------------------------------------------------------
+    // Multi-replica cron — the claim is what stops a duplicate send
+    // -------------------------------------------------------------------
+
+    it('claims the (appointment, offset) pair atomically before sending', async () => {
+        prisma.appointment.findMany.mockResolvedValue([apptStartingIn(60)]);
+
+        await service.dispatchDueReminders();
+
+        expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+        // Tagged template: first arg is the SQL strings, the rest are the
+        // bound parameters — the offset key and the row id must be bound.
+        const [, ...params] = prisma.$executeRaw.mock.calls[0];
+        expect(params).toEqual(expect.arrayContaining(['60', 'appt_60']));
+        expect(prisma.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+            sms.sendBookingReminderSms.mock.invocationCallOrder[0],
+        );
+    });
+
+    it('does NOT send when another pod already claimed the offset (claim matched 0 rows)', async () => {
+        prisma.appointment.findMany.mockResolvedValue([apptStartingIn(60)]);
+        prisma.$executeRaw.mockResolvedValueOnce(0);
+
+        await service.dispatchDueReminders();
+
+        expect(sms.sendBookingReminderSms).not.toHaveBeenCalled();
+        expect(prisma.appointment.update).not.toHaveBeenCalled();
+    });
+
+    it('does NOT send when the claim itself fails — no single-delivery guarantee, so skip', async () => {
+        prisma.appointment.findMany.mockResolvedValue([apptStartingIn(60)]);
+        prisma.$executeRaw.mockRejectedValueOnce(new Error('pg conn lost'));
+
+        await service.dispatchDueReminders();
+
+        expect(sms.sendBookingReminderSms).not.toHaveBeenCalled();
+    });
+
+    it('treats a "pending" marker left by a crashed pod as handled (no duplicate)', async () => {
+        prisma.appointment.findMany.mockResolvedValue([
+            apptStartingIn(60, { reminderStates: { '60': 'pending' } }),
+        ]);
+
+        await service.dispatchDueReminders();
+
+        expect(sms.sendBookingReminderSms).not.toHaveBeenCalled();
+        expect(prisma.$executeRaw).not.toHaveBeenCalled();
     });
 
     // -------------------------------------------------------------------
