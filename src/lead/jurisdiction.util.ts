@@ -190,12 +190,12 @@ export function resolveConsentLocale(input: {
   browserLocale?: string | null;
   explicit?: string | null;
 }): string {
-  // KVKK is a Turkish-language regime — the legal wording only exists in
-  // TR and rendering it in EN would be legally questionable. Bail early
-  // so nothing overrides it downstream.
-  if (input.jurisdiction === 'kvkk') return 'tr';
-
   // Explicit locale from the widget (i18n.language) wins if supported.
+  // Since 2026-09-12 the widget follows the language the bot replies in,
+  // so this is the language the visitor is actually reading — KVKK
+  // included: the pack registry now carries kvkk:en / kvkk:ru next to the
+  // binding Turkish original, and getConsentPack falls back to Turkish
+  // for any KVKK locale without a translation.
   if (input.explicit) {
     const short = input.explicit.split(/[-_]/)[0].toLowerCase();
     if (SUPPORTED_CONSENT_LOCALES.includes(short)) return short;
@@ -207,5 +207,7 @@ export function resolveConsentLocale(input: {
     if (SUPPORTED_CONSENT_LOCALES.includes(short)) return short;
   }
 
-  return 'en';
+  // No language signal at all: KVKK reads in its original Turkish,
+  // everything else in English.
+  return input.jurisdiction === 'kvkk' ? 'tr' : 'en';
 }

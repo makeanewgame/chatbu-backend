@@ -46,11 +46,30 @@ describe('getConsentPack', () => {
     expect(pack.locale).toBe('en');
   });
 
-  it('KVKK never falls to EN — (kvkk, en) stays as (kvkk, tr)', () => {
-    // Legal wording is Turkish; English KVKK would be legally questionable.
-    const pack = getConsentPack('kvkk', 'en');
+  it('returns the KVKK translations for (kvkk, en) and (kvkk, ru)', () => {
+    const en = getConsentPack('kvkk', 'en');
+    expect(en.jurisdiction).toBe('kvkk');
+    expect(en.locale).toBe('en');
+    expect(en.intro).toMatch(/Law No\. 6698/);
+    const ru = getConsentPack('kvkk', 'ru');
+    expect(ru.jurisdiction).toBe('kvkk');
+    expect(ru.locale).toBe('ru');
+    expect(ru.intro).toMatch(/6698/);
+  });
+
+  it('KVKK exists in every widget language', () => {
+    for (const locale of ['tr', 'en', 'de', 'fr', 'it', 'es', 'ru', 'ar']) {
+      const pack = getConsentPack('kvkk', locale);
+      expect(pack.jurisdiction).toBe('kvkk');
+      expect(pack.locale).toBe(locale);
+      expect(pack.intro).toMatch(/6698/);
+    }
+  });
+
+  it('KVKK without a translation for the locale falls to English, never to generic', () => {
+    const pack = getConsentPack('kvkk', 'zh');
     expect(pack.jurisdiction).toBe('kvkk');
-    expect(pack.locale).toBe('tr');
+    expect(pack.locale).toBe('en');
   });
 
   it('returns GDPR-FR / GDPR-IT / GDPR-ES for matching locales', () => {
@@ -83,14 +102,26 @@ describe('getConsentPack', () => {
     expect(pack.locale).toBe('en');
   });
 
-  it('(pdpl, ar) falls to (pdpl, en) — Arabic PDPL needs native review', () => {
+  it('returns PDPL-AR for (pdpl, ar) with Gulf-PDPL wording', () => {
     const pack = getConsentPack('pdpl', 'ar');
     expect(pack.jurisdiction).toBe('pdpl');
-    expect(pack.locale).toBe('en');
+    expect(pack.locale).toBe('ar');
+    expect(pack.intro).toMatch(/الإمارات/);
   });
 
-  it('(gdpr, ru) falls to (gdpr, en) — Russian GDPR not shipped yet', () => {
-    const pack = getConsentPack('gdpr', 'ru');
+  it('GDPR and generic cover Russian and Arabic', () => {
+    for (const jurisdiction of ['gdpr', 'generic']) {
+      for (const locale of ['ru', 'ar']) {
+        const pack = getConsentPack(jurisdiction, locale);
+        expect(pack.jurisdiction).toBe(jurisdiction);
+        expect(pack.locale).toBe(locale);
+      }
+    }
+    expect(getConsentPack('gdpr', 'ru').intro).toMatch(/GDPR/);
+  });
+
+  it('a language no jurisdiction covers falls to that jurisdiction in English', () => {
+    const pack = getConsentPack('gdpr', 'zh');
     expect(pack.jurisdiction).toBe('gdpr');
     expect(pack.locale).toBe('en');
   });
@@ -141,8 +172,13 @@ describe('getConsentChrome', () => {
     expect(getConsentChrome('de').continueButton).toBe(getConsentPack('gdpr', 'de').continueButton);
   });
 
+  it('covers Russian and Arabic now that their packs exist', () => {
+    expect(getConsentChrome('ru').continueButton).toBe(getConsentPack('kvkk', 'ru').continueButton);
+    expect(getConsentChrome('ar').continueButton).toBe(getConsentPack('kvkk', 'ar').continueButton);
+  });
+
   it('falls back to English for a language no pack covers', () => {
-    expect(getConsentChrome('ar')).toEqual(
+    expect(getConsentChrome('zh')).toEqual(
       expect.objectContaining({ continueButton: 'Accept and continue' }),
     );
   });

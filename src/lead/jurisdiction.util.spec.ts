@@ -153,15 +153,19 @@ describe('resolveConsentLocale', () => {
     ).toBe('de');
   });
 
-  it('KVKK jurisdiction always renders in TR even when locale requests EN', () => {
-    // Legal wording is Turkish — never render KVKK copy in English.
+  it('KVKK follows the language the visitor is reading when one is known', () => {
+    // A Russian-speaking visitor of a Turkish business gets the Russian
+    // KVKK notice, not a Turkish one they cannot read.
+    expect(resolveConsentLocale({ jurisdiction: 'kvkk', explicit: 'ru' })).toBe('ru');
     expect(
-      resolveConsentLocale({
-        jurisdiction: 'kvkk',
-        explicit: 'en',
-        browserLocale: 'en-US',
-      }),
-    ).toBe('tr');
+      resolveConsentLocale({ jurisdiction: 'kvkk', explicit: 'en', browserLocale: 'en-US' }),
+    ).toBe('en');
+    expect(resolveConsentLocale({ jurisdiction: 'kvkk', explicit: 'tr' })).toBe('tr');
+  });
+
+  it('KVKK with no language signal at all stays Turkish', () => {
+    expect(resolveConsentLocale({ jurisdiction: 'kvkk' })).toBe('tr');
+    expect(resolveConsentLocale({ jurisdiction: 'kvkk', explicit: 'zh' })).toBe('tr');
   });
 
   it('non-KVKK jurisdiction defaults to EN when no locale signal', () => {

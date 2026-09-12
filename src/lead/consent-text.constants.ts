@@ -126,6 +126,224 @@ const KVKK_TR: ConsentTextPack = {
   ...appLegalUrls('tr'),
 };
 
+// KVKK — English and Russian (2026-09-12). Faithful translations of
+// KVKK_TR for visitors of a Turkish business who do not read Turkish: a
+// Russian-speaking visitor was handed the Turkish notice under a Russian
+// conversation, which is a notice they cannot read at all. The regime
+// (Law No. 6698, explicit consent, controller = the business) is
+// unchanged — only the language. Same review status as the GDPR
+// translations: counsel sign-off pending on wording.
+const KVKK_EN: ConsentTextPack = {
+  jurisdiction: 'kvkk',
+  locale: 'en',
+  version: 'kvkk-en-v1',
+  title: 'Privacy Notice and Terms of Use',
+  intro:
+    'To send you a verification code and forward your enquiry to the business you are chatting with, we need to process your phone number and the message you write here. This processing is based on your explicit consent under the Turkish Personal Data Protection Law No. 6698 (KVKK).',
+  checkboxLabel: 'I have read and accept the Privacy Notice and Terms of Use.',
+  continueButton: 'Accept and continue',
+  submitting: 'Submitting…',
+  acceptedLabel: 'Accepted',
+  errorMessage: 'We could not record your consent. Please try again.',
+  controllerNotice:
+    'DATALONGA SOLUTIONS LTD, trading as Chatbu (United Kingdom, chatbu.io), is the data processor. {teamBusinessName} is the data controller and receives your enquiry. You may withdraw your explicit consent at any time via the Privacy Notice.',
+  ...appLegalUrls('en'),
+};
+
+const KVKK_RU: ConsentTextPack = {
+  jurisdiction: 'kvkk',
+  locale: 'ru',
+  version: 'kvkk-ru-v1',
+  title: 'Уведомление о конфиденциальности и Условия использования',
+  intro:
+    'Чтобы отправить вам код подтверждения и передать ваш запрос компании, с которой вы общаетесь, нам необходимо обработать ваш номер телефона и сообщение, которое вы здесь пишете. Эта обработка основана на вашем явном согласии в соответствии с Законом Турции о защите персональных данных № 6698 (KVKK).',
+  checkboxLabel: 'Я прочитал(а) и принимаю Уведомление о конфиденциальности и Условия использования.',
+  continueButton: 'Принять и продолжить',
+  submitting: 'Отправка…',
+  acceptedLabel: 'Принято',
+  errorMessage: 'Не удалось сохранить ваше согласие. Пожалуйста, попробуйте ещё раз.',
+  controllerNotice:
+    'DATALONGA SOLUTIONS LTD, действующая под торговой маркой Chatbu (Великобритания, chatbu.io), является обработчиком данных. {teamBusinessName} является контролёром данных и получает ваш запрос. Вы можете отозвать своё явное согласие в любое время через Уведомление о конфиденциальности.',
+  ...appLegalUrls('ru'),
+};
+
+// The rule since 2026-09-12: the REGIME comes from the business (its
+// declared language / the visitor's phone country), the LANGUAGE comes
+// from the conversation — and every regime's notice must exist in every
+// language the widget can render (en, tr, de, fr, it, es, ru, ar).
+// KVKK below is complete; GDPR and generic gain ru + ar (de/fr/it/es
+// already existed); PDPL gains ar. All faithful translations of the
+// English/Turkish originals, counsel sign-off pending on wording.
+const KVKK_DE: ConsentTextPack = {
+  jurisdiction: 'kvkk',
+  locale: 'de',
+  version: 'kvkk-de-v1',
+  title: 'Datenschutzhinweis und Nutzungsbedingungen',
+  intro:
+    'Um Ihnen einen Bestätigungscode zu senden und Ihre Anfrage an das Unternehmen weiterzuleiten, mit dem Sie chatten, müssen wir Ihre Telefonnummer und die hier eingegebene Nachricht verarbeiten. Diese Verarbeitung beruht auf Ihrer ausdrücklichen Einwilligung nach dem türkischen Gesetz Nr. 6698 zum Schutz personenbezogener Daten (KVKK).',
+  checkboxLabel: 'Ich habe den Datenschutzhinweis und die Nutzungsbedingungen gelesen und akzeptiere sie.',
+  continueButton: 'Akzeptieren und fortfahren',
+  submitting: 'Wird gesendet…',
+  acceptedLabel: 'Akzeptiert',
+  errorMessage: 'Ihre Einwilligung konnte nicht gespeichert werden. Bitte versuchen Sie es erneut.',
+  controllerNotice:
+    'DATALONGA SOLUTIONS LTD, handelnd unter dem Namen Chatbu (Vereinigtes Königreich, chatbu.io), ist der Auftragsverarbeiter. {teamBusinessName} ist der Verantwortliche und empfängt Ihre Anfrage. Sie können Ihre ausdrückliche Einwilligung jederzeit über den Datenschutzhinweis widerrufen.',
+  ...appLegalUrls('de'),
+};
+
+const KVKK_FR: ConsentTextPack = {
+  jurisdiction: 'kvkk',
+  locale: 'fr',
+  version: 'kvkk-fr-v1',
+  title: "Avis de confidentialité et conditions d'utilisation",
+  intro:
+    "Pour vous envoyer un code de vérification et transmettre votre demande à l'entreprise avec laquelle vous discutez, nous devons traiter votre numéro de téléphone et le message que vous écrivez ici. Ce traitement repose sur votre consentement explicite au titre de la loi turque n° 6698 sur la protection des données personnelles (KVKK).",
+  checkboxLabel: "J'ai lu et j'accepte l'avis de confidentialité et les conditions d'utilisation.",
+  continueButton: 'Accepter et continuer',
+  submitting: 'Envoi en cours…',
+  acceptedLabel: 'Accepté',
+  errorMessage: "Nous n'avons pas pu enregistrer votre consentement. Veuillez réessayer.",
+  controllerNotice:
+    "DATALONGA SOLUTIONS LTD, exerçant sous le nom Chatbu (Royaume-Uni, chatbu.io), est le sous-traitant. {teamBusinessName} est le responsable du traitement et reçoit votre demande. Vous pouvez retirer votre consentement explicite à tout moment via l'avis de confidentialité.",
+  ...appLegalUrls('fr'),
+};
+
+const KVKK_IT: ConsentTextPack = {
+  jurisdiction: 'kvkk',
+  locale: 'it',
+  version: 'kvkk-it-v1',
+  title: "Informativa sulla privacy e Condizioni d'uso",
+  intro:
+    "Per inviarti un codice di verifica e trasmettere la tua richiesta all'azienda con cui stai chattando, dobbiamo trattare il tuo numero di telefono e il messaggio che scrivi qui. Questo trattamento si basa sul tuo consenso esplicito ai sensi della legge turca n. 6698 sulla protezione dei dati personali (KVKK).",
+  checkboxLabel: "Ho letto e accetto l'Informativa sulla privacy e le Condizioni d'uso.",
+  continueButton: 'Accetta e continua',
+  submitting: 'Invio in corso…',
+  acceptedLabel: 'Accettato',
+  errorMessage: 'Non siamo riusciti a registrare il tuo consenso. Riprova.',
+  controllerNotice:
+    "DATALONGA SOLUTIONS LTD, operante con il nome Chatbu (Regno Unito, chatbu.io), è il responsabile del trattamento per conto terzi. {teamBusinessName} è il titolare del trattamento e riceve la tua richiesta. Puoi revocare il tuo consenso esplicito in qualsiasi momento tramite l'Informativa sulla privacy.",
+  ...appLegalUrls('it'),
+};
+
+const KVKK_ES: ConsentTextPack = {
+  jurisdiction: 'kvkk',
+  locale: 'es',
+  version: 'kvkk-es-v1',
+  title: 'Aviso de privacidad y Condiciones de uso',
+  intro:
+    'Para enviarte un código de verificación y remitir tu consulta a la empresa con la que estás chateando, necesitamos tratar tu número de teléfono y el mensaje que escribes aquí. Este tratamiento se basa en tu consentimiento explícito conforme a la Ley turca n.º 6698 de Protección de Datos Personales (KVKK).',
+  checkboxLabel: 'He leído y acepto el Aviso de privacidad y las Condiciones de uso.',
+  continueButton: 'Aceptar y continuar',
+  submitting: 'Enviando…',
+  acceptedLabel: 'Aceptado',
+  errorMessage: 'No hemos podido registrar tu consentimiento. Inténtalo de nuevo.',
+  controllerNotice:
+    'DATALONGA SOLUTIONS LTD, que opera bajo el nombre Chatbu (Reino Unido, chatbu.io), es el encargado del tratamiento. {teamBusinessName} es el responsable del tratamiento y recibe tu consulta. Puedes retirar tu consentimiento explícito en cualquier momento a través del Aviso de privacidad.',
+  ...appLegalUrls('es'),
+};
+
+const KVKK_AR: ConsentTextPack = {
+  jurisdiction: 'kvkk',
+  locale: 'ar',
+  version: 'kvkk-ar-v1',
+  title: 'إشعار الخصوصية وشروط الاستخدام',
+  intro:
+    'لإرسال رمز التحقق إليك وتحويل طلبك إلى الشركة التي تتحدث معها، نحتاج إلى معالجة رقم هاتفك والرسالة التي تكتبها هنا. تستند هذه المعالجة إلى موافقتك الصريحة بموجب القانون التركي رقم 6698 لحماية البيانات الشخصية (KVKK).',
+  checkboxLabel: 'لقد قرأت إشعار الخصوصية وشروط الاستخدام وأوافق عليهما.',
+  continueButton: 'الموافقة والمتابعة',
+  submitting: 'جارٍ الإرسال…',
+  acceptedLabel: 'تمت الموافقة',
+  errorMessage: 'تعذّر تسجيل موافقتك. يرجى المحاولة مرة أخرى.',
+  controllerNotice:
+    'شركة DATALONGA SOLUTIONS LTD، العاملة تحت الاسم التجاري Chatbu (المملكة المتحدة، chatbu.io)، هي معالج البيانات. {teamBusinessName} هو المتحكم في البيانات ويتلقى طلبك. يمكنك سحب موافقتك الصريحة في أي وقت عبر إشعار الخصوصية.',
+  ...appLegalUrls('ar'),
+};
+
+const GDPR_RU: ConsentTextPack = {
+  jurisdiction: 'gdpr',
+  locale: 'ru',
+  version: 'gdpr-ru-v1',
+  title: 'Уведомление о конфиденциальности и Условия использования',
+  intro:
+    'Чтобы отправить вам код подтверждения и передать ваш запрос компании, с которой вы общаетесь, нам необходимо обработать ваш номер телефона и сообщение, которое вы здесь пишете. Правовым основанием этой обработки является ваше согласие в соответствии с UK GDPR / GDPR.',
+  checkboxLabel: 'Я прочитал(а) и принимаю Уведомление о конфиденциальности и Условия использования.',
+  continueButton: 'Принять и продолжить',
+  submitting: 'Отправка…',
+  acceptedLabel: 'Принято',
+  errorMessage: 'Не удалось сохранить ваше согласие. Пожалуйста, попробуйте ещё раз.',
+  controllerNotice:
+    'DATALONGA SOLUTIONS LTD, действующая под торговой маркой Chatbu (Великобритания, chatbu.io), является обработчиком данных. {teamBusinessName} является контролёром данных и получает ваш запрос. Вы можете отозвать согласие в любое время через Уведомление о конфиденциальности.',
+  ...appLegalUrls('ru'),
+};
+
+const GDPR_AR: ConsentTextPack = {
+  jurisdiction: 'gdpr',
+  locale: 'ar',
+  version: 'gdpr-ar-v1',
+  title: 'إشعار الخصوصية وشروط الاستخدام',
+  intro:
+    'لإرسال رمز التحقق إليك وتحويل طلبك إلى الشركة التي تتحدث معها، نحتاج إلى معالجة رقم هاتفك والرسالة التي تكتبها هنا. الأساس القانوني لهذه المعالجة هو موافقتك بموجب اللائحة العامة لحماية البيانات في المملكة المتحدة / الاتحاد الأوروبي (UK GDPR / GDPR).',
+  checkboxLabel: 'لقد قرأت إشعار الخصوصية وشروط الاستخدام وأوافق عليهما.',
+  continueButton: 'الموافقة والمتابعة',
+  submitting: 'جارٍ الإرسال…',
+  acceptedLabel: 'تمت الموافقة',
+  errorMessage: 'تعذّر حفظ موافقتك. يرجى المحاولة مرة أخرى.',
+  controllerNotice:
+    'شركة DATALONGA SOLUTIONS LTD، العاملة تحت الاسم التجاري Chatbu (المملكة المتحدة، chatbu.io)، هي معالج البيانات. {teamBusinessName} هو المتحكم في البيانات ويتلقى طلبك. يمكنك سحب موافقتك في أي وقت عبر إشعار الخصوصية.',
+  ...appLegalUrls('ar'),
+};
+
+const PDPL_AR: ConsentTextPack = {
+  jurisdiction: 'pdpl',
+  locale: 'ar',
+  version: 'pdpl-ar-v1',
+  title: 'إشعار الخصوصية وشروط الاستخدام',
+  intro:
+    'لإرسال رمز التحقق إليك وتحويل طلبك إلى الشركة التي تتحدث معها، نحتاج إلى معالجة رقم هاتفك والرسالة التي تكتبها هنا. الأساس القانوني لهذه المعالجة هو موافقتك بموجب قانون حماية البيانات الشخصية المعمول به (قانون حماية البيانات الشخصية في الإمارات / السعودية / البحرين أو ما يعادله).',
+  checkboxLabel: 'لقد قرأت إشعار الخصوصية وشروط الاستخدام وأوافق عليهما.',
+  continueButton: 'الموافقة والمتابعة',
+  submitting: 'جارٍ الإرسال…',
+  acceptedLabel: 'تمت الموافقة',
+  errorMessage: 'تعذّر حفظ موافقتك. يرجى المحاولة مرة أخرى.',
+  controllerNotice:
+    'شركة DATALONGA SOLUTIONS LTD، العاملة تحت الاسم التجاري Chatbu (المملكة المتحدة، chatbu.io)، هي معالج البيانات. {teamBusinessName} هو المتحكم في البيانات ويتلقى طلبك. يمكنك سحب موافقتك في أي وقت عبر إشعار الخصوصية.',
+  ...appLegalUrls('ar'),
+};
+
+const GENERIC_RU: ConsentTextPack = {
+  jurisdiction: 'generic',
+  locale: 'ru',
+  version: 'generic-ru-v1',
+  title: 'Уведомление о конфиденциальности и Условия использования',
+  intro:
+    'Чтобы отправить вам код подтверждения и передать ваш запрос компании, с которой вы общаетесь, нам необходимо обработать ваш номер телефона и сообщение, которое вы здесь пишете. Правовым основанием этой обработки является ваше согласие в соответствии с применимым местным законодательством о защите данных.',
+  checkboxLabel: 'Я прочитал(а) и принимаю Уведомление о конфиденциальности и Условия использования.',
+  continueButton: 'Принять и продолжить',
+  submitting: 'Отправка…',
+  acceptedLabel: 'Принято',
+  errorMessage: 'Не удалось сохранить ваше согласие. Пожалуйста, попробуйте ещё раз.',
+  controllerNotice:
+    'DATALONGA SOLUTIONS LTD, действующая под торговой маркой Chatbu (Великобритания, chatbu.io), является обработчиком данных. {teamBusinessName} является контролёром данных и получает ваш запрос. Вы можете отозвать согласие в любое время через Уведомление о конфиденциальности.',
+  ...appLegalUrls('ru'),
+};
+
+const GENERIC_AR: ConsentTextPack = {
+  jurisdiction: 'generic',
+  locale: 'ar',
+  version: 'generic-ar-v1',
+  title: 'إشعار الخصوصية وشروط الاستخدام',
+  intro:
+    'لإرسال رمز التحقق إليك وتحويل طلبك إلى الشركة التي تتحدث معها، نحتاج إلى معالجة رقم هاتفك والرسالة التي تكتبها هنا. الأساس القانوني لهذه المعالجة هو موافقتك بموجب قانون حماية البيانات المحلي المعمول به.',
+  checkboxLabel: 'لقد قرأت إشعار الخصوصية وشروط الاستخدام وأوافق عليهما.',
+  continueButton: 'الموافقة والمتابعة',
+  submitting: 'جارٍ الإرسال…',
+  acceptedLabel: 'تمت الموافقة',
+  errorMessage: 'تعذّر حفظ موافقتك. يرجى المحاولة مرة أخرى.',
+  controllerNotice:
+    'شركة DATALONGA SOLUTIONS LTD، العاملة تحت الاسم التجاري Chatbu (المملكة المتحدة، chatbu.io)، هي معالج البيانات. {teamBusinessName} هو المتحكم في البيانات ويتلقى طلبك. يمكنك سحب موافقتك في أي وقت عبر إشعار الخصوصية.',
+  ...appLegalUrls('ar'),
+};
+
 // GDPR — French. For FR/BE-Wallonia/LU/CH visitors.
 const GDPR_FR: ConsentTextPack = {
   jurisdiction: 'gdpr',
@@ -258,10 +476,22 @@ const REGISTRY: Record<string, ConsentTextPack> = {
   'gdpr:fr': GDPR_FR,
   'gdpr:it': GDPR_IT,
   'gdpr:es': GDPR_ES,
+  'gdpr:ru': GDPR_RU,
+  'gdpr:ar': GDPR_AR,
   'kvkk:tr': KVKK_TR,
+  'kvkk:en': KVKK_EN,
+  'kvkk:de': KVKK_DE,
+  'kvkk:fr': KVKK_FR,
+  'kvkk:it': KVKK_IT,
+  'kvkk:es': KVKK_ES,
+  'kvkk:ru': KVKK_RU,
+  'kvkk:ar': KVKK_AR,
   'ccpa:en': CCPA_EN,
   'pdpl:en': PDPL_EN,
+  'pdpl:ar': PDPL_AR,
   'generic:en': GENERIC_EN,
+  'generic:ru': GENERIC_RU,
+  'generic:ar': GENERIC_AR,
 };
 
 /** The non-legal, jurisdiction-independent strings of a pack. */
@@ -315,11 +545,12 @@ export function getConsentPack(jurisdiction: string, locale: string): ConsentTex
   const exact = REGISTRY[`${jurisdiction}:${locale}`];
   if (exact) return exact;
 
-  // KVKK special case — never fall out of TR into EN.
-  if (jurisdiction === 'kvkk') return KVKK_TR;
-
   const jurisdictionEn = REGISTRY[`${jurisdiction}:en`];
   if (jurisdictionEn) return jurisdictionEn;
+
+  // KVKK never degrades to the generic pack — the Turkish original is the
+  // binding text, so it is the last resort for that regime.
+  if (jurisdiction === 'kvkk') return KVKK_TR;
 
   return GENERIC_EN;
 }
