@@ -123,14 +123,20 @@ export class AppointmentService {
         // fallback so the visitor-facing wording stays consistent
         // across OTP and confirmation.
         let botName = 'our team';
+        // Whether this booking went through the SMS OTP path. The owner's
+        // "Require SMS verification" toggle covers booking too (2026-09-12):
+        // off → no OTP_SENT / OTP_VERIFIED row exists for this chat, so the
+        // BOOKED transition below must not insist on a prior state.
+        let otpExpected = true;
         try {
             const bot = await this.prisma.customerBots.findUnique({
                 where: { id: botCuid },
-                select: { botName: true },
+                select: { botName: true, smsVerificationRequired: true },
             });
             if (bot?.botName) botName = bot.botName;
+            if (bot) otpExpected = bot.smsVerificationRequired;
         } catch (e) {
-            this.logger.warn(`Could not look up bot name for ${botCuid}: ${e}`);
+            this.logger.warn(`Could not look up bot for ${botCuid}: ${e}`);
         }
 
         // Idempotent write. Prisma raises `P2002` (Unique constraint
@@ -202,15 +208,17 @@ export class AppointmentService {
             );
         }
 
-        // Terminal BOOKING state — this appointment is now booked. `from`
-        // pinned to `OTP_VERIFIED` optimistically; a mismatch means the
-        // BOOKING flow never went through the OTP path for this chat
-        // (agent skipped the SMS step somehow, or the reminder job is
-        // the caller). safeTransition logs + swallows either way — the
-        // Appointment row is already written, state-store is a
-        // secondary index.
+        // Terminal BOOKING state — this appointment is now booked. When
+        // the bot requires SMS verification, `from` is pinned to
+        // `OTP_VERIFIED` optimistically; a mismatch means the BOOKING
+        // flow never went through the OTP path for this chat (agent
+        // skipped the SMS step somehow, or the reminder job is the
+        // caller). When the owner turned SMS verification off there is
+        // no prior BOOKING row at all, so `from` is left open.
+        // safeTransition logs + swallows either way — the Appointment
+        // row is already written, state-store is a secondary index.
         await this.chatFlow.safeTransition(botCuid, chatId, FlowKind.BOOKING, {
-            from: 'OTP_VERIFIED',
+            from: otpExpected ? 'OTP_VERIFIED' : null,
             to: 'BOOKED',
             payload: {
                 source: 'appointment_created',
